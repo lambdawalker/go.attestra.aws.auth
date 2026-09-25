@@ -228,8 +228,16 @@ func (s *Service) Resend(ctx context.Context, id, source string) error {
 		return err
 	}
 	now := s.now()
-	if t.State != Pending || t.Resends >= 3 || now.Unix()-t.LastSent < 60 {
+	if (t.State != Pending && t.State != Failed) || t.Resends >= 3 || now.Unix()-t.LastSent < 60 {
 		return nil
+	}
+	if t.State == Failed {
+		// A provider error before user creation invalidated the old proof.
+		// Never resend a signup proof if a Cognito account now exists.
+		eligible, lookupErr := s.Identity.Eligible(ctx, t.Email)
+		if lookupErr != nil || !eligible {
+			return nil
+		}
 	}
 	if err = s.Store.Charge(ctx, "resend-email:"+s.digest(t.Email), 3, now); err != nil {
 		if errors.Is(err, ErrLimited) {
@@ -246,6 +254,8 @@ func (s *Service) Resend(ctx context.Context, id, source string) error {
 		return err
 	}
 	next := t
+	next.State = Pending
+	next.ClaimedAt = 0
 	next.Generation++
 	next.Version++
 	next.Resends++

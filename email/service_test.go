@@ -223,5 +223,22 @@ func TestProviderCreationFailureDoesNotClaimAccountWasConfirmed(t *testing.T) {
 	if store.t.State != Failed {
 		t.Fatal("failed transaction reopened")
 	}
+	s.Now = func() time.Time { return time.Unix(1700000061, 0) }
+	s.Random = func(b []byte) error {
+		for n := range b {
+			b[n] = byte(100 + n)
+		}
+		return nil
+	}
+	if err := s.Resend(ctx, r.RequestID, "source"); err != nil {
+		t.Fatal(err)
+	}
+	if store.t.State != Pending || store.t.Generation != 2 || send.count != 2 {
+		t.Fatal("failed proof was not replaced")
+	}
+	id.failCreate = false
+	if _, err := s.Confirm(ctx, ConfirmInput{RequestID: r.RequestID, TokenB: token(send.link), TokenA: a}); err != nil {
+		t.Fatalf("replacement proof: %v", err)
+	}
 }
 func contains(s, part string) bool { return strings.Contains(s, part) }
