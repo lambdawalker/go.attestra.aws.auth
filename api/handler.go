@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -18,7 +19,27 @@ func response(code int, v any) events.APIGatewayV2HTTPResponse {
 	b, _ := json.Marshal(v)
 	return events.APIGatewayV2HTTPResponse{StatusCode: code, Headers: map[string]string{"content-type": "application/json; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff"}, Body: string(b)}
 }
+func done(route string, req events.APIGatewayV2HTTPRequest, resp events.APIGatewayV2HTTPResponse) events.APIGatewayV2HTTPResponse {
+	trace := req.RequestContext.RequestID
+	if trace != "" {
+		resp.Headers["x-request-id"] = trace
+		if resp.StatusCode >= 400 {
+			var body map[string]any
+			if json.Unmarshal([]byte(resp.Body), &body) == nil {
+				body["trace_id"] = trace
+				resp.Body = stringJSON(body)
+			}
+		}
+	}
+	log.Printf("endpoint=%s status=%d trace_id=%s", route, resp.StatusCode, trace)
+	return resp
+}
+func stringJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
 func failure(err error) events.APIGatewayV2HTTPResponse {
+	var operational *email.OperationalError
+	if errors.As(err, &operational) {
+		return response(503, map[string]string{"error": "dependency_failure", "stage": operational.Stage, "provider_code": operational.Code})
+	}
 	switch {
 	case errors.Is(err, email.ErrInvalid):
 		return response(400, map[string]string{"error": "invalid_request"})
@@ -62,48 +83,59 @@ func decode(req events.APIGatewayV2HTTPRequest, v any) error {
 	}
 	return nil
 }
-func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if req.RequestContext.HTTP.Method != "POST" {
-		return response(404, map[string]string{"error": "not_found"}), nil
+func onRoute(req events.APIGatewayV2HTTPRequest, path string) bool {
+	return req.RequestContext.HTTP.Method == "POST" && req.RawPath == path
+}
+
+func (h Handler) Signup(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	log.Print("endpoint=signup started")
+	if !onRoute(req, "/signup") {
+		return done("signup", req, response(404, map[string]string{"error": "not_found"})), nil
 	}
-	source := req.RequestContext.HTTP.SourceIP
-	switch req.RawPath {
-	case "/signup":
-		var v struct {
-			Email     string `json:"email"`
-			Challenge string `json:"code_challenge"`
-			Method    string `json:"code_challenge_method"`
-		}
-		if err := decode(req, &v); err != nil {
-			return failure(err), nil
-		}
-		result, err := h.Service.Signup(ctx, v.Email, v.Challenge, v.Method, source)
-		if err != nil {
-			return failure(err), nil
-		}
-		return response(202, result), nil
-	case "/resend":
-		var v struct {
-			RequestID string `json:"request_id"`
-		}
-		if err := decode(req, &v); err != nil {
-			return failure(err), nil
-		}
-		if err := h.Service.Resend(ctx, v.RequestID, source); err != nil {
-			return failure(err), nil
-		}
-		return response(202, map[string]string{"status": "accepted"}), nil
-	case "/confirm":
-		var v email.ConfirmInput
-		if err := decode(req, &v); err != nil {
-			return failure(err), nil
-		}
-		session, err := h.Service.Confirm(ctx, v)
-		if err != nil {
-			return failure(err), nil
-		}
-		return response(200, session), nil
-	default:
-		return response(404, map[string]string{"error": "not_found"}), nil
+	var v struct {
+		Email     string `json:"email"`
+		Challenge string `json:"code_challenge"`
+		Method    string `json:"code_challenge_method"`
 	}
+	if err := decode(req, &v); err != nil {
+		return done("signup", req, failure(err)), nil
+	}
+	result, err := h.Service.Signup(email.WithTraceID(ctx, req.RequestContext.RequestID), v.Email, v.Challenge, v.Method, req.RequestContext.HTTP.SourceIP)
+	if err != nil {
+		return done("signup", req, failure(err)), nil
+	}
+	return done("signup", req, response(202, result)), nil
+}
+
+func (h Handler) Resend(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	log.Print("endpoint=resend started")
+	if !onRoute(req, "/resend") {
+		return done("resend", req, response(404, map[string]string{"error": "not_found"})), nil
+	}
+	var v struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := decode(req, &v); err != nil {
+		return done("resend", req, failure(err)), nil
+	}
+	if err := h.Service.Resend(email.WithTraceID(ctx, req.RequestContext.RequestID), v.RequestID, req.RequestContext.HTTP.SourceIP); err != nil {
+		return done("resend", req, failure(err)), nil
+	}
+	return done("resend", req, response(202, map[string]string{"status": "accepted"})), nil
+}
+
+func (h Handler) Confirm(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	log.Print("endpoint=confirm started")
+	if !onRoute(req, "/confirm") {
+		return done("confirm", req, response(404, map[string]string{"error": "not_found"})), nil
+	}
+	var v email.ConfirmInput
+	if err := decode(req, &v); err != nil {
+		return done("confirm", req, failure(err)), nil
+	}
+	session, err := h.Service.Confirm(email.WithTraceID(ctx, req.RequestContext.RequestID), v)
+	if err != nil {
+		return done("confirm", req, failure(err)), nil
+	}
+	return done("confirm", req, response(200, session)), nil
 }

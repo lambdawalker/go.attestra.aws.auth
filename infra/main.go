@@ -28,20 +28,24 @@ func deploy(ctx *pulumi.Context) error {
 	senderDomain := cfg.Require("senderDomain")
 	senderAddress := cfg.Require("senderAddress")
 	zone := cfg.Get("route53ZoneId")
+	diagnosticMode := cfg.Get("diagnosticMode") == "true"
 	proofKey := cfg.RequireSecret("proofKey")
 	if err := validate(origin, senderDomain, senderAddress); err != nil {
 		return err
 	}
-	// Pulumi marks the value secret; the API Lambda alone receives the decoded-key source.
+	// Pulumi marks the value secret; only the API Lambdas receive the encoded key.
 	if v := cfg.Get("proofKey"); v != "" {
 		b, e := base64.StdEncoding.DecodeString(v)
 		if e != nil || len(b) < 32 {
 			return errors.New("proofKey must be base64 of at least 32 random bytes")
 		}
 	}
-	apiArchive, _ := filepath.Abs("../dist/api.zip")
 	challengeArchive, _ := filepath.Abs("../dist/challenge.zip")
-	for _, path := range []string{apiArchive, challengeArchive} {
+	archives := map[string]string{}
+	for _, name := range []string{"signup", "resend", "confirm"} {
+		archives[name], _ = filepath.Abs("../dist/" + name + ".zip")
+	}
+	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], challengeArchive} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("build Lambda archives with build.sh or build.ps1 first: %s: %w", path, err)
 		}
@@ -75,19 +79,24 @@ func deploy(ctx *pulumi.Context) error {
 		}
 	}
 	trust := pulumi.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}`)
-	apiRole, err := iam.NewRole(ctx, "email-api-role", &iam.RoleArgs{AssumeRolePolicy: trust})
-	if err != nil {
-		return err
+	roles := map[string]*iam.Role{}
+	for _, name := range []string{"signup", "resend", "confirm"} {
+		role, err := iam.NewRole(ctx, name+"-role", &iam.RoleArgs{AssumeRolePolicy: trust})
+		if err != nil {
+			return err
+		}
+		roles[name] = role
 	}
 	challengeRole, err := iam.NewRole(ctx, "challenge-role", &iam.RoleArgs{AssumeRolePolicy: trust})
 	if err != nil {
 		return err
 	}
-	for _, v := range []struct {
-		name string
-		role pulumi.StringOutput
-	}{{"email-api-logs", apiRole.Name}, {"challenge-logs", challengeRole.Name}} {
-		_, err = iam.NewRolePolicyAttachment(ctx, v.name, &iam.RolePolicyAttachmentArgs{Role: v.role, PolicyArn: pulumi.String("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")})
+	for _, name := range []string{"signup", "resend", "confirm", "challenge"} {
+		role := challengeRole
+		if name != "challenge" {
+			role = roles[name]
+		}
+		_, err = iam.NewRolePolicyAttachment(ctx, name+"-logs", &iam.RolePolicyAttachmentArgs{Role: role.Name, PolicyArn: pulumi.String("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")})
 		if err != nil {
 			return err
 		}
@@ -127,34 +136,50 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
-	apiPolicy := pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":["cognito-idp:AdminGetUser","cognito-idp:AdminCreateUser","cognito-idp:AdminInitiateAuth","cognito-idp:AdminRespondToAuthChallenge"],"Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q}]}`, table.Arn, pool.Arn, sender.Arn)
-	apiGrant, err := iam.NewRolePolicy(ctx, "email-api-permissions", &iam.RolePolicyArgs{Role: apiRole.ID(), Policy: apiPolicy})
-	if err != nil {
-		return err
+	policies := map[string]pulumi.StringOutput{
+		"signup":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q}]}`, table.Arn, pool.Arn, sender.Arn),
+		"resend":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q}]}`, table.Arn, pool.Arn, sender.Arn),
+		"confirm": pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":["cognito-idp:AdminGetUser","cognito-idp:AdminCreateUser","cognito-idp:AdminInitiateAuth","cognito-idp:AdminRespondToAuthChallenge"],"Resource":%q}]}`, table.Arn, pool.Arn),
 	}
-	apiFn, err := lambda.NewFunction(ctx, "email-api", &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: apiRole.Arn, Code: pulumi.NewFileArchive(apiArchive), Timeout: pulumi.Int(25), MemorySize: pulumi.Int(256), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"TABLE_NAME": table.Name, "POOL_ID": pool.ID(), "CLIENT_ID": client.ID(), "APP_ORIGIN": pulumi.String(origin), "SENDER_ADDRESS": pulumi.String(senderAddress), "PROOF_KEY": proofKey}}}, pulumi.DependsOn([]pulumi.Resource{apiGrant}))
-	if err != nil {
-		return err
+	functions := map[string]*lambda.Function{}
+	for _, name := range []string{"signup", "resend", "confirm"} {
+		grant, err := iam.NewRolePolicy(ctx, name+"-permissions", &iam.RolePolicyArgs{Role: roles[name].ID(), Policy: policies[name]})
+		if err != nil {
+			return err
+		}
+		fn, err := lambda.NewFunction(ctx, "email-"+name, &lambda.FunctionArgs{
+			Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")},
+			Role: roles[name].Arn, Code: pulumi.NewFileArchive(archives[name]), Timeout: pulumi.Int(25), MemorySize: pulumi.Int(256),
+			Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{
+				"TABLE_NAME": table.Name, "POOL_ID": pool.ID(), "CLIENT_ID": client.ID(), "APP_ORIGIN": pulumi.String(origin),
+				"SENDER_ADDRESS": pulumi.String(senderAddress), "PROOF_KEY": proofKey,
+				"DIAGNOSTIC_MODE": pulumi.String(fmt.Sprint(diagnosticMode)),
+			}},
+		}, pulumi.DependsOn([]pulumi.Resource{grant}))
+		if err != nil {
+			return err
+		}
+		functions[name] = fn
 	}
 	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type")}, MaxAge: pulumi.Int(300)}})
 	if err != nil {
 		return err
 	}
-	integration, err := apigatewayv2.NewIntegration(ctx, "email-integration", &apigatewayv2.IntegrationArgs{ApiId: httpAPI.ID(), IntegrationType: pulumi.String("AWS_PROXY"), IntegrationUri: apiFn.InvokeArn, PayloadFormatVersion: pulumi.String("2.0")})
-	if err != nil {
-		return err
-	}
-	for _, path := range []string{"signup", "resend", "confirm"} {
-		_, err = apigatewayv2.NewRoute(ctx, "route-"+path, &apigatewayv2.RouteArgs{ApiId: httpAPI.ID(), RouteKey: pulumi.String("POST /" + path), Target: pulumi.Sprintf("integrations/%s", integration.ID())})
+	for _, name := range []string{"signup", "resend", "confirm"} {
+		integration, err := apigatewayv2.NewIntegration(ctx, name+"-integration", &apigatewayv2.IntegrationArgs{ApiId: httpAPI.ID(), IntegrationType: pulumi.String("AWS_PROXY"), IntegrationUri: functions[name].InvokeArn, PayloadFormatVersion: pulumi.String("2.0")})
+		if err != nil {
+			return err
+		}
+		_, err = apigatewayv2.NewRoute(ctx, "route-"+name, &apigatewayv2.RouteArgs{ApiId: httpAPI.ID(), RouteKey: pulumi.String("POST /" + name), Target: pulumi.Sprintf("integrations/%s", integration.ID())})
+		if err != nil {
+			return err
+		}
+		_, err = lambda.NewPermission(ctx, "allow-"+name, &lambda.PermissionArgs{Action: pulumi.String("lambda:InvokeFunction"), Function: functions[name].Name, Principal: pulumi.String("apigateway.amazonaws.com"), SourceArn: pulumi.Sprintf("%s/*/POST/%s", httpAPI.ExecutionArn, name)})
 		if err != nil {
 			return err
 		}
 	}
 	_, err = apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
-	if err != nil {
-		return err
-	}
-	_, err = lambda.NewPermission(ctx, "allow-api", &lambda.PermissionArgs{Action: pulumi.String("lambda:InvokeFunction"), Function: apiFn.Name, Principal: pulumi.String("apigateway.amazonaws.com"), SourceArn: pulumi.Sprintf("%s/*/POST/*", httpAPI.ExecutionArn)})
 	if err != nil {
 		return err
 	}

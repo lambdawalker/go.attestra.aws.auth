@@ -1,6 +1,6 @@
 # Attestra AWS authentication
 
-The first implemented subfeature is [email confirmation](https://github.com/lambdawalker/design.attestra/tree/main/auth/onboarding/email-confirmation). This repository contains a Go Lambda API, a one-use Cognito custom-challenge trigger, a DynamoDB proof store, SES delivery, and a Pulumi Go stack. It does not contain passkey registration or ID capture yet.
+The first implemented subfeature is [email confirmation](https://github.com/lambdawalker/design.attestra/tree/main/auth/onboarding/email-confirmation). This repository contains separate Go Lambdas for signup, resend, and confirm, a one-use Cognito custom-challenge trigger, a DynamoDB proof store, SES delivery, and a Pulumi Go stack. It does not contain passkey registration or ID capture yet.
 
 ## Protocol
 
@@ -19,7 +19,7 @@ B alone never confirms. A+C together are rejected. An incorrect A or B does not 
 
 ## Deployment
 
-Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. Build both `provided.al2023` ARM64 Lambdas **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads the local `dist/api.zip` and `dist/challenge.zip` archives; it does not run the build.
+Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. Build the four `provided.al2023` ARM64 Lambdas **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads the local `dist/signup.zip`, `dist/resend.zip`, `dist/confirm.zip`, and `dist/challenge.zip` archives; it does not run the build.
 
 ### Authenticate to AWS on Windows
 
@@ -143,7 +143,18 @@ This stack creates an Amazon SES identity for `senderDomain` and Easy DKIM in th
 
    Wait until both `VerificationStatus` and `DkimVerificationStatus` report `Success`. DNS propagation and SES checks can take time. If the initial deployment failed while the identity was unverified, run `pulumi up` again; Cognito's `DEVELOPER` email configuration needs the verified SES identity in its region. If you use a different region or profile, substitute those values in the commands.
 
-The stack does **not** configure a custom MAIL FROM domain or email receiving. Its SES verification and DKIM records do not require you to add an MX or SPF record. If you later configure a custom MAIL FROM domain, follow SES's separate MX and SPF instructions for that domain. SES sandbox restrictions still apply until AWS grants production access; verification alone does not permit sending to arbitrary recipients.
+The stack does **not** configure a custom MAIL FROM domain or email receiving. Its SES verification and DKIM records do not require you to add an MX or SPF record. If you later configure a custom MAIL FROM domain, follow SES's separate MX and SPF instructions for that domain.
+
+### Enable SES sending for test recipients
+
+SES configuration is required before signup emails can arrive. First, verify the **sender** domain using the DNS records above in the same AWS account and region as this stack. Pulumi creates the SES identity, but DNS hosted by Cloudflare must be configured there manually. After a destroy and redeploy, compare Cloudflare records with the new `sesVerificationRecord` and `sesDkimTokens` outputs; update records if they changed, and confirm the new SES identity is verified.
+
+New SES accounts start in a **regional sandbox**. In the sandbox, SES can send only to verified recipients (or the SES mailbox simulator). Choose one of these paths:
+
+1. **Test with addresses on a domain you control:** in **Amazon SES → Verified identities** in the stack region, add the recipient domain as a **Domain** identity and publish the DKIM CNAME records SES gives you in that domain's DNS. Once verified, addresses on that domain can receive sandbox messages. For a single test address, you can instead add an **Email address** identity and click the AWS verification link sent to that inbox; this needs no recipient-domain DNS changes. Verify the sender domain separately as described above.
+2. **Send to arbitrary recipient addresses:** in the same region, open **SES → Account dashboard → View Get set up page → Request production access**. Choose **Transactional**, supply the website URL and contact details, describe user-requested email verification, and submit the request. AWS must approve it; this does not happen automatically with `pulumi up`. Sender identity verification is still required after approval.
+
+`POST /signup` deliberately returns the same `202` for eligible, already registered, and rate-limited addresses; it does **not** prove that SES accepted or delivered an email. The current service also suppresses SES send errors to avoid account enumeration. If a verified test recipient receives nothing, check CloudWatch for the signup Lambda and inspect sandbox status, eligibility and sending diagnostics without logging addresses, links, codes, or proof values. See [AWS SES production access](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html) for the current regional requirements.
 
 References: [SES domain identities and DKIM](https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html), [Cloudflare DNS record creation](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/), and [SES custom MAIL FROM](https://docs.aws.amazon.com/ses/latest/dg/mail-from.html).
 
@@ -160,9 +171,26 @@ pulumi config get appOrigin
 
 Set Android's Gradle property `attestraApiBaseUrl` to the **exact HTTPS origin** returned by `apiUrl`, such as `https://kop22wur83.execute-api.us-east-2.amazonaws.com`. Do not append `/signup`, `/confirm`, `/verify-email`, or a trailing slash: the Android `:auth` module adds API routes itself. Set `attestraLinkHost` to the **hostname** of `appOrigin` (for example, `attestrabond.com` from `https://attestrabond.com`); this is the email verification link host, not the API Gateway host. See the [Android deployment instructions](https://github.com/lambdawalker/android.attestra.auth#configure-the-deployment) for Gradle commands and a local property example. If `pulumi stack output apiUrl` is missing, select the correct stack and finish `pulumi up`; a previewed URL is not a deployed stack output.
 
-Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered only to the API Lambda environment; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions.
+Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered to the three API Lambda environments; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions per route.
 
 The Cognito pool permits `EMAIL_OTP` and `PASSWORD` as first factors. Cognito rejects this pool's creation when `PASSWORD` is absent; AWS's CDK also requires it in its allowed-first-factors configuration. This app still creates users **without passwords** (`AdminCreateUser` omits `TemporaryPassword`), and `admin_only` disables self-service password resets. Account recovery in this app means a fresh email OTP sign-in, not Cognito's `ForgotPassword` operation. Do not add password sign-in to the app UI or create passwords for these users. **Security limitation:** Cognito's `ALLOW_USER_AUTH` client also permits password sign-in if a user ever acquires a password, and a signed-in passwordless user can call `ChangePassword` without a previous password. If the product requires password authentication to be impossible at the identity-provider level, this Cognito configuration does not provide that guarantee; choose a different session-issuance architecture before production.
+
+API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-signup`, `email-resend`, and `email-confirm` Lambdas. They share the same Go service and DynamoDB table, but have separate CloudWatch log groups and IAM roles. A fourth Lambda, `cognito-grant-challenge`, handles Cognito's custom challenge. `pulumi up` replaces the old shared `email-api` Lambda with these three route-specific functions; the `apiUrl` output remains the client-facing base URL.
+
+### Diagnosing email delivery
+
+All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Logs never include the email address, link, one-time code, or proof tokens. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
+
+To expose dependency failures in a **restricted development stack**, build from the repository root, then configure `diagnosticMode` and redeploy from `infra`:
+
+```sh
+./build.sh # use ./build.ps1 on Windows
+cd infra
+pulumi config set diagnosticMode true
+pulumi up
+```
+
+With this option, SES send failures and hidden Cognito lookup failures return HTTP 503 with `{"error":"dependency_failure","stage":"ses_send","provider_code":"SESIdentityNotVerified","trace_id":"..."}` (the code varies by failure). Every API response carries the API Gateway request ID in the `x-request-id` header, which you can match with `trace_id` in CloudWatch. Provider messages are never sent to the client. If the log says `signup_skipped reason=account_exists` or `signup_skipped reason=email_rate_limit`, signup intentionally did not send mail. Resend also observes a 60-second cooldown. When finished debugging, run `pulumi config set diagnosticMode false` and `pulumi up`; diagnostic mode reveals whether an address is eligible and must not remain enabled on a public production stack.
 
 The state store is a single DynamoDB table with `id` as its key, conditional writes for transaction claims and failed-attempt counts, budget items keyed by HMAC of email/source, and one-use custom-auth grants. A confirmed or failed transaction expires via TTL. Account creation happens **only after** a proof is accepted, avoiding a public Cognito signup confirmation shortcut. If Cognito account creation succeeds but grant exchange fails, email OTP sign-in is the recovery path. API requests are bounded to 4096 bytes; proofs and token sets must not be logged by clients or infrastructure.
 

@@ -24,6 +24,7 @@ jobs:
           go build ./...
       - name: Check formatting and committed dependencies
         run: |
+          gofmt -d $(git ls-files '*.go')
           test -z "$(gofmt -l $(git ls-files '*.go'))"
           git diff --exit-code -- go.mod go.sum infra/go.mod infra/go.sum
   windows-package:

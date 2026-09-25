@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import (
 	"context"
@@ -6,19 +6,18 @@ import (
 	"log"
 	"os"
 
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
-	"github.com/lambdawalker/go.attestra.aws.auth/api"
 	"github.com/lambdawalker/go.attestra.aws.auth/awsemail"
 	"github.com/lambdawalker/go.attestra.aws.auth/awsidentity"
 	"github.com/lambdawalker/go.attestra.aws.auth/awsstore"
 	"github.com/lambdawalker/go.attestra.aws.auth/email"
 )
 
-func main() {
+// Service configures the common proof store and identity clients for each API Lambda.
+func Service() *email.Service {
 	key, err := base64.StdEncoding.DecodeString(os.Getenv("PROOF_KEY"))
 	if err != nil || len(key) < 32 {
 		log.Fatal("invalid PROOF_KEY")
@@ -36,6 +35,12 @@ func main() {
 		log.Fatal("missing required configuration")
 	}
 	db := dynamodb.NewFromConfig(cfg)
-	svc := &email.Service{Store: awsstore.Store{DB: db, Table: table}, Identity: awsidentity.Identity{Cognito: cognitoidentityprovider.NewFromConfig(cfg), DB: db, Table: table, PoolID: pool, ClientID: client}, Sender: awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender}, Key: key, Origin: origin}
-	lambda.Start(api.Handler{Service: svc}.Handle)
+	return &email.Service{
+		Store:       awsstore.Store{DB: db, Table: table},
+		Identity:    awsidentity.Identity{Cognito: cognitoidentityprovider.NewFromConfig(cfg), DB: db, Table: table, PoolID: pool, ClientID: client},
+		Sender:      awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender},
+		Key:         key,
+		Origin:      origin,
+		Diagnostics: os.Getenv("DIAGNOSTIC_MODE") == "true",
+	}
 }
