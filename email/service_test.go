@@ -59,9 +59,9 @@ func TestManualCodeIsSixDigitsAndLimited(t *testing.T) {
 }
 func TestResendRotatesBAndCButKeepsChallenge(t *testing.T) {
 	s,store,send,_,a:=fixture();ctx:=context.Background();r,_:=s.Signup(ctx,"me@example.com",challenge(a),"S256","source");old:=store.t;oldB:=token(send.link)
-	s.Now=func()time.Time{return time.Unix(1700000061,0)};s.Random=func(b []byte)error{for n:=range b{b[n]=byte(255-n)};return nil}
+	s.Now=func()time.Time{return time.Unix(1700000061,0)};s.Random=func(b []byte)error{for n:=range b{b[n]=byte(100+n)};return nil}
 	if err:=s.Resend(ctx,r.RequestID,"source");err!=nil{t.Fatal(err)}
-	if store.t.Generation!=2||store.t.Challenge!=old.Challenge||store.t.BHash==old.BHash||send.count!=2{t.Fatal("resend did not rotate and retain binding")}
+	if store.t.Generation!=2||store.t.Challenge!=old.Challenge||store.t.BHash==old.BHash||send.count!=2||send.c!="000000"{t.Fatal("resend did not rotate and retain binding or leading zeroes")}
 	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:oldB,TokenA:a});!errors.Is(err,ErrUnusable){t.Fatalf("old link: %v",err)}
 }
 func TestSessionFailureClosesProof(t *testing.T) {
