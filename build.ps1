@@ -5,7 +5,7 @@ $previousGOARCH = $env:GOARCH
 $previousCGO = $env:CGO_ENABLED
 Push-Location $PSScriptRoot
 try {
-    New-Item -ItemType Directory -Path 'dist/api', 'dist/challenge' -Force | Out-Null
+    New-Item -ItemType Directory -Path 'dist/signup', 'dist/resend', 'dist/confirm', 'dist/challenge' -Force | Out-Null
 
     # Build the packaging tool for the host before cross-compiling the Lambdas.
     $zipTool = Join-Path $PSScriptRoot 'dist/build-lambda-zip.exe'
@@ -15,7 +15,7 @@ try {
     $env:GOOS = 'linux'
     $env:GOARCH = 'arm64'
     $env:CGO_ENABLED = '0'
-    foreach ($name in @('api', 'challenge')) {
+    foreach ($name in @('signup', 'resend', 'confirm', 'challenge')) {
         $binary = "dist/$name/bootstrap"
         $archive = "dist/$name.zip"
         & go build -trimpath -tags lambda.norpc -o $binary "./cmd/$name"

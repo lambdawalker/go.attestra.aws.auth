@@ -293,7 +293,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		return Session{}, ErrUsed
 	}
 	if t.State == Confirming && s.now().Unix()-t.ClaimedAt >= 60 && t.Expires > s.now().Unix() && same(t.BHash, hash(in.TokenB)) {
-		// The API Lambda timeout is 25 seconds. After 60 seconds an absent account
+		// The confirm Lambda timeout is 25 seconds. After 60 seconds an absent account
 		// can safely reclaim an interrupted confirmation; an existing account
 		// must recover via email OTP rather than receive another session here.
 		eligible, lookupErr := s.Identity.Eligible(ctx, t.Email)
