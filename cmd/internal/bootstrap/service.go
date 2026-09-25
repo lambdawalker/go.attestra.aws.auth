@@ -36,11 +36,11 @@ func Service() *email.Service {
 	}
 	db := dynamodb.NewFromConfig(cfg)
 	return &email.Service{
-		Store:    awsstore.Store{DB: db, Table: table},
-		Identity: awsidentity.Identity{Cognito: cognitoidentityprovider.NewFromConfig(cfg), DB: db, Table: table, PoolID: pool, ClientID: client},
-		Sender:   awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender},
-		Key:      key,
-		Origin:   origin,
+		Store:       awsstore.Store{DB: db, Table: table},
+		Identity:    awsidentity.Identity{Cognito: cognitoidentityprovider.NewFromConfig(cfg), DB: db, Table: table, PoolID: pool, ClientID: client},
+		Sender:      awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender},
+		Key:         key,
+		Origin:      origin,
 		Diagnostics: os.Getenv("DIAGNOSTIC_MODE") == "true",
 	}
 }
