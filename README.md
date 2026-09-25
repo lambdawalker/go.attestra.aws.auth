@@ -104,6 +104,8 @@ pulumi up
 
 SES identity/DKIM DNS records are exported. For DNS outside Route 53, publish them manually and wait for verified status; move SES out of its sandbox before sending to arbitrary recipients. Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered only to the API Lambda environment; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions.
 
+The Cognito pool permits email OTP sign-in and uses `admin_only` for **password reset**. Account recovery in this app means a fresh email OTP sign-in, not Cognito's `ForgotPassword` operation. Keep `PASSWORD` out of `AllowedFirstAuthFactors`: enabling it introduces an additional sign-in path. The explicit account recovery setting prevents Cognito from applying its default self-service password recovery behavior to this passwordless pool.
+
 The state store is a single DynamoDB table with `id` as its key, conditional writes for transaction claims and failed-attempt counts, budget items keyed by HMAC of email/source, and one-use custom-auth grants. A confirmed or failed transaction expires via TTL. Account creation happens **only after** a proof is accepted, avoiding a public Cognito signup confirmation shortcut. If Cognito account creation succeeds but grant exchange fails, email OTP sign-in is the recovery path. API requests are bounded to 4096 bytes; proofs and token sets must not be logged by clients or infrastructure.
 
 ## Checks and rollout

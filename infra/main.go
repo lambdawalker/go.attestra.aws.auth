@@ -108,6 +108,11 @@ func deploy(ctx *pulumi.Context) error {
 	pool, err := cognito.NewUserPool(ctx, "attesta-users", &cognito.UserPoolArgs{
 		UserPoolTier: pulumi.String("ESSENTIALS"), UsernameAttributes: pulumi.StringArray{pulumi.String("email")}, AutoVerifiedAttributes: pulumi.StringArray{pulumi.String("email")}, MfaConfiguration: pulumi.String("OFF"),
 		SignInPolicy:          &cognito.UserPoolSignInPolicyArgs{AllowedFirstAuthFactors: pulumi.StringArray{pulumi.String("EMAIL_OTP")}},
+		// This pool has no passwords. Cognito otherwise defaults to self-service
+		// password recovery, which is incompatible with an OTP-only sign-in policy.
+		AccountRecoverySetting: &cognito.UserPoolAccountRecoverySettingArgs{RecoveryMechanisms: cognito.UserPoolAccountRecoverySettingRecoveryMechanismArray{
+			&cognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs{Name: pulumi.String("admin_only"), Priority: pulumi.Int(1)},
+		}},
 		AdminCreateUserConfig: &cognito.UserPoolAdminCreateUserConfigArgs{AllowAdminCreateUserOnly: pulumi.Bool(true)},
 		EmailConfiguration:    &cognito.UserPoolEmailConfigurationArgs{EmailSendingAccount: pulumi.String("DEVELOPER"), SourceArn: sender.Arn, FromEmailAddress: pulumi.String(senderAddress)},
 		LambdaConfig:          &cognito.UserPoolLambdaConfigArgs{DefineAuthChallenge: trigger.Arn, CreateAuthChallenge: trigger.Arn, VerifyAuthChallengeResponse: trigger.Arn},
