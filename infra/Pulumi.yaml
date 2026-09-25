@@ -1,0 +1,3 @@
+name: attestra-auth-email
+runtime: go
+description: Email verification API, proof store, Cognito handoff, and SES sender
