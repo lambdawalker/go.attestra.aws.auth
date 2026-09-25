@@ -21,6 +21,52 @@ B alone never confirms. A+C together are rejected. An incorrect A or B does not 
 
 Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. Build both `provided.al2023` ARM64 Lambdas **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads the local `dist/api.zip` and `dist/challenge.zip` archives; it does not run the build.
 
+### Authenticate to AWS on Windows
+
+Pulumi uses the AWS credentials available to the shell running `pulumi preview` or `pulumi up`. Signing in to pulumi.com does not sign the CLI in to AWS. First, in the **same PowerShell window** you will use for deployment, list your AWS CLI profiles:
+
+```powershell
+aws configure list-profiles
+```
+
+If your organization uses IAM Identity Center (SSO), select its configured profile and log in:
+
+```powershell
+$env:AWS_PROFILE = "your-profile"
+aws sso login --profile $env:AWS_PROFILE
+aws sts get-caller-identity --profile $env:AWS_PROFILE
+```
+
+If you use an access-key profile instead, configure it once with `aws configure --profile your-profile`, then select and verify it:
+
+```powershell
+$env:AWS_PROFILE = "your-profile"
+aws sts get-caller-identity --profile $env:AWS_PROFILE
+```
+
+Verify that `get-caller-identity` shows the AWS account you intend to deploy into before continuing. Configure the Pulumi stack's region and profile from the `infra` directory (set the region to the one you intend to use):
+
+```powershell
+cd D:\dev\go.attestra.aws.auth\infra
+pulumi config set aws:region us-east-1
+pulumi config set aws:profile $env:AWS_PROFILE
+pulumi preview
+```
+
+If the AWS CLI works but Pulumi still reports `Invalid credentials configured`, inspect `aws configure list` and `pulumi config get aws:profile`. Environment variables such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` can override a profile; inspect their **names** with `Get-ChildItem Env:AWS_* | Select-Object -ExpandProperty Name`. If they are stale and you intend to use a profile, clear them in this PowerShell window and retry:
+
+```powershell
+'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN' | ForEach-Object {
+    Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
+aws sts get-caller-identity --profile $env:AWS_PROFILE
+pulumi preview
+```
+
+Do not paste access keys, secret keys, or session tokens into an issue or chat. `pulumi config set aws:profile` saves only the profile name; the actual credentials remain in the local AWS configuration.
+
+### Build and deploy
+
 On Windows PowerShell, run:
 
 ```powershell
@@ -31,6 +77,8 @@ cd infra
 pulumi preview
 pulumi up
 ```
+
+Run the AWS authentication steps above before this sequence; you only need to create the stack and set the other project config values once. Run `pulumi up` after reviewing the preview.
 
 If PowerShell blocks local scripts, use `powershell -ExecutionPolicy Bypass -File .\build.ps1` (or `pwsh -File .\build.ps1`) from the repository root. The script cross-compiles Linux ARM64 binaries and packages `bootstrap` with executable permissions, which Lambda needs. Do not use `Compress-Archive` for the deployment archives.
 
