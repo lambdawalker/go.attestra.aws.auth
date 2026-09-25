@@ -40,6 +40,7 @@ type Transaction struct {
 	Resends int `dynamodbav:"resends"`
 	Expires int64 `dynamodbav:"expires"`
 	LastSent int64 `dynamodbav:"last_sent"`
+	ClaimedAt int64 `dynamodbav:"claimed_at"`
 	TTL int64 `dynamodbav:"ttl"`
 	Subject string `dynamodbav:"subject"`
 }
@@ -108,7 +109,19 @@ func (s *Service) Resend(ctx context.Context,id,source string)error{
 func (s *Service) Confirm(ctx context.Context,in ConfirmInput)(Session,error){
 	if !validToken(in.RequestID)||!validToken(in.TokenB)||(in.TokenA=="")== (in.TokenC==""){return Session{},ErrInvalid}
 	t,err:=s.Store.Get(ctx,in.RequestID);if err!=nil {if errors.Is(err,ErrNotFound){return Session{},ErrUnusable};return Session{},err}
-	if t.State==Confirmed{return Session{},ErrUsed};if t.State!=Pending||t.Expires<=s.now().Unix()||!same(t.BHash,hash(in.TokenB)){return Session{},ErrUnusable}
+	if t.State==Confirmed{return Session{},ErrUsed}
+	if t.State==Confirming && s.now().Unix()-t.ClaimedAt>=60 && t.Expires>s.now().Unix() && same(t.BHash,hash(in.TokenB)) {
+		// The API Lambda timeout is 25 seconds. After 60 seconds an absent account
+		// can safely reclaim an interrupted confirmation; an existing account
+		// must recover via email OTP rather than receive another session here.
+		eligible,lookupErr:=s.Identity.Eligible(ctx,t.Email)
+		if lookupErr!=nil{return Session{},ErrConflict}
+		if !eligible{return Session{},ErrSignInRequired}
+		retry:=t;retry.State=Pending;retry.Version++
+		if err=s.Store.Swap(ctx,t,retry);err!=nil{return Session{},ErrConflict};t=retry
+	}
+	if t.State==Confirming{return Session{},ErrConflict}
+	if t.State!=Pending||t.Expires<=s.now().Unix()||!same(t.BHash,hash(in.TokenB)){return Session{},ErrUnusable}
 	if in.TokenA!="" {a,decodeErr:=base64.RawURLEncoding.DecodeString(in.TokenA);if decodeErr!=nil||len(a)!=32{return Session{},ErrUnusable};sum:=sha256.Sum256(a);if !same(t.Challenge,base64.RawURLEncoding.EncodeToString(sum[:])){return Session{},ErrUnusable}
 	}else{
 		if len(in.TokenC)!=6||strings.Trim(in.TokenC,"0123456789")!=""{return Session{},ErrInvalid}
@@ -118,10 +131,10 @@ func (s *Service) Confirm(ctx context.Context,in ConfirmInput)(Session,error){
 			next:=t;next.Attempts++;next.Version++;if err=s.Store.Swap(ctx,t,next);err!=nil{return Session{},ErrConflict};if next.Attempts>=5{return Session{},ErrLimited};return Session{},IncorrectCode{Remaining:5-next.Attempts}
 		}
 	}
-	claim:=t;claim.State=Confirming;claim.Version++
+	claim:=t;claim.State=Confirming;claim.ClaimedAt=s.now().Unix();claim.Version++
 	if err=s.Store.Swap(ctx,t,claim);err!=nil{return Session{},ErrConflict}
 	sub,err:=s.Identity.Confirm(ctx,t.Email)
-	if err!=nil {failed:=claim;failed.State=Failed;failed.Version++;_ = s.Store.Swap(ctx,claim,failed);return Session{},ErrSignInRequired}
+	if err!=nil {failed:=claim;failed.State=Failed;failed.Version++;_ = s.Store.Swap(ctx,claim,failed);eligible,lookupErr:=s.Identity.Eligible(ctx,t.Email);if lookupErr==nil&&eligible{return Session{},ErrUnusable};return Session{},ErrSignInRequired}
 	done:=claim;done.State=Confirmed;done.Subject=sub;done.BHash="";done.CDigest="";done.Challenge="";done.Version++
 	if err=s.Store.Swap(ctx,claim,done);err!=nil{return Session{},ErrSignInRequired}
 	session,err:=s.Identity.Session(ctx,t.Email);if err!=nil{return Session{},ErrSignInRequired}

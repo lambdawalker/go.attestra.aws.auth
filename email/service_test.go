@@ -20,9 +20,9 @@ func (s *fakeStore) Charge(_ context.Context, name string, limit int, _ time.Tim
 type fakeSender struct{ b,c,link string; count int }
 func (s *fakeSender) Send(_ context.Context, _, link, code string) error {s.link=link;s.c=code;s.count++;return nil}
 
-type fakeIdentity struct{ created, issued int; failIssue bool }
-func (i *fakeIdentity) Eligible(_ context.Context,_ string)(bool,error){return true,nil}
-func (i *fakeIdentity) Confirm(_ context.Context, _ string) (string,error) {i.created++;return "sub-1",nil}
+type fakeIdentity struct{ created, issued int; failIssue,failCreate bool }
+func (i *fakeIdentity) Eligible(_ context.Context,_ string)(bool,error){return i.created==0,nil}
+func (i *fakeIdentity) Confirm(_ context.Context, _ string) (string,error) {if i.failCreate{return "",errors.New("provider down")};i.created++;return "sub-1",nil}
 func (i *fakeIdentity) Session(_ context.Context, _ string) (Session,error) {i.issued++;if i.failIssue{return Session{},errors.New("provider down")};return Session{AccessToken:"access"},nil}
 
 func fixture() (*Service,*fakeStore,*fakeSender,*fakeIdentity,string) {
@@ -68,5 +68,18 @@ func TestSessionFailureClosesProof(t *testing.T) {
 	s,store,send,id,a:=fixture();ctx:=context.Background();r,_:=s.Signup(ctx,"me@example.com",challenge(a),"S256","source");id.failIssue=true
 	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:token(send.link),TokenA:a});!errors.Is(err,ErrSignInRequired){t.Fatalf("failure: %v",err)}
 	if store.t.State!=Confirmed||id.issued!=1{t.Fatal("provider failure reopened proof")}
+}
+func TestInterruptedClaimCanReconcileAfterTimeout(t *testing.T){
+	s,store,send,_,a:=fixture();ctx:=context.Background();r,_:=s.Signup(ctx,"me@example.com",challenge(a),"S256","source")
+	stuck:=store.t;stuck.State=Confirming;stuck.ClaimedAt=s.now().Unix();stuck.Version++;store.t=stuck
+	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:token(send.link),TokenA:a});!errors.Is(err,ErrConflict){t.Fatalf("early retry: %v",err)}
+	s.Now=func()time.Time{return time.Unix(stuck.ClaimedAt+61,0)}
+	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:token(send.link),TokenA:a});err!=nil{t.Fatalf("reconciled: %v",err)}
+	if store.t.State!=Confirmed{t.Fatal("not confirmed")}
+}
+func TestProviderCreationFailureDoesNotClaimAccountWasConfirmed(t *testing.T){
+	s,store,send,id,a:=fixture();ctx:=context.Background();r,_:=s.Signup(ctx,"me@example.com",challenge(a),"S256","source");id.failCreate=true
+	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:token(send.link),TokenA:a});!errors.Is(err,ErrUnusable){t.Fatalf("creation failure: %v",err)}
+	if store.t.State!=Failed{t.Fatal("failed transaction reopened")}
 }
 func contains(s,part string)bool{return strings.Contains(s,part)}
