@@ -9,10 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/mail"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aws/smithy-go"
 )
 
 var (
@@ -74,14 +77,62 @@ type Identity interface {
 	Session(context.Context, string) (Session, error)
 }
 type Service struct {
-	Store    Store
-	Sender   Sender
-	Identity Identity
-	Key      []byte
-	Origin   string
-	Now      func() time.Time
-	Random   func([]byte) error
+	Store       Store
+	Sender      Sender
+	Identity    Identity
+	Key         []byte
+	Origin      string
+	Now         func() time.Time
+	Random      func([]byte) error
+	Diagnostics bool
 }
+
+// OperationalError identifies the failed dependency without disclosing its message.
+type OperationalError struct {
+	Stage string
+	Code  string
+	Cause error
+}
+
+type traceKey struct{}
+
+func WithTraceID(ctx context.Context, trace string) context.Context {
+	return context.WithValue(ctx, traceKey{}, trace)
+}
+
+func event(ctx context.Context, message string) {
+	trace, _ := ctx.Value(traceKey{}).(string)
+	log.Printf("%s trace_id=%s", message, trace)
+}
+
+func (e *OperationalError) Error() string { return e.Stage + ": " + e.Code }
+
+func (e *OperationalError) Unwrap() error { return e.Cause }
+
+func operation(ctx context.Context, stage string, err error) *OperationalError {
+	code := "provider_error"
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code = apiErr.ErrorCode()
+		if stage == "ses_send" && strings.Contains(strings.ToLower(apiErr.ErrorMessage()), "not verified") {
+			code = "SESIdentityNotVerified"
+		}
+	}
+	// Provider messages can contain email addresses or proofs. Log only an AWS error code.
+	for _, ch := range code {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-') {
+			code = "provider_error"
+			break
+		}
+	}
+	if len(code) > 80 || code == "" {
+		code = "provider_error"
+	}
+	trace, _ := ctx.Value(traceKey{}).(string)
+	log.Printf("operation_failed trace_id=%s stage=%s provider_code=%s", trace, stage, code)
+	return &OperationalError{Stage: stage, Code: code, Cause: err}
+}
+
 type IncorrectCode struct{ Remaining int }
 
 func (e IncorrectCode) Error() string        { return ErrIncorrect.Error() }
@@ -177,18 +228,28 @@ func (s *Service) Signup(ctx context.Context, email, challenge, method, source s
 	result := SignupResult{RequestID: id}
 	if err = s.Store.Charge(ctx, "signup-source:"+s.digest(source), 10, s.now()); err != nil {
 		if errors.Is(err, ErrLimited) {
+			event(ctx, "signup_skipped reason=source_rate_limit")
 			return result, nil
 		}
-		return result, err
+		return result, operation(ctx, "signup_source_budget", err)
 	}
 	if err = s.Store.Charge(ctx, "signup-email:"+s.digest(e), 3, s.now()); err != nil {
 		if errors.Is(err, ErrLimited) {
+			event(ctx, "signup_skipped reason=email_rate_limit")
 			return result, nil
 		}
-		return result, err
+		return result, operation(ctx, "signup_email_budget", err)
 	}
 	eligible, err := s.Identity.Eligible(ctx, e)
-	if err != nil || !eligible {
+	if err != nil {
+		failure := operation(ctx, "signup_identity_lookup", err)
+		if s.Diagnostics {
+			return result, failure
+		}
+		return result, nil
+	}
+	if !eligible {
+		event(ctx, "signup_skipped reason=account_exists")
 		return result, nil
 	}
 	b, err := s.secret()
@@ -202,11 +263,18 @@ func (s *Service) Signup(ctx context.Context, email, challenge, method, source s
 	now := s.now()
 	t := Transaction{ID: id, Email: e, Challenge: challenge, BHash: hash(b), CDigest: s.digest(id, "1", c), State: Pending, Generation: 1, Version: 1, Expires: now.Add(10 * time.Minute).Unix(), TTL: now.Add(24 * time.Hour).Unix(), LastSent: now.Unix()}
 	if err = s.Store.Put(ctx, t); err != nil {
-		return result, err
+		return result, operation(ctx, "signup_store_proof", err)
 	}
 	link := origin + "/verify-email?request_id=" + url.QueryEscape(id) + "&b=" + url.QueryEscape(b)
-	// Delivery errors stay generic to avoid revealing account state. An unsent transaction expires normally.
-	_ = s.Sender.Send(ctx, e, link, c)
+	// Preserve the generic public response outside diagnostic mode to avoid account enumeration.
+	if err = s.Sender.Send(ctx, e, link, c); err != nil {
+		failure := operation(ctx, "ses_send", err)
+		if s.Diagnostics {
+			return result, failure
+		}
+	} else {
+		event(ctx, "signup_send_accepted")
+	}
 	return result, nil
 }
 
@@ -216,34 +284,46 @@ func (s *Service) Resend(ctx context.Context, id, source string) error {
 	}
 	if err := s.Store.Charge(ctx, "resend-source:"+s.digest(source), 10, s.now()); err != nil {
 		if errors.Is(err, ErrLimited) {
+			event(ctx, "resend_skipped reason=source_rate_limit")
 			return nil
 		}
-		return err
+		return operation(ctx, "resend_source_budget", err)
 	}
 	t, err := s.Store.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
+			event(ctx, "resend_skipped reason=request_not_found")
 			return nil
 		}
-		return err
+		return operation(ctx, "resend_load_proof", err)
 	}
 	now := s.now()
 	if (t.State != Pending && t.State != Failed) || t.Resends >= 3 || now.Unix()-t.LastSent < 60 {
+		event(ctx, "resend_skipped reason=state_or_cooldown")
 		return nil
 	}
 	if t.State == Failed {
 		// A provider error before user creation invalidated the old proof.
 		// Never resend a signup proof if a Cognito account now exists.
 		eligible, lookupErr := s.Identity.Eligible(ctx, t.Email)
-		if lookupErr != nil || !eligible {
+		if lookupErr != nil {
+			failure := operation(ctx, "resend_identity_lookup", lookupErr)
+			if s.Diagnostics {
+				return failure
+			}
+			return nil
+		}
+		if !eligible {
+			event(ctx, "resend_skipped reason=account_exists")
 			return nil
 		}
 	}
 	if err = s.Store.Charge(ctx, "resend-email:"+s.digest(t.Email), 3, now); err != nil {
 		if errors.Is(err, ErrLimited) {
+			event(ctx, "resend_skipped reason=email_rate_limit")
 			return nil
 		}
-		return err
+		return operation(ctx, "resend_email_budget", err)
 	}
 	b, err := s.secret()
 	if err != nil {
@@ -266,15 +346,23 @@ func (s *Service) Resend(ctx context.Context, id, source string) error {
 	next.LastSent = now.Unix()
 	if err = s.Store.Swap(ctx, t, next); err != nil {
 		if errors.Is(err, ErrConflict) {
+			event(ctx, "resend_skipped reason=concurrent_update")
 			return nil
 		}
-		return err
+		return operation(ctx, "resend_rotate_proof", err)
 	}
 	origin, err := s.origin()
 	if err != nil {
 		return err
 	}
-	_ = s.Sender.Send(ctx, t.Email, origin+"/verify-email?request_id="+url.QueryEscape(id)+"&b="+url.QueryEscape(b), c)
+	if err = s.Sender.Send(ctx, t.Email, origin+"/verify-email?request_id="+url.QueryEscape(id)+"&b="+url.QueryEscape(b), c); err != nil {
+		failure := operation(ctx, "ses_send", err)
+		if s.Diagnostics {
+			return failure
+		}
+	} else {
+		event(ctx, "resend_send_accepted")
+	}
 	return nil
 }
 
@@ -287,7 +375,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		if errors.Is(err, ErrNotFound) {
 			return Session{}, ErrUnusable
 		}
-		return Session{}, err
+		return Session{}, operation(ctx, "confirm_load_proof", err)
 	}
 	if t.State == Confirmed {
 		return Session{}, ErrUsed
@@ -298,6 +386,10 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		// must recover via email OTP rather than receive another session here.
 		eligible, lookupErr := s.Identity.Eligible(ctx, t.Email)
 		if lookupErr != nil {
+			failure := operation(ctx, "confirm_recovery_lookup", lookupErr)
+			if s.Diagnostics {
+				return Session{}, failure
+			}
 			return Session{}, ErrConflict
 		}
 		if !eligible {
@@ -307,6 +399,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		retry.State = Pending
 		retry.Version++
 		if err = s.Store.Swap(ctx, t, retry); err != nil {
+			operation(ctx, "confirm_recover_proof", err)
 			return Session{}, ErrConflict
 		}
 		t = retry
@@ -334,13 +427,17 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 			return Session{}, ErrLimited
 		}
 		if err = s.Store.Charge(ctx, "code-email:"+s.digest(t.Email), 10, s.now()); err != nil {
-			return Session{}, err
+			if errors.Is(err, ErrLimited) {
+				return Session{}, err
+			}
+			return Session{}, operation(ctx, "confirm_code_budget", err)
 		}
 		if !same(t.CDigest, s.digest(t.ID, fmt.Sprint(t.Generation), in.TokenC)) {
 			next := t
 			next.Attempts++
 			next.Version++
 			if err = s.Store.Swap(ctx, t, next); err != nil {
+				operation(ctx, "confirm_code_attempt", err)
 				return Session{}, ErrConflict
 			}
 			if next.Attempts >= 5 {
@@ -354,15 +451,25 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 	claim.ClaimedAt = s.now().Unix()
 	claim.Version++
 	if err = s.Store.Swap(ctx, t, claim); err != nil {
+		operation(ctx, "confirm_claim_proof", err)
 		return Session{}, ErrConflict
 	}
 	sub, err := s.Identity.Confirm(ctx, t.Email)
 	if err != nil {
+		failure := operation(ctx, "cognito_create_user", err)
 		failed := claim
 		failed.State = Failed
 		failed.Version++
-		_ = s.Store.Swap(ctx, claim, failed)
+		if swapErr := s.Store.Swap(ctx, claim, failed); swapErr != nil {
+			operation(ctx, "confirm_mark_failed", swapErr)
+		}
 		eligible, lookupErr := s.Identity.Eligible(ctx, t.Email)
+		if lookupErr != nil {
+			operation(ctx, "confirm_failure_lookup", lookupErr)
+		}
+		if s.Diagnostics {
+			return Session{}, failure
+		}
 		if lookupErr == nil && eligible {
 			return Session{}, ErrUnusable
 		}
@@ -376,11 +483,20 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 	done.Challenge = ""
 	done.Version++
 	if err = s.Store.Swap(ctx, claim, done); err != nil {
+		failure := operation(ctx, "confirm_store_confirmed", err)
+		if s.Diagnostics {
+			return Session{}, failure
+		}
 		return Session{}, ErrSignInRequired
 	}
 	session, err := s.Identity.Session(ctx, t.Email)
 	if err != nil {
+		failure := operation(ctx, "cognito_session", err)
+		if s.Diagnostics {
+			return Session{}, failure
+		}
 		return Session{}, ErrSignInRequired
 	}
+	event(ctx, "confirm_session_issued")
 	return session, nil
 }

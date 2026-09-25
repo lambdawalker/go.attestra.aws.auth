@@ -28,6 +28,7 @@ func deploy(ctx *pulumi.Context) error {
 	senderDomain := cfg.Require("senderDomain")
 	senderAddress := cfg.Require("senderAddress")
 	zone := cfg.Get("route53ZoneId")
+	diagnosticMode := cfg.Get("diagnosticMode") == "true"
 	proofKey := cfg.RequireSecret("proofKey")
 	if err := validate(origin, senderDomain, senderAddress); err != nil {
 		return err
@@ -152,6 +153,7 @@ func deploy(ctx *pulumi.Context) error {
 			Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{
 				"TABLE_NAME": table.Name, "POOL_ID": pool.ID(), "CLIENT_ID": client.ID(), "APP_ORIGIN": pulumi.String(origin),
 				"SENDER_ADDRESS": pulumi.String(senderAddress), "PROOF_KEY": proofKey,
+				"DIAGNOSTIC_MODE": pulumi.String(fmt.Sprint(diagnosticMode)),
 			}},
 		}, pulumi.DependsOn([]pulumi.Resource{grant}))
 		if err != nil {

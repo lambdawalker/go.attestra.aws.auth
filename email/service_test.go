@@ -45,13 +45,14 @@ func (s *fakeStore) Charge(_ context.Context, name string, limit int, _ time.Tim
 type fakeSender struct {
 	b, c, link string
 	count      int
+	err        error
 }
 
 func (s *fakeSender) Send(_ context.Context, _, link, code string) error {
 	s.link = link
 	s.c = code
 	s.count++
-	return nil
+	return s.err
 }
 
 type fakeIdentity struct {
@@ -108,6 +109,24 @@ func TestLinkDoesNotRevealCodeOrConfirm(t *testing.T) {
 	}
 	if contains(send.link, send.c) || id.created != 0 || store.t.State != Pending {
 		t.Fatal("GET link or signup consumed proof or exposed C")
+	}
+}
+func TestSignupDeliveryFailureIsVisibleInDiagnostics(t *testing.T) {
+	s, _, send, _, a := fixture()
+	s.Diagnostics = true
+	send.err = errors.New("provider says: me@example.com, secret verification code")
+	_, err := s.Signup(context.Background(), "me@example.com", challenge(a), "S256", "source")
+	var operational *OperationalError
+	if !errors.As(err, &operational) || operational.Stage != "ses_send" {
+		t.Fatalf("want ses_send diagnostic, got %v", err)
+	}
+}
+func TestSignupDeliveryFailureIsMaskedByDefault(t *testing.T) {
+	s, _, send, _, a := fixture()
+	send.err = errors.New("SES unavailable")
+	_, err := s.Signup(context.Background(), "me@example.com", challenge(a), "S256", "source")
+	if err != nil {
+		t.Fatalf("default signup should mask delivery failure: %v", err)
 	}
 }
 func token(link string) string { u, _ := url.Parse(link); return u.Query().Get("b") }

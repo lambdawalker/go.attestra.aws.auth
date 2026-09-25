@@ -177,6 +177,21 @@ The Cognito pool permits `EMAIL_OTP` and `PASSWORD` as first factors. Cognito re
 
 API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-signup`, `email-resend`, and `email-confirm` Lambdas. They share the same Go service and DynamoDB table, but have separate CloudWatch log groups and IAM roles. A fourth Lambda, `cognito-grant-challenge`, handles Cognito's custom challenge. `pulumi up` replaces the old shared `email-api` Lambda with these three route-specific functions; the `apiUrl` output remains the client-facing base URL.
 
+### Diagnosing email delivery
+
+All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Logs never include the email address, link, one-time code, or proof tokens. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
+
+To expose dependency failures in a **restricted development stack**, build from the repository root, then configure `diagnosticMode` and redeploy from `infra`:
+
+```sh
+./build.sh # use ./build.ps1 on Windows
+cd infra
+pulumi config set diagnosticMode true
+pulumi up
+```
+
+With this option, SES send failures and hidden Cognito lookup failures return HTTP 503 with `{"error":"dependency_failure","stage":"ses_send","provider_code":"SESIdentityNotVerified","trace_id":"..."}` (the code varies by failure). Every API response carries the API Gateway request ID in the `x-request-id` header, which you can match with `trace_id` in CloudWatch. Provider messages are never sent to the client. If the log says `signup_skipped reason=account_exists` or `signup_skipped reason=email_rate_limit`, signup intentionally did not send mail. Resend also observes a 60-second cooldown. When finished debugging, run `pulumi config set diagnosticMode false` and `pulumi up`; diagnostic mode reveals whether an address is eligible and must not remain enabled on a public production stack.
+
 The state store is a single DynamoDB table with `id` as its key, conditional writes for transaction claims and failed-attempt counts, budget items keyed by HMAC of email/source, and one-use custom-auth grants. A confirmed or failed transaction expires via TTL. Account creation happens **only after** a proof is accepted, avoiding a public Cognito signup confirmation shortcut. If Cognito account creation succeeds but grant exchange fails, email OTP sign-in is the recovery path. API requests are bounded to 4096 bytes; proofs and token sets must not be logged by clients or infrastructure.
 
 ## Checks and rollout

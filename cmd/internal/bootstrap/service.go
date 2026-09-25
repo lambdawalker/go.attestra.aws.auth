@@ -41,5 +41,6 @@ func Service() *email.Service {
 		Sender:   awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender},
 		Key:      key,
 		Origin:   origin,
+		Diagnostics: os.Getenv("DIAGNOSTIC_MODE") == "true",
 	}
 }
