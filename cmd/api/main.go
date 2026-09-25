@@ -17,12 +17,25 @@ import (
 	"github.com/lambdawalker/go.attestra.aws.auth/awsstore"
 	"github.com/lambdawalker/go.attestra.aws.auth/email"
 )
-func main(){
-	key,err:=base64.StdEncoding.DecodeString(os.Getenv("PROOF_KEY"));if err!=nil||len(key)<32{log.Fatal("invalid PROOF_KEY")}
-	cfg,err:=config.LoadDefaultConfig(context.Background());if err!=nil{log.Fatal("AWS config unavailable")}
-	table:=os.Getenv("TABLE_NAME");pool:=os.Getenv("POOL_ID");client:=os.Getenv("CLIENT_ID");origin:=os.Getenv("APP_ORIGIN");sender:=os.Getenv("SENDER_ADDRESS")
-	if table==""||pool==""||client==""||origin==""||sender==""{log.Fatal("missing required configuration")}
-	db:=dynamodb.NewFromConfig(cfg)
-	svc:=&email.Service{Store:awsstore.Store{DB:db,Table:table},Identity:awsidentity.Identity{Cognito:cognitoidentityprovider.NewFromConfig(cfg),DB:db,Table:table,PoolID:pool,ClientID:client},Sender:awsemail.Sender{Client:sesv2.NewFromConfig(cfg),From:sender},Key:key,Origin:origin}
-	lambda.Start(api.Handler{Service:svc}.Handle)
+
+func main() {
+	key, err := base64.StdEncoding.DecodeString(os.Getenv("PROOF_KEY"))
+	if err != nil || len(key) < 32 {
+		log.Fatal("invalid PROOF_KEY")
+	}
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Fatal("AWS config unavailable")
+	}
+	table := os.Getenv("TABLE_NAME")
+	pool := os.Getenv("POOL_ID")
+	client := os.Getenv("CLIENT_ID")
+	origin := os.Getenv("APP_ORIGIN")
+	sender := os.Getenv("SENDER_ADDRESS")
+	if table == "" || pool == "" || client == "" || origin == "" || sender == "" {
+		log.Fatal("missing required configuration")
+	}
+	db := dynamodb.NewFromConfig(cfg)
+	svc := &email.Service{Store: awsstore.Store{DB: db, Table: table}, Identity: awsidentity.Identity{Cognito: cognitoidentityprovider.NewFromConfig(cfg), DB: db, Table: table, PoolID: pool, ClientID: client}, Sender: awsemail.Sender{Client: sesv2.NewFromConfig(cfg), From: sender}, Key: key, Origin: origin}
+	lambda.Start(api.Handler{Service: svc}.Handle)
 }

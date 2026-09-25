@@ -21,11 +21,7 @@ jobs:
         run: |
           go mod tidy
           go build ./...
-      - name: Save formatted source and dependency checksums
+      - name: Check formatting and committed dependencies
         run: |
-          gofmt -w $(git ls-files '*.go')
-          tar -czf generated.tgz $(git ls-files '*.go') go.mod go.sum infra/go.mod infra/go.sum
-      - uses: actions/upload-artifact@v4
-        with:
-          name: generated-go-source
-          path: generated.tgz
+          test -z "$(gofmt -l $(git ls-files '*.go'))"
+          git diff --exit-code -- go.mod go.sum infra/go.mod infra/go.sum
