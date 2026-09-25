@@ -96,8 +96,6 @@ pulumi config set appOrigin https://attestrabond.com
 pulumi config set senderDomain info.attestrabond.com
 pulumi config set senderAddress verify@info.attestrabond.com
 pulumi config set --secret proofKey "$(openssl rand -base64 32)"
-# Optional when the DNS zone is managed by Route 53:
-pulumi config set route53ZoneId Z123456EXAMPLE
 pulumi preview
 pulumi up
 ```
