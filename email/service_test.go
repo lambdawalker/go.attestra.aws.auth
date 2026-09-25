@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-type fakeStore struct { t Transaction; exists bool; attempts int; budget int }
+type fakeStore struct { t Transaction; exists bool; budget map[string]int }
 func (s *fakeStore) Put(_ context.Context, t Transaction) error { s.t=t; s.exists=true; return nil }
 func (s *fakeStore) Get(_ context.Context, id string) (Transaction,error) { if !s.exists || s.t.ID!=id{return Transaction{},ErrNotFound};return s.t,nil }
 func (s *fakeStore) Swap(_ context.Context, before, after Transaction) error { if s.t.Version!=before.Version{return ErrConflict};s.t=after;return nil }
-func (s *fakeStore) Charge(_ context.Context, _ string, limit int, _ time.Time) error { if s.budget>=limit{return ErrLimited};s.budget++;return nil }
+func (s *fakeStore) Charge(_ context.Context, name string, limit int, _ time.Time) error { if s.budget==nil{s.budget=map[string]int{}};if s.budget[name]>=limit{return ErrLimited};s.budget[name]++;return nil }
 
 type fakeSender struct{ b,c,link string; count int }
 func (s *fakeSender) Send(_ context.Context, _, link, code string) error {s.link=link;s.c=code;s.count++;return nil}
@@ -43,7 +43,7 @@ func TestLinkDoesNotRevealCodeOrConfirm(t *testing.T) {
 func token(link string)string{u,_:=url.Parse(link);return u.Query().Get("b")}
 func TestAutoProofRequiresMatchingAAndB(t *testing.T) {
 	s,store,send,id,a:=fixture();ctx:=context.Background();r,_:=s.Signup(ctx,"me@example.com",challenge(a),"S256","source");b:=token(send.link)
-	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:"wrong",TokenA:a}); !errors.Is(err,ErrUnusable){t.Fatalf("wrong B: %v",err)}
+	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:base64.RawURLEncoding.EncodeToString(make([]byte,32)),TokenA:a}); !errors.Is(err,ErrUnusable){t.Fatalf("wrong B: %v",err)}
 	if _,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:b,TokenA:"wrong"}); !errors.Is(err,ErrUnusable){t.Fatalf("wrong A: %v",err)}
 	if store.t.Attempts!=0 {t.Fatal("wrong A charged C attempts")}
 	result,err:=s.Confirm(ctx,ConfirmInput{RequestID:r.RequestID,TokenB:b,TokenA:a});if err!=nil||result.AccessToken!="access" {t.Fatalf("confirm: %+v %v",result,err)}
