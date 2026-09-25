@@ -19,7 +19,22 @@ B alone never confirms. A+C together are rejected. An incorrect A or B does not 
 
 ## Deployment
 
-Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. To build both `provided.al2023` ARM64 Lambdas:
+Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. Build both `provided.al2023` ARM64 Lambdas **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads the local `dist/api.zip` and `dist/challenge.zip` archives; it does not run the build.
+
+On Windows PowerShell, run:
+
+```powershell
+cd D:\dev\go.attestra.aws.auth
+.\build.ps1
+python scripts/check_lambda_archives.py
+cd infra
+pulumi preview
+pulumi up
+```
+
+If PowerShell blocks local scripts, use `powershell -ExecutionPolicy Bypass -File .\build.ps1` (or `pwsh -File .\build.ps1`) from the repository root. The script cross-compiles Linux ARM64 binaries and packages `bootstrap` with executable permissions, which Lambda needs. Do not use `Compress-Archive` for the deployment archives.
+
+On macOS/Linux, run:
 
 ```bash
 go mod tidy

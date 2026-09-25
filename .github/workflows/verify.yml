@@ -16,6 +16,7 @@ jobs:
           go test ./...
           go vet ./...
           ./build.sh
+          python3 scripts/check_lambda_archives.py
       - name: Compile Pulumi stack
         working-directory: infra
         run: |
@@ -25,3 +26,14 @@ jobs:
         run: |
           test -z "$(gofmt -l $(git ls-files '*.go'))"
           git diff --exit-code -- go.mod go.sum infra/go.mod infra/go.sum
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+      - name: Build Windows-hosted Lambda archives
+        run: |
+          ./build.ps1
+          python scripts/check_lambda_archives.py

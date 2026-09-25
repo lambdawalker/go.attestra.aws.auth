@@ -39,11 +39,11 @@ func deploy(ctx *pulumi.Context) error {
 			return errors.New("proofKey must be base64 of at least 32 random bytes")
 		}
 	}
-	apiBinary, _ := filepath.Abs("../dist/api/bootstrap")
-	challengeBinary, _ := filepath.Abs("../dist/challenge/bootstrap")
-	for _, path := range []string{apiBinary, challengeBinary} {
+	apiArchive, _ := filepath.Abs("../dist/api.zip")
+	challengeArchive, _ := filepath.Abs("../dist/challenge.zip")
+	for _, path := range []string{apiArchive, challengeArchive} {
 		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("build Lambda bootstrap first: %s: %w", path, err)
+			return fmt.Errorf("build Lambda archives with build.sh or build.ps1 first: %s: %w", path, err)
 		}
 	}
 	region := aws.GetRegionOutput(ctx, aws.GetRegionOutputArgs{}).Name()
@@ -92,7 +92,7 @@ func deploy(ctx *pulumi.Context) error {
 			return err
 		}
 	}
-	trigger, err := lambda.NewFunction(ctx, "cognito-grant-challenge", &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: challengeRole.Arn, Code: pulumi.NewAssetArchive(map[string]any{"bootstrap": pulumi.NewFileAsset(challengeBinary)}), Timeout: pulumi.Int(10), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"TABLE_NAME": table.Name}}})
+	trigger, err := lambda.NewFunction(ctx, "cognito-grant-challenge", &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: challengeRole.Arn, Code: pulumi.NewFileArchive(challengeArchive), Timeout: pulumi.Int(10), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"TABLE_NAME": table.Name}}})
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
-	apiFn, err := lambda.NewFunction(ctx, "email-api", &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: apiRole.Arn, Code: pulumi.NewAssetArchive(map[string]any{"bootstrap": pulumi.NewFileAsset(apiBinary)}), Timeout: pulumi.Int(25), MemorySize: pulumi.Int(256), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"TABLE_NAME": table.Name, "POOL_ID": pool.ID(), "CLIENT_ID": client.ID(), "APP_ORIGIN": pulumi.String(origin), "SENDER_ADDRESS": pulumi.String(senderAddress), "PROOF_KEY": proofKey}}}, pulumi.DependsOn([]pulumi.Resource{apiGrant}))
+	apiFn, err := lambda.NewFunction(ctx, "email-api", &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: apiRole.Arn, Code: pulumi.NewFileArchive(apiArchive), Timeout: pulumi.Int(25), MemorySize: pulumi.Int(256), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"TABLE_NAME": table.Name, "POOL_ID": pool.ID(), "CLIENT_ID": client.ID(), "APP_ORIGIN": pulumi.String(origin), "SENDER_ADDRESS": pulumi.String(senderAddress), "PROOF_KEY": proofKey}}}, pulumi.DependsOn([]pulumi.Resource{apiGrant}))
 	if err != nil {
 		return err
 	}
