@@ -100,7 +100,35 @@ pulumi preview
 pulumi up
 ```
 
-SES identity/DKIM DNS records are exported. For DNS outside Route 53, publish them manually and wait for verified status; move SES out of its sandbox before sending to arbitrary recipients. Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered only to the API Lambda environment; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions.
+### Configure sender DNS in Cloudflare
+
+This stack creates an Amazon SES identity for `senderDomain` and Easy DKIM in the configured AWS region. For example, with `senderDomain: info.attestrabond.com` and `senderAddress: verify@info.attestrabond.com`, add the records below to the **attestrabond.com** zone in Cloudflare. DNS for this domain stays in Cloudflare: leave `route53ZoneId` unset (or run `pulumi config rm route53ZoneId` in `infra` if it was previously set). A Route 53 zone ID is only for a domain whose authoritative DNS zone is managed by Route 53.
+
+1. From `infra`, run `pulumi preview` after building the Lambdas, or inspect the SES domain identity in the AWS console in the same region. If the stack has completed an update, `pulumi stack output sesVerificationRecord` returns the TXT record and `pulumi stack output sesDkimTokens --json` returns three DKIM tokens. **After a failed first `pulumi up`, `pulumi stack output` may say that these outputs do not exist.** The SES identity may still have been created; a subsequent `pulumi preview` can display the proposed outputs, and Amazon SES → Configuration → Verified identities → `info.attestrabond.com` shows the DNS records and status. Use your own `senderDomain` instead of the example in the console.
+2. In Cloudflare, open the domain → **DNS** → **Records** → **Add record**. Create the following records. Cloudflare's Name field is relative to the `attestrabond.com` zone in this example; do not append `attestrabond.com` twice.
+
+   | Type | Cloudflare Name (for `attestrabond.com`) | Content / Target |
+   | --- | --- | --- |
+   | TXT | `_amazonses.info` | The token after `TXT` in `sesVerificationRecord` (paste the token alone). |
+   | CNAME, three records | `<token1>._domainkey.info`, `<token2>._domainkey.info`, `<token3>._domainkey.info` | Respectively `<token1>.dkim.amazonses.com`, `<token2>.dkim.amazonses.com`, `<token3>.dkim.amazonses.com`. |
+
+   Replace each `<tokenN>` with one complete string from `sesDkimTokens`. Set each CNAME to **DNS only** (gray cloud), not Proxied. Leave TTL on Auto or choose 300 seconds. If the SES console displays a different full target for a CNAME, use the target shown there. These records authenticate sending from the subdomain; they do not move the website or incoming mail to AWS. Do not replace any existing MX records for your mailbox.
+3. Check that public DNS returns the records, for example in PowerShell: `Resolve-DnsName -Type TXT _amazonses.info.attestrabond.com` and `Resolve-DnsName -Type CNAME <token1>._domainkey.info.attestrabond.com`. Check all three CNAMEs. Then check SES in the same AWS account and region:
+
+   ```powershell
+   aws ses get-identity-verification-attributes --identities info.attestrabond.com --region us-east-2 --profile attestra
+   aws ses get-identity-dkim-attributes --identities info.attestrabond.com --region us-east-2 --profile attestra
+   ```
+
+   Wait until both `VerificationStatus` and `DkimVerificationStatus` report `Success`. DNS propagation and SES checks can take time. Then run `pulumi up` again; Cognito's `DEVELOPER` email configuration needs the verified SES identity in its region. If you use a different region or profile, substitute those values in the commands.
+
+The stack does **not** configure a custom MAIL FROM domain or email receiving. Its SES verification and DKIM records do not require you to add an MX or SPF record. If you later configure a custom MAIL FROM domain, follow SES's separate MX and SPF instructions for that domain. SES sandbox restrictions still apply until AWS grants production access; verification alone does not permit sending to arbitrary recipients.
+
+References: [SES domain identities and DKIM](https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html), [Cloudflare DNS record creation](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/), and [SES custom MAIL FROM](https://docs.aws.amazon.com/ses/latest/dg/mail-from.html).
+
+Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered only to the API Lambda environment; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions.
+
+The Cognito pool permits `EMAIL_OTP` and `PASSWORD` as first factors. Cognito rejects this pool's creation when `PASSWORD` is absent; AWS's CDK also requires it in its allowed-first-factors configuration. This app still creates users **without passwords** (`AdminCreateUser` omits `TemporaryPassword`), and `admin_only` disables self-service password resets. Account recovery in this app means a fresh email OTP sign-in, not Cognito's `ForgotPassword` operation. Do not add password sign-in to the app UI or create passwords for these users. **Security limitation:** Cognito's `ALLOW_USER_AUTH` client also permits password sign-in if a user ever acquires a password, and a signed-in passwordless user can call `ChangePassword` without a previous password. If the product requires password authentication to be impossible at the identity-provider level, this Cognito configuration does not provide that guarantee; choose a different session-issuance architecture before production.
 
 The state store is a single DynamoDB table with `id` as its key, conditional writes for transaction claims and failed-attempt counts, budget items keyed by HMAC of email/source, and one-use custom-auth grants. A confirmed or failed transaction expires via TTL. Account creation happens **only after** a proof is accepted, avoiding a public Cognito signup confirmation shortcut. If Cognito account creation succeeds but grant exchange fails, email OTP sign-in is the recovery path. API requests are bounded to 4096 bytes; proofs and token sets must not be logged by clients or infrastructure.
 
