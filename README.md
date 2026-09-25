@@ -43,10 +43,10 @@ chmod +x build.sh
 cd infra
 go mod tidy
 pulumi stack init dev
-pulumi config set aws:region us-east-1
-pulumi config set appOrigin https://app.example.com
-pulumi config set senderDomain example.com
-pulumi config set senderAddress verify@example.com
+pulumi config set aws:region us-east-2
+pulumi config set appOrigin https://attestrabond.com
+pulumi config set senderDomain info.attestrabond.com
+pulumi config set senderAddress verify@info.attestrabond.com
 pulumi config set --secret proofKey "$(openssl rand -base64 32)"
 # Optional when the DNS zone is managed by Route 53:
 pulumi config set route53ZoneId Z123456EXAMPLE

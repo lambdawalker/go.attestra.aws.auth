@@ -1,0 +1,7 @@
+config:
+  aws:region: us-east-2
+  attestra-auth-email:appOrigin: https://attestrabond.com
+  attestra-auth-email:senderDomain: info.attestrabond.com
+  attestra-auth-email:senderAddress: verify@info.attestrabond.com
+  attestra-auth-email:proofKey:
+    secure: AAABAPvUujwbcYEaR5BUf54dW5cIc/AOa6RSTnrbzm8CR8rZ73Zerwq9PaCvUrdZZa5ALOWPT/D6e6mujoOa2iVT9aoA/v8/6gnhUw==
