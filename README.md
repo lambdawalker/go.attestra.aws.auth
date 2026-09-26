@@ -222,6 +222,17 @@ The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cogn
 
 For Android, the HTTPS host must serve `/.well-known/assetlinks.json` with `delegate_permission/common.get_login_creds` for the exact application ID and signing fingerprint. Verify the installed build's association with that host before testing Credential Manager on Android 9 or later. The registration endpoints use the same `apiUrl` output as email verification.
 
+### One-command Windows deployment
+
+From the repository root, after configuring your AWS profile and Pulumi stack once, run:
+
+```powershell
+.\deploy.ps1                 # current branch, dev stack
+.\deploy.ps1 -Stack dev
+```
+
+The script requires a clean Git working tree and `git`, `go`, and `pulumi` on `PATH`. It runs `git pull --ff-only`, invokes `build.ps1` for all Lambda archives, then runs `pulumi up --stack dev` from `infra`. The Pulumi confirmation prompt stays interactive so you can review the preview. The script uses your existing AWS profile/configuration; it does not change credentials or stack configuration. If any step fails, deployment stops before the next step. For a different stack, pass its name with `-Stack`.
+
 ### Return to onboarding and sign in
 
 A stored access token can be refreshed through `POST /auth/refresh` with `{"refresh_token":"..."}`. The response uses the existing `AuthSession` fields; Cognito may omit a new refresh token, so clients must retain the old one. `POST /auth/status` requires `Authorization: Bearer <access_token>` and returns `{"passkey_registered":true|false}` from Cognito `ListWebAuthnCredentials`.
