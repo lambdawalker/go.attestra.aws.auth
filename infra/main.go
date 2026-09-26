@@ -136,9 +136,12 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+	// SES also evaluates the verified recipient identity while in the sandbox.
+	// Allow identities in this account/region, but only with our configured From address.
+	sesIdentityScope := pulumi.Sprintf("arn:aws:ses:%s:%s:identity/*", region, account)
 	policies := map[string]pulumi.StringOutput{
-		"signup":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q}]}`, table.Arn, pool.Arn, sender.Arn),
-		"resend":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q}]}`, table.Arn, pool.Arn, sender.Arn),
+		"signup":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q,"Condition":{"StringEquals":{"ses:FromAddress":%q}}}]}`, table.Arn, pool.Arn, sesIdentityScope, senderAddress),
+		"resend":  pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":"cognito-idp:AdminGetUser","Resource":%q},{"Effect":"Allow","Action":"ses:SendEmail","Resource":%q,"Condition":{"StringEquals":{"ses:FromAddress":%q}}}]}`, table.Arn, pool.Arn, sesIdentityScope, senderAddress),
 		"confirm": pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],"Resource":%q},{"Effect":"Allow","Action":["cognito-idp:AdminGetUser","cognito-idp:AdminCreateUser","cognito-idp:AdminInitiateAuth","cognito-idp:AdminRespondToAuthChallenge"],"Resource":%q}]}`, table.Arn, pool.Arn),
 	}
 	functions := map[string]*lambda.Function{}

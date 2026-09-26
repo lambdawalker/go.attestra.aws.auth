@@ -177,6 +177,8 @@ The Cognito pool permits `EMAIL_OTP` and `PASSWORD` as first factors. Cognito re
 
 API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-signup`, `email-resend`, and `email-confirm` Lambdas. They share the same Go service and DynamoDB table, but have separate CloudWatch log groups and IAM roles. A fourth Lambda, `cognito-grant-challenge`, handles Cognito's custom challenge. `pulumi up` replaces the old shared `email-api` Lambda with these three route-specific functions; the `apiUrl` output remains the client-facing base URL.
 
+SES can evaluate `ses:SendEmail` against a verified recipient identity as well as the sender identity while the account is in the sandbox. The signup and resend roles allow SES identity resources in **this AWS account and region**, with a `ses:FromAddress` condition restricting the sender to `senderAddress`. The confirm role has no SES send permission. SES still enforces its separate sandbox recipient verification requirement.
+
 ### Diagnosing email delivery
 
 All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). For a rejected SES send, `ses_send_denied` includes the SES explanation with email addresses, URLs, and long proof-like strings redacted. Review logs only in a restricted account, and never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
