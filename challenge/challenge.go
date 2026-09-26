@@ -18,6 +18,7 @@ import (
 // A single Lambda handles the three Cognito custom-challenge triggers. No challenge
 // secret or grant identifier is placed in public challenge parameters.
 type Event struct {
+	raw           map[string]json.RawMessage
 	TriggerSource string `json:"triggerSource"`
 	Request       struct {
 		UserAttributes  map[string]string `json:"userAttributes"`
@@ -30,6 +31,17 @@ type Event struct {
 	} `json:"request"`
 	Response map[string]any `json:"response"`
 }
+
+// Cognito requires the entire incoming event back, including common and future fields.
+func (e Event) MarshalJSON() ([]byte, error) {
+	response, err := json.Marshal(e.Response)
+	if err != nil {
+		return nil, err
+	}
+	e.raw["response"] = response
+	return json.Marshal(e.raw)
+}
+
 type Handler struct {
 	DB    *dynamodb.Client
 	Table string
@@ -37,6 +49,9 @@ type Handler struct {
 
 func (h Handler) Handle(ctx context.Context, raw json.RawMessage) (Event, error) {
 	var e Event
+	if err := json.Unmarshal(raw, &e.raw); err != nil {
+		return e, err
+	}
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return e, err
 	}
@@ -46,6 +61,8 @@ func (h Handler) Handle(ctx context.Context, raw json.RawMessage) (Event, error)
 	log.Printf("challenge_trigger source=%s user_not_found=%t session_steps=%d", e.TriggerSource, e.Request.UserNotFound, len(e.Request.Session))
 	switch e.TriggerSource {
 	case "DefineAuthChallenge_Authentication":
+		e.Response["issueTokens"] = false
+		e.Response["failAuthentication"] = false
 		if e.Request.UserNotFound {
 			log.Print("challenge_define_failed user_not_found")
 			e.Response["failAuthentication"] = true
