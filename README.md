@@ -179,7 +179,7 @@ API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-s
 
 ### Diagnosing email delivery
 
-All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Logs never include the email address, link, one-time code, or proof tokens. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
+All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). For a rejected SES send, `ses_send_denied` includes the SES explanation with email addresses, URLs, and long proof-like strings redacted. Review logs only in a restricted account, and never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
 
 To expose dependency failures in a **restricted development stack**, build from the repository root, then configure `diagnosticMode` and redeploy from `infra`:
 

@@ -7,9 +7,20 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSafeSESDenialRedactsProofsAddressesAndNewlines(t *testing.T) {
+	const raw = "Denied verify@info.attestrabond.com and asd@isdavid.com at https://app.example.com/verify-email?b=secret\ntrace: ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678901234567890"
+	got := safeSESDenial(raw)
+	for _, secret := range []string{"verify@", "asd@", "https://", "secret", "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678901234567890", "\n"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("unsafe log: %q", got)
+		}
+	}
+}
 
 type fakeStore struct {
 	t      Transaction
