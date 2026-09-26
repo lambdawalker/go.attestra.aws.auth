@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -109,6 +110,28 @@ func (e *OperationalError) Error() string { return e.Stage + ": " + e.Code }
 
 func (e *OperationalError) Unwrap() error { return e.Cause }
 
+var (
+	sesURL   = regexp.MustCompile(`(?i)https?://\S+`)
+	sesEmail = regexp.MustCompile(`(?i)[a-z0-9.!#$%&'*+/=?^_{}|~-]+@[a-z0-9.-]+\.[a-z]{2,}`)
+	sesProof = regexp.MustCompile(`[A-Za-z0-9_-]{32,}`)
+)
+
+func safeSESDenial(message string) string {
+	message = sesURL.ReplaceAllString(message, "[redacted-url]")
+	message = sesEmail.ReplaceAllString(message, "[redacted-email]")
+	message = sesProof.ReplaceAllString(message, "[redacted-value]")
+	message = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return ' '
+		}
+		return r
+	}, message)
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	return message
+}
+
 func operation(ctx context.Context, stage string, err error) *OperationalError {
 	code := "provider_error"
 	var apiErr smithy.APIError
@@ -130,6 +153,9 @@ func operation(ctx context.Context, stage string, err error) *OperationalError {
 	}
 	trace, _ := ctx.Value(traceKey{}).(string)
 	log.Printf("operation_failed trace_id=%s stage=%s provider_code=%s", trace, stage, code)
+	if stage == "ses_send" && apiErr != nil {
+		log.Printf("ses_send_denied trace_id=%s details=%q", trace, safeSESDenial(apiErr.ErrorMessage()))
+	}
 	return &OperationalError{Stage: stage, Code: code, Cause: err}
 }
 
