@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/url"
 	"strings"
-	"strings"
 	"testing"
 	"time"
 )
