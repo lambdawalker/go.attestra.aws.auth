@@ -5,7 +5,7 @@ from struct import unpack_from
 from zipfile import ZipFile
 
 
-for name in ("signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete"):
+for name in ("signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status"):
     archive = Path(__file__).resolve().parents[1] / "dist" / f"{name}.zip"
     with ZipFile(archive) as package:
         entries = package.infolist()

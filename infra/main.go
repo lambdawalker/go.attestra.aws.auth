@@ -41,11 +41,13 @@ func deploy(ctx *pulumi.Context) error {
 		}
 	}
 	challengeArchive, _ := filepath.Abs("../dist/challenge.zip")
+    authArchives:=map[string]string{}
+    for _, name:=range []string{"auth-email-start","auth-email-complete","auth-passkey-start","auth-passkey-complete","auth-refresh","auth-status"}{authArchives[name],_=filepath.Abs("../dist/"+name+".zip")}
 	archives := map[string]string{}
 	for _, name := range []string{"signup", "resend", "confirm", "passkeyoptions", "passkeycomplete"} {
 		archives[name], _ = filepath.Abs("../dist/" + name + ".zip")
 	}
-	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive} {
+	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive,authArchives["auth-email-start"],authArchives["auth-email-complete"],authArchives["auth-passkey-start"],authArchives["auth-passkey-complete"],authArchives["auth-refresh"],authArchives["auth-status"]} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("build Lambda archives with build.sh or build.ps1 first: %s: %w", path, err)
 		}
@@ -192,6 +194,14 @@ func deploy(ctx *pulumi.Context) error {
         integration,e:=apigatewayv2.NewIntegration(ctx,spec.name+"-integration",&apigatewayv2.IntegrationArgs{ApiId:httpAPI.ID(),IntegrationType:pulumi.String("AWS_PROXY"),IntegrationUri:fn.InvokeArn,PayloadFormatVersion:pulumi.String("2.0")}); if e!=nil{return e}
         _,e=apigatewayv2.NewRoute(ctx,spec.name+"-route",&apigatewayv2.RouteArgs{ApiId:httpAPI.ID(),RouteKey:pulumi.String("POST /"+spec.path),Target:pulumi.Sprintf("integrations/%s",integration.ID())}); if e!=nil{return e}
         _,e=lambda.NewPermission(ctx,"allow-"+spec.name,&lambda.PermissionArgs{Action:pulumi.String("lambda:InvokeFunction"),Function:fn.Name,Principal:pulumi.String("apigateway.amazonaws.com"),SourceArn:pulumi.Sprintf("%s/*/POST/%s",httpAPI.ExecutionArn,spec.path)}); if e!=nil{return e}
+    }
+    for _, spec:=range []struct{name,path string}{{"auth-email-start","email/start"},{"auth-email-complete","email/complete"},{"auth-passkey-start","passkey/start"},{"auth-passkey-complete","passkey/complete"},{"auth-refresh","refresh"},{"auth-status","status"}}{
+        role,e:=iam.NewRole(ctx,spec.name+"-role",&iam.RoleArgs{AssumeRolePolicy:trust});if e!=nil{return e}
+        _,e=iam.NewRolePolicyAttachment(ctx,spec.name+"-logs",&iam.RolePolicyAttachmentArgs{Role:role.Name,PolicyArn:pulumi.String("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")});if e!=nil{return e}
+        fn,e:=lambda.NewFunction(ctx,spec.name,&lambda.FunctionArgs{Runtime:pulumi.String("provided.al2023"),Handler:pulumi.String("bootstrap"),Architectures:pulumi.StringArray{pulumi.String("arm64")},Role:role.Arn,Code:pulumi.NewFileArchive(authArchives[spec.name]),Timeout:pulumi.Int(20),Environment:&lambda.FunctionEnvironmentArgs{Variables:pulumi.StringMap{"CLIENT_ID":client.ID(),"AUTH_ROUTE":pulumi.String(spec.path)}}});if e!=nil{return e}
+        integration,e:=apigatewayv2.NewIntegration(ctx,spec.name+"-integration",&apigatewayv2.IntegrationArgs{ApiId:httpAPI.ID(),IntegrationType:pulumi.String("AWS_PROXY"),IntegrationUri:fn.InvokeArn,PayloadFormatVersion:pulumi.String("2.0")});if e!=nil{return e}
+        _,e=apigatewayv2.NewRoute(ctx,spec.name+"-route",&apigatewayv2.RouteArgs{ApiId:httpAPI.ID(),RouteKey:pulumi.String("POST /auth/"+spec.path),Target:pulumi.Sprintf("integrations/%s",integration.ID())});if e!=nil{return e}
+        _,e=lambda.NewPermission(ctx,"allow-"+spec.name,&lambda.PermissionArgs{Action:pulumi.String("lambda:InvokeFunction"),Function:fn.Name,Principal:pulumi.String("apigateway.amazonaws.com"),SourceArn:pulumi.Sprintf("%s/*/POST/auth/%s",httpAPI.ExecutionArn,spec.path)});if e!=nil{return e}
     }
 	_, err = apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
 	if err != nil {
