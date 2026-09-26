@@ -7,3 +7,10 @@ for name in signup resend confirm challenge passkeyoptions passkeycomplete; do
   rm -f "dist/$name.zip"
   (cd "dist/$name" && zip -q -X "../$name.zip" bootstrap)
 done
+for name in auth-email-start auth-email-complete auth-passkey-start auth-passkey-complete auth-refresh auth-status; do
+  mkdir -p "dist/$name"
+  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -tags lambda.norpc -o "dist/$name/bootstrap" ./cmd/signin
+  chmod 755 "dist/$name/bootstrap"
+  rm -f "dist/$name.zip"
+  (cd "dist/$name" && zip -q -X "../$name.zip" bootstrap)
+done

@@ -5,7 +5,7 @@ $previousGOARCH = $env:GOARCH
 $previousCGO = $env:CGO_ENABLED
 Push-Location $PSScriptRoot
 try {
-    New-Item -ItemType Directory -Path 'dist/signup', 'dist/resend', 'dist/confirm', 'dist/challenge', 'dist/passkeyoptions', 'dist/passkeycomplete' -Force | Out-Null
+    New-Item -ItemType Directory -Path 'dist/signup', 'dist/resend', 'dist/confirm', 'dist/challenge', 'dist/passkeyoptions', 'dist/passkeycomplete', 'dist/auth-email-start', 'dist/auth-email-complete', 'dist/auth-passkey-start', 'dist/auth-passkey-complete', 'dist/auth-refresh', 'dist/auth-status' -Force | Out-Null
 
     # Build the packaging tool for the host before cross-compiling the Lambdas.
     $zipTool = Join-Path $PSScriptRoot 'dist/build-lambda-zip.exe'
@@ -19,6 +19,15 @@ try {
         $binary = "dist/$name/bootstrap"
         $archive = "dist/$name.zip"
         & go build -trimpath -tags lambda.norpc -o $binary "./cmd/$name"
+        if ($LASTEXITCODE -ne 0) { throw "Could not build the $name Lambda." }
+        Remove-Item $archive -ErrorAction SilentlyContinue
+        & $zipTool -o $archive $binary
+        if ($LASTEXITCODE -ne 0) { throw "Could not package the $name Lambda." }
+    }
+    foreach ($name in @('auth-email-start', 'auth-email-complete', 'auth-passkey-start', 'auth-passkey-complete', 'auth-refresh', 'auth-status')) {
+        $binary = "dist/$name/bootstrap"
+        $archive = "dist/$name.zip"
+        & go build -trimpath -tags lambda.norpc -o $binary "./cmd/signin"
         if ($LASTEXITCODE -ne 0) { throw "Could not build the $name Lambda." }
         Remove-Item $archive -ErrorAction SilentlyContinue
         & $zipTool -o $archive $binary
