@@ -181,6 +181,8 @@ SES can evaluate `ses:SendEmail` against a verified recipient identity as well a
 
 ### Diagnosing email delivery
 
+For the current confirmation/session investigation, rebuild the Lambda archives from the repository root (`./build.ps1` on Windows or `./build.sh` elsewhere), then run `pulumi up` in `infra`. In CloudWatch, inspect both the `email-confirm` and `cognito-grant-challenge` Lambda log groups. The temporary `confirm_*`, `cognito_session_*`, and `challenge_*` events show whether the proof was claimed, Cognito created a user, the grant challenge ran, and tokens were issued. Match the Android `AttestraEmailApi` `trace_id` with the `email-confirm` endpoint log. Test with a **fresh signup and link**, because an already confirmed proof is one-use. These temporary logs include test email addresses, identifiers, and raw provider errors; remove them after diagnosing the failure.
+
 All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
 
 PowerShell checks in [`debug/`](debug) query the deployed SES account and identities without changing AWS resources:
