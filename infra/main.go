@@ -42,10 +42,10 @@ func deploy(ctx *pulumi.Context) error {
 	}
 	challengeArchive, _ := filepath.Abs("../dist/challenge.zip")
 	archives := map[string]string{}
-	for _, name := range []string{"signup", "resend", "confirm"} {
+	for _, name := range []string{"signup", "resend", "confirm", "passkeyoptions", "passkeycomplete"} {
 		archives[name], _ = filepath.Abs("../dist/" + name + ".zip")
 	}
-	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], challengeArchive} {
+	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("build Lambda archives with build.sh or build.ps1 first: %s: %w", path, err)
 		}
@@ -118,10 +118,11 @@ func deploy(ctx *pulumi.Context) error {
 		UserPoolTier: pulumi.String("ESSENTIALS"), UsernameAttributes: pulumi.StringArray{pulumi.String("email")}, AutoVerifiedAttributes: pulumi.StringArray{pulumi.String("email")}, MfaConfiguration: pulumi.String("OFF"),
 		// Cognito requires PASSWORD in this policy even when users are created
 		// without passwords. EMAIL_OTP permits passwordless account recovery.
-		SignInPolicy:          &cognito.UserPoolSignInPolicyArgs{AllowedFirstAuthFactors: pulumi.StringArray{pulumi.String("PASSWORD"), pulumi.String("EMAIL_OTP")}},
+		SignInPolicy:          &cognito.UserPoolSignInPolicyArgs{AllowedFirstAuthFactors: pulumi.StringArray{pulumi.String("PASSWORD"), pulumi.String("EMAIL_OTP"), pulumi.String("WEB_AUTHN")}},
 		AdminCreateUserConfig: &cognito.UserPoolAdminCreateUserConfigArgs{AllowAdminCreateUserOnly: pulumi.Bool(true)},
 		EmailConfiguration:    &cognito.UserPoolEmailConfigurationArgs{EmailSendingAccount: pulumi.String("DEVELOPER"), SourceArn: sender.Arn, FromEmailAddress: pulumi.String(senderAddress)},
 		LambdaConfig:          &cognito.UserPoolLambdaConfigArgs{DefineAuthChallenge: trigger.Arn, CreateAuthChallenge: trigger.Arn, VerifyAuthChallengeResponse: trigger.Arn},
+        WebAuthnConfiguration: &cognito.UserPoolWebAuthnConfigurationArgs{RelyingPartyId:pulumi.String(strings.TrimPrefix(origin,"https://")), UserVerification:pulumi.String("required")},
 
 		// Disable self-service password resets; accounts are created without
 		// passwords and the app uses email OTP to recover sign-in.
@@ -164,7 +165,7 @@ func deploy(ctx *pulumi.Context) error {
 		}
 		functions[name] = fn
 	}
-	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type")}, MaxAge: pulumi.Int(300)}})
+	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type"),pulumi.String("authorization")}, MaxAge: pulumi.Int(300)}})
 	if err != nil {
 		return err
 	}
@@ -182,6 +183,16 @@ func deploy(ctx *pulumi.Context) error {
 			return err
 		}
 	}
+    // Registration is authorized by Cognito with the caller's access token, not IAM.
+    // Keep each endpoint in a separate Lambda, as with email verification.
+    for _, spec := range []struct{name,path string}{{"passkeyoptions","passkeys/options"},{"passkeycomplete","passkeys/complete"}} {
+        role, e := iam.NewRole(ctx, spec.name+"-role", &iam.RoleArgs{AssumeRolePolicy:trust}); if e!=nil{return e}
+        _, e=iam.NewRolePolicyAttachment(ctx,spec.name+"-logs",&iam.RolePolicyAttachmentArgs{Role:role.Name,PolicyArn:pulumi.String("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")}); if e!=nil{return e}
+        fn,e:=lambda.NewFunction(ctx,spec.name,&lambda.FunctionArgs{Runtime:pulumi.String("provided.al2023"),Handler:pulumi.String("bootstrap"),Architectures:pulumi.StringArray{pulumi.String("arm64")},Role:role.Arn,Code:pulumi.NewFileArchive(archives[spec.name]),Timeout:pulumi.Int(20)}); if e!=nil{return e}
+        integration,e:=apigatewayv2.NewIntegration(ctx,spec.name+"-integration",&apigatewayv2.IntegrationArgs{ApiId:httpAPI.ID(),IntegrationType:pulumi.String("AWS_PROXY"),IntegrationUri:fn.InvokeArn,PayloadFormatVersion:pulumi.String("2.0")}); if e!=nil{return e}
+        _,e=apigatewayv2.NewRoute(ctx,spec.name+"-route",&apigatewayv2.RouteArgs{ApiId:httpAPI.ID(),RouteKey:pulumi.String("POST /"+spec.path),Target:pulumi.Sprintf("integrations/%s",integration.ID())}); if e!=nil{return e}
+        _,e=lambda.NewPermission(ctx,"allow-"+spec.name,&lambda.PermissionArgs{Action:pulumi.String("lambda:InvokeFunction"),Function:fn.Name,Principal:pulumi.String("apigateway.amazonaws.com"),SourceArn:pulumi.Sprintf("%s/*/POST/%s",httpAPI.ExecutionArn,spec.path)}); if e!=nil{return e}
+    }
 	_, err = apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
 	if err != nil {
 		return err
