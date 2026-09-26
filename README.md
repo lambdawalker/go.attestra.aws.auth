@@ -213,3 +213,11 @@ The state store is a single DynamoDB table with `id` as its key, conditional wri
 ## Checks and rollout
 
 Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `infra`. The included GitHub Actions workflow performs those checks plus ARM64 Lambda builds. Before production, test both proof paths, concurrent confirmation, SES delivery, Cognito custom auth, a failed session exchange, account enumeration timing, hourly bucket boundaries, and resend races against a deployed nonproduction stack. This repository is not deployed by CI.
+
+### Passkey registration
+
+After email confirmation issues an access token, the Android app calls `POST /passkeys/options` with `Authorization: Bearer <access_token>`. The response is `{"creation_options": {...}}`. Android Credential Manager creates the credential, then the app sends `POST /passkeys/complete` with the same bearer token and `{"credential": <registration response object>}`. Only `{"registered": true}` confirms completion. A `401 sign_in_required` means the user must obtain a new signed-in session; a `400 invalid_credential` allows a fresh attempt. Cognito stores and verifies the credential. These Lambdas do not log access tokens, challenges, or credentials.
+
+The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `build.ps1` (Windows) or `./build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey sign-in itself is a later feature; email sign-in remains the recovery path.
+
+For Android, the HTTPS host must serve `/.well-known/assetlinks.json` with `delegate_permission/common.get_login_creds` for the exact application ID and signing fingerprint. Verify the installed build's association with that host before testing Credential Manager on Android 9 or later. The registration endpoints use the same `apiUrl` output as email verification.
