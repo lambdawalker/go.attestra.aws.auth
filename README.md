@@ -1,5 +1,7 @@
 # Attestra AWS authentication
 
+The [Attestra design index](https://github.com/lambdawalker/design.attestra/blob/main/README.md) owns the cross-platform onboarding journey, [email confirmation architecture](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/email-confirmation/architecture.md), and [AWS integration model](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/email-confirmation/aws.md). This repository owns the executable backend protocol, deployment steps, SES/DNS configuration, and delivery diagnostics below. Android build and client configuration are documented in [android.attestra.auth](https://github.com/lambdawalker/android.attestra.auth).
+
 The first implemented subfeature is [email confirmation](https://github.com/lambdawalker/design.attestra/tree/main/auth/onboarding/email-confirmation). This repository contains separate Go Lambdas for signup, resend, and confirm, a one-use Cognito custom-challenge trigger, a DynamoDB proof store, SES delivery, and a Pulumi Go stack. It does not contain passkey registration or ID capture yet.
 
 ## Protocol
@@ -156,6 +158,8 @@ New SES accounts start in a **regional sandbox**. In the sandbox, SES can send o
 
 `POST /signup` deliberately returns the same `202` for eligible, already registered, and rate-limited addresses; it does **not** prove that SES accepted or delivered an email. The current service also suppresses SES send errors to avoid account enumeration. If a verified test recipient receives nothing, check CloudWatch for the signup Lambda and inspect sandbox status, eligibility and sending diagnostics without logging addresses, links, codes, or proof values. See [AWS SES production access](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html) for the current regional requirements.
 
+**IAM gotcha:** SES can evaluate `ses:SendEmail` permission against the recipient identity as well as the sender identity. Restricting the Lambda policy Resource to only `identity/info.attestrabond.com` caused `AccessDeniedException` on `identity/isdavid.com`, even though the sender was verified. The signup and resend roles permit `identity/*` only within the current AWS account and region, and constrain `ses:FromAddress` to the configured `senderAddress`. The confirm role cannot send email. If IAM allows sending but the account remains in the sandbox, the recipient still must be verified separately. See [delivery diagnostics](#diagnosing-email-delivery) for commands and log codes.
+
 References: [SES domain identities and DKIM](https://docs.aws.amazon.com/ses/latest/dg/creating-identities.html), [Cloudflare DNS record creation](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/), and [SES custom MAIL FROM](https://docs.aws.amazon.com/ses/latest/dg/mail-from.html).
 
 ### Configure the Android API URL
@@ -188,7 +192,7 @@ PowerShell checks in [`debug/`](debug) query the deployed SES account and identi
 ```powershell
 ./debug/check-ses-account.ps1
 ./debug/check-ses-identity.ps1
-./debug/check-ses-identity.ps1 -Identity isdavid.com
+./debug/check-ses-identity.ps1 -Identity example-recipient.com
 ```
 
 Both scripts default to profile `attestra` and region `us-east-2`; override with `-Profile` and `-Region`. The account check reports whether sending is enabled and whether production access is enabled. The identity check reports verification and DKIM status for the sender domain by default; in the SES sandbox, run it for the recipient domain too (or pass a verified recipient email address). A verified sender does not make unverified recipients eligible in the sandbox. These checks require AWS CLI v2 and credentials authorized to read SES state.
