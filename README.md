@@ -181,7 +181,17 @@ SES can evaluate `ses:SendEmail` against a verified recipient identity as well a
 
 ### Diagnosing email delivery
 
-All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). For a rejected SES send, `ses_send_denied` includes the SES explanation with email addresses, URLs, and long proof-like strings redacted. Review logs only in a restricted account, and never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
+All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
+
+PowerShell checks in [`debug/`](debug) query the deployed SES account and identities without changing AWS resources:
+
+```powershell
+./debug/check-ses-account.ps1
+./debug/check-ses-identity.ps1
+./debug/check-ses-identity.ps1 -Identity isdavid.com
+```
+
+Both scripts default to profile `attestra` and region `us-east-2`; override with `-Profile` and `-Region`. The account check reports whether sending is enabled and whether production access is enabled. The identity check reports verification and DKIM status for the sender domain by default; in the SES sandbox, run it for the recipient domain too (or pass a verified recipient email address). A verified sender does not make unverified recipients eligible in the sandbox. These checks require AWS CLI v2 and credentials authorized to read SES state.
 
 To expose dependency failures in a **restricted development stack**, build from the repository root, then configure `diagnosticMode` and redeploy from `infra`:
 
