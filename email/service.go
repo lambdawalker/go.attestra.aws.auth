@@ -130,6 +130,7 @@ func operation(ctx context.Context, stage string, err error) *OperationalError {
 	}
 	trace, _ := ctx.Value(traceKey{}).(string)
 	log.Printf("operation_failed trace_id=%s stage=%s provider_code=%s", trace, stage, code)
+	log.Printf("operation_error trace_id=%s stage=%s err=%v", trace, stage, err)
 	return &OperationalError{Stage: stage, Code: code, Cause: err}
 }
 
@@ -367,6 +368,7 @@ func (s *Service) Resend(ctx context.Context, id, source string) error {
 }
 
 func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error) {
+	event(ctx, fmt.Sprintf("confirm_started request_id=%s proof=%s", in.RequestID, map[bool]string{true: "A+B", false: "B+C"}[in.TokenA != ""]))
 	if !validToken(in.RequestID) || !validToken(in.TokenB) || (in.TokenA == "") == (in.TokenC == "") {
 		return Session{}, ErrInvalid
 	}
@@ -377,7 +379,9 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		}
 		return Session{}, operation(ctx, "confirm_load_proof", err)
 	}
+	event(ctx, fmt.Sprintf("confirm_loaded request_id=%s state=%s generation=%d attempts=%d", in.RequestID, t.State, t.Generation, t.Attempts))
 	if t.State == Confirmed {
+		event(ctx, fmt.Sprintf("confirm_replayed request_id=%s", in.RequestID))
 		return Session{}, ErrUsed
 	}
 	if t.State == Confirming && s.now().Unix()-t.ClaimedAt >= 60 && t.Expires > s.now().Unix() && same(t.BHash, hash(in.TokenB)) {
@@ -393,6 +397,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 			return Session{}, ErrConflict
 		}
 		if !eligible {
+			event(ctx, fmt.Sprintf("confirm_interrupted_account_exists request_id=%s", in.RequestID))
 			return Session{}, ErrSignInRequired
 		}
 		retry := t
@@ -454,6 +459,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		operation(ctx, "confirm_claim_proof", err)
 		return Session{}, ErrConflict
 	}
+	event(ctx, fmt.Sprintf("confirm_claimed request_id=%s", in.RequestID))
 	sub, err := s.Identity.Confirm(ctx, t.Email)
 	if err != nil {
 		failure := operation(ctx, "cognito_create_user", err)
@@ -475,6 +481,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		}
 		return Session{}, ErrSignInRequired
 	}
+	event(ctx, fmt.Sprintf("confirm_user_created request_id=%s sub=%s", in.RequestID, sub))
 	done := claim
 	done.State = Confirmed
 	done.Subject = sub
@@ -489,6 +496,7 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		}
 		return Session{}, ErrSignInRequired
 	}
+	event(ctx, fmt.Sprintf("confirm_marked_confirmed request_id=%s", in.RequestID))
 	session, err := s.Identity.Session(ctx, t.Email)
 	if err != nil {
 		failure := operation(ctx, "cognito_session", err)
@@ -497,6 +505,6 @@ func (s *Service) Confirm(ctx context.Context, in ConfirmInput) (Session, error)
 		}
 		return Session{}, ErrSignInRequired
 	}
-	event(ctx, "confirm_session_issued")
+	event(ctx, fmt.Sprintf("confirm_session_issued request_id=%s access=%t id=%t refresh=%t", in.RequestID, session.AccessToken != "", session.IDToken != "", session.RefreshToken != ""))
 	return session, nil
 }
