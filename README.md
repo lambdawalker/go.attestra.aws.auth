@@ -1,13 +1,14 @@
 # Attestra AWS authentication
 
-The first implemented subfeature is [email confirmation](https://github.com/lambdawalker/design.attestra/tree/main/auth/onboarding/email-confirmation). This repository contains separate Go Lambdas for signup, resend, and confirm, a one-use Cognito custom-challenge trigger, a DynamoDB proof store, SES delivery, and a Pulumi Go stack. It does not contain passkey registration or ID capture yet.
+This repository implements Attestra authentication with Go Lambda handlers and a Pulumi Go stack: email confirmation, passkey registration, email/passkey sign-in, refresh, and authenticated passkey status. ID capture is not implemented.
+
+## Documentation ownership
+
+[design.attestra](https://github.com/lambdawalker/design.attestra) owns [system architecture](https://github.com/lambdawalker/design.attestra/blob/main/architecture.md), [email proof rules](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/architecture.md), [passkey design](https://github.com/lambdawalker/design.attestra/tree/main/auth/onboarding/passkey-creation), and [login/session flows](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/resume.md). This repository owns source layout, exact HTTP serialization, build/deployment, AWS configuration, troubleshooting, and backend limitations. Follow the [shared ownership policy](https://github.com/lambdawalker/design.attestra/blob/main/DOCUMENTATION.md) when editing documentation; link to system decisions instead of copying them.
 
 ## Protocol
 
-1. The client generates 32 random bytes A, stores them with the pending signup, and sends `base64url(SHA256(A))` as `code_challenge` with `code_challenge_method: "S256"` to `POST /signup`. The API responds `202 {"request_id":"..."}` for new and existing addresses alike. For an eligible new address it emails an HTTPS link with B and a separately printed six-digit C.
-2. The website/app handles `GET https://<appOrigin>/verify-email?request_id=...&b=...`. Loading that route must not call confirmation until the client is ready. With matching local A, it automatically submits A+B. Without A, it shows an empty C field and waits for the user's Verify action before submitting B+C. The website/app provides the actual screens; this backend never handles that GET route.
-3. `POST /confirm` atomically claims the pending transaction, creates a passwordless, email-verified Cognito user, then uses a short-lived single-use grant and Cognito CUSTOM_AUTH to issue tokens to this response only. If token issuance fails after confirmation, the response is `409 confirmed_sign_in_required` and the user signs in with Cognito email OTP. An interrupted claim can be retried after 60 seconds only if no Cognito user exists yet. It never returns tokens from a previously confirmed transaction.
-4. `POST /resend` rotates B and C while preserving the A challenge. It can also replace a failed proof if Cognito did not create the account. Old links fail. The transaction holds at most five incorrect manual attempts per generation, ten per account per UTC hour, three resends, and a 60-second resend delay. DynamoDB TTL is cleanup; requests check expiry explicitly.
+The [canonical proof design](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/architecture.md) defines A, B, C and the security model. The table below documents this implementation’s HTTP interface.
 
 | Method | Route | JSON body | Result |
 | --- | --- | --- | --- |
@@ -15,11 +16,11 @@ The first implemented subfeature is [email confirmation](https://github.com/lamb
 | POST | `/resend` | `{"request_id":"..."}` | Generic `202 {"status":"accepted"}`. |
 | POST | `/confirm` | `{"request_id":"...","token_b":"...","token_a":"<A>"}` **or** `{"request_id":"...","token_b":"...","token_c":"012345"}` | Cognito token set on success; `422 incorrect_code` with attempts remaining, `429 attempt_limit`, `410 link_unusable`, `409 confirmed_sign_in_required` or `confirmation_in_progress`. |
 
-B alone never confirms. A+C together are rejected. An incorrect A or B does not spend a manual-code attempt. The SES message contains B in the link and C in the text; an email processor with access to *both* can still perform manual confirmation. This is email verification, not a second factor. Protect the browser route with HTTPS, a strict referrer policy and no third-party scripts, remove B from the URL after parsing, and store A so a new tab on the same origin can find it. No access token, A, or C belongs in a URL.
+Implementation limits in `email/service.go`: 32-byte client/link proofs, five incorrect manual attempts per generation, ten per account per UTC hour, three resends, a 60-second resend delay, and a ten-minute proof lifetime. An interrupted confirmation claim can be retried after 60 seconds only if no Cognito account exists. The [design](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/architecture.md#security-and-integration-requirements) owns the corresponding security requirements and client responsibilities.
 
 ## Deployment
 
-Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack only provisions the API. Build the four `provided.al2023` ARM64 Lambdas **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads the local `dist/signup.zip`, `dist/resend.zip`, `dist/confirm.zip`, and `dist/challenge.zip` archives; it does not run the build.
+Requires Go 1.26.6+, Pulumi, AWS credentials with creation rights, an HTTPS app origin, and an SES sender domain. The app origin hosts the client verification route; the Pulumi stack provisions the backend infrastructure, not that client route. Build all twelve `provided.al2023` ARM64 Lambda archives **from the repository root before each `pulumi preview` or `pulumi up`**. Pulumi reads local `dist/*.zip` archives generated by the build scripts; it does not run the build. The scripts build signup, resend, confirm, challenge, two passkey registration handlers, and six sign-in/session handlers.
 
 ### Authenticate to AWS on Windows
 
@@ -169,11 +170,11 @@ pulumi stack output apiUrl
 pulumi config get appOrigin
 ```
 
-Set Android's Gradle property `attestraApiBaseUrl` to the **exact HTTPS origin** returned by `apiUrl`, such as `https://kop22wur83.execute-api.us-east-2.amazonaws.com`. Do not append `/signup`, `/confirm`, `/verify-email`, or a trailing slash: the Android `:auth` module adds API routes itself. Set `attestraLinkHost` to the **hostname** of `appOrigin` (for example, `attestrabond.com` from `https://attestrabond.com`); this is the email verification link host, not the API Gateway host. See the [Android deployment instructions](https://github.com/lambdawalker/android.attestra.auth#configure-the-deployment) for Gradle commands and a local property example. If `pulumi stack output apiUrl` is missing, select the correct stack and finish `pulumi up`; a previewed URL is not a deployed stack output.
+`apiUrl` is the deployed API base URL; `appOrigin` identifies the website/link origin. These are separate service boundaries. See the [Android configuration guide](https://github.com/lambdawalker/android.attestra.auth/blob/main/README.md#configure-the-deployment) for their Gradle mapping, App Links, and build commands. This backend does not deploy the client verification page or app association files.
 
-Configure the app's Android/iOS HTTPS associations and web route separately. Use the outputs `apiUrl`, `userPoolId`, and `clientId` to configure clients; the custom authentication flow is internal to the Lambda and must never receive client-supplied grants. The Pulumi secret is delivered to the three API Lambda environments; restrict access to Lambda configuration and Pulumi state. IAM roles have scoped DynamoDB, Cognito and SES actions per route.
+The Pulumi secret is delivered to the API Lambda environments that consume it; restrict access to Lambda configuration and Pulumi state. Consult `infra/main.go` for the exact resource and environment wiring. Client association setup belongs in each client repository.
 
-The Cognito pool permits `EMAIL_OTP` and `PASSWORD` as first factors. Cognito rejects this pool's creation when `PASSWORD` is absent; AWS's CDK also requires it in its allowed-first-factors configuration. This app still creates users **without passwords** (`AdminCreateUser` omits `TemporaryPassword`), and `admin_only` disables self-service password resets. Account recovery in this app means a fresh email OTP sign-in, not Cognito's `ForgotPassword` operation. Do not add password sign-in to the app UI or create passwords for these users. **Security limitation:** Cognito's `ALLOW_USER_AUTH` client also permits password sign-in if a user ever acquires a password, and a signed-in passwordless user can call `ChangePassword` without a previous password. If the product requires password authentication to be impossible at the identity-provider level, this Cognito configuration does not provide that guarantee; choose a different session-issuance architecture before production.
+**Cognito configuration gotcha:** `infra/main.go` configures `PASSWORD`, `EMAIL_OTP`, and `WEB_AUTHN`. Removing `PASSWORD` previously caused pool creation to fail. User creation omits `TemporaryPassword`, and `admin_only` disables self-service password resets. `ALLOW_USER_AUTH` can still permit password authentication if a user acquires one; a signed-in passwordless user may set one through `ChangePassword`. The resulting system limitation and decision boundary are recorded in [the architecture](https://github.com/lambdawalker/design.attestra/blob/main/architecture.md#identity-provider-limitation).
 
 API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-signup`, `email-resend`, and `email-confirm` Lambdas. They share the same Go service and DynamoDB table, but have separate CloudWatch log groups and IAM roles. A fourth Lambda, `cognito-grant-challenge`, handles Cognito's custom challenge. `pulumi up` replaces the old shared `email-api` Lambda with these three route-specific functions; the `apiUrl` output remains the client-facing base URL.
 
@@ -183,7 +184,7 @@ SES can evaluate `ses:SendEmail` against a verified recipient identity as well a
 
 For the current confirmation/session investigation, rebuild the Lambda archives from the repository root (`./build.ps1` on Windows or `./build.sh` elsewhere), then run `pulumi up` in `infra`. In CloudWatch, inspect both the `email-confirm` and `cognito-grant-challenge` Lambda log groups. The temporary `confirm_*`, `cognito_session_*`, and `challenge_*` events show whether the proof was claimed, Cognito created a user, the grant challenge ran, and tokens were issued. Match the Android `EmailDebugX` `trace_id` with the `email-confirm` endpoint log. Test with a **fresh signup and link**, because an already confirmed proof is one-use. These temporary logs include test email addresses, identifiers, and raw provider errors; remove them after diagnosing the failure.
 
-**Custom challenge response gotcha:** Cognito expects its complete trigger event returned with the `response` section updated. Dropping common fields such as `version`, `region`, `userPoolId`, `userName`, or `callerContext` can make `AdminInitiateAuth` fail with `InvalidLambdaResponseException: Unrecognizable lambda output`. The challenge handler preserves the original event, including fields added by Cognito in the future, while changing only its response. A confirmation that already created its Cognito user cannot be replayed for tokens; after deploying this fix, test with a new email signup or use the planned email OTP recovery.
+**Custom challenge response gotcha:** Cognito expects its complete trigger event returned with the `response` section updated. Dropping common fields such as `version`, `region`, `userPoolId`, `userName`, or `callerContext` can make `AdminInitiateAuth` fail with `InvalidLambdaResponseException: Unrecognizable lambda output`. The challenge handler preserves the original event, including fields added by Cognito in the future, while changing only its response. A confirmation that already created its Cognito user cannot be replayed for tokens; after deploying this fix, test with a new email signup or use email OTP recovery.
 
 All three endpoints log their route and HTTP status in CloudWatch. Backend failures log a short stage and AWS provider error code; signup and resend also log when work was skipped (for example, a rate limit, existing account, or resend cooldown). Never add raw email addresses, links, one-time codes, or proof tokens to log statements. A successful `signup_send_accepted` or `resend_send_accepted` means SES accepted the API request; it does not prove inbox delivery.
 
@@ -208,7 +209,7 @@ pulumi up
 
 With this option, SES send failures and hidden Cognito lookup failures return HTTP 503 with `{"error":"dependency_failure","stage":"ses_send","provider_code":"SESIdentityNotVerified","trace_id":"..."}` (the code varies by failure). Every API response carries the API Gateway request ID in the `x-request-id` header, which you can match with `trace_id` in CloudWatch. Provider messages are never sent to the client. If the log says `signup_skipped reason=account_exists` or `signup_skipped reason=email_rate_limit`, signup intentionally did not send mail. Resend also observes a 60-second cooldown. When finished debugging, run `pulumi config set diagnosticMode false` and `pulumi up`; diagnostic mode reveals whether an address is eligible and must not remain enabled on a public production stack.
 
-The state store is a single DynamoDB table with `id` as its key, conditional writes for transaction claims and failed-attempt counts, budget items keyed by HMAC of email/source, and one-use custom-auth grants. A confirmed or failed transaction expires via TTL. Account creation happens **only after** a proof is accepted, avoiding a public Cognito signup confirmation shortcut. If Cognito account creation succeeds but grant exchange fails, email OTP sign-in is the recovery path. API requests are bounded to 4096 bytes; proofs and token sets must not be logged by clients or infrastructure.
+The `awsstore` implementation uses a DynamoDB table keyed by `id`, conditional writes, HMAC-derived budget keys, and grant records. Email API bodies are limited to 4096 bytes; passkey and sign-in handlers have separate bounds. The [email AWS design](https://github.com/lambdawalker/design.attestra/blob/main/auth/onboarding/email-confirmation/aws.md) owns transaction and trust-boundary rationale.
 
 ## Checks and rollout
 
@@ -218,9 +219,9 @@ Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `in
 
 After email confirmation issues an access token, the Android app calls `POST /passkeys/options` with `Authorization: Bearer <access_token>`. The response is `{"creation_options": {...}}`. Android Credential Manager creates the credential, then the app sends `POST /passkeys/complete` with the same bearer token and `{"credential": <registration response object>}`. Only `{"registered": true}` confirms completion. A `401 sign_in_required` means the user must obtain a new signed-in session; a `400 invalid_credential` allows a fresh attempt. Cognito stores and verifies the credential. These Lambdas do not log access tokens, challenges, or credentials.
 
-The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `build.ps1` (Windows) or `./build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey sign-in itself is a later feature; email sign-in remains the recovery path.
+The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `build.ps1` (Windows) or `./build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey and email sign-in endpoints are documented under [Return to onboarding and sign in](#return-to-onboarding-and-sign-in).
 
-For Android, the HTTPS host must serve `/.well-known/assetlinks.json` with `delegate_permission/common.get_login_creds` for the exact application ID and signing fingerprint. Verify the installed build's association with that host before testing Credential Manager on Android 9 or later. The registration endpoints use the same `apiUrl` output as email verification.
+For Android setup and device validation, follow the [Credential Manager and association guide](https://github.com/lambdawalker/android.attestra.auth/blob/main/README.md#passkey-registration-in-the-live-onboarding-flow). Registration endpoints use the same `apiUrl` output as email confirmation.
 
 ### One-command Windows deployment
 
@@ -238,3 +239,20 @@ The script requires a clean Git working tree and `git`, `go`, and `pulumi` on `P
 A stored access token can be refreshed through `POST /auth/refresh` with `{"refresh_token":"..."}`. The response uses the existing `AuthSession` fields; Cognito may omit a new refresh token, so clients must retain the old one. `POST /auth/status` requires `Authorization: Bearer <access_token>` and returns `{"passkey_registered":true|false}` from Cognito `ListWebAuthnCredentials`.
 
 For an expired or missing session, `POST /auth/email/start` and `POST /auth/passkey/start` accept `{"email":"..."}`. They return a Cognito challenge `session` and passkey `options` where applicable. Finish with `POST /auth/email/complete` (`email`, `session`, six-digit `code`) or `POST /auth/passkey/complete` (`email`, `session`, WebAuthn `credential` object). Both return a Cognito token set in the same shape as `/confirm`. These are distinct from the one-time signup proof. Deploy after building the six additional Lambda archives. API logs retain request IDs and coarse status, without OTPs, credentials, or tokens.
+
+
+The sign-in handler returns `401 sign_in_required`, `400 authentication_failed`, or `503 temporarily_unavailable`; provider exceptions are not the public error contract. Passkey challenge `options` is a JSON-encoded string in the start response, while registration `creation_options` is a JSON object. Keep these adapters distinct.
+
+## Implementation map
+
+| Module | Responsibility |
+| --- | --- |
+| `api`, `email`, `awsstore`, `awsemail`, `awsidentity` | Email HTTP handlers, proof service, persistence, delivery, and identity-provider adapter |
+| `challenge` | Cognito trigger and one-use grant validation |
+| `passkey` | Registration handlers and Cognito adapter |
+| `signin` | Email/passkey authentication, refresh, and credential-status handlers |
+| `cmd` | Lambda entry points; six sign-in archives share `cmd/signin` and select their route through configuration |
+| `infra` | Pulumi resources, roles, route wiring, and configuration |
+| `debug`, `scripts` | Read-only SES diagnostics and deployment archive validation |
+
+Historical implementation decisions are preserved in the [archived original plan](docs/history/2026-09-24-aws-onboarding.md); its unchecked tasks are not current instructions.
