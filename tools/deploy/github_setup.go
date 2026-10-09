@@ -40,7 +40,7 @@ func runGitHubSetup() error {
 		return errors.New("run GitHub setup in an interactive terminal")
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Attestra • GitHub environment setup"))
-	fmt.Println("Creates/configures dev. Existing protections are preserved. This does not create an AWS role or deploy infrastructure.")
+	fmt.Println("Creates/configures dev. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Does not deploy the application.")
 	fmt.Println("Token permissions: Administration write, Environments write, Actions read, and Metadata read for this repository.")
 	repo, token := "lambdawalker/go.attestra.aws.auth", ""
 	repoField := input("GitHub repository", &repo, false, true).Validate(func(v string) error {
@@ -57,7 +57,8 @@ func runGitHubSetup() error {
 	if _, err := client.request("GET", "/user", nil, &user); err != nil {
 		return err
 	}
-	found, err := client.request("GET", "/repos/"+repo, nil, nil)
+	var metadata repositoryMetadata
+	found, err := client.request("GET", "/repos/"+repo, nil, &metadata)
 	if err != nil {
 		return err
 	}
@@ -73,19 +74,18 @@ func runGitHubSetup() error {
 	if previous.Exists {
 		fmt.Println("Existing environment found. Press Enter to retain prefilled variable values.")
 	}
-	for _, name := range environmentVariables {
+	for _, name := range []string{"AWS_REGION", "PULUMI_BACKEND_URL", "PULUMI_STACK"} {
 		value := values[name]
-		if name == "AWS_ROLE_ARN" && value == "" && values["AWS_ACCOUNT_ID"] != "" {
-			value = "arn:aws:iam::" + values["AWS_ACCOUNT_ID"] + ":role/attestra-github-deploy"
-		}
-		title := name
-		if name == "AWS_ROLE_ARN" {
-			title += " (must be an existing OIDC deployment role)"
-		}
-		if err := input(title, &value, false, true).Run(); err != nil {
+		if err := input(name, &value, false, true).Run(); err != nil {
 			return err
 		}
 		values[name] = strings.TrimSpace(value)
+	}
+	if err := (options{Backend: values["PULUMI_BACKEND_URL"], Region: values["AWS_REGION"], Stack: values["PULUMI_STACK"]}).validate(); err != nil {
+		return err
+	}
+	if err := setupAWSRole(client, repo, metadata, values); err != nil {
+		return err
 	}
 	if err := validateSetupValues(values); err != nil {
 		return err
@@ -104,7 +104,7 @@ func runGitHubSetup() error {
 			return err
 		}
 		if repeat != passphrase {
-			return errors.New("passphrases do not match; nothing changed")
+			return errors.New("passphrases do not match; AWS setup changes were retained")
 		}
 	}
 	fmt.Printf("\nRepository: %s\nEnvironment: dev\n", repo)
@@ -133,6 +133,6 @@ func runGitHubSetup() error {
 	}
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓ Environment configured and verified."))
 	fmt.Printf("Review protections: https://github.com/%s/settings/environments\n", repo)
-	fmt.Println("The token was not saved. Verify AWS OIDC trust and finish S3 migration before running Deploy AWS (S3 state).")
+	fmt.Println("The token was not saved. AWS role configured. Finish S3 migration before running Deploy AWS (S3 state).")
 	return nil
 }
