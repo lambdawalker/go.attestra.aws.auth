@@ -167,7 +167,7 @@ func deploy(ctx *pulumi.Context) error {
 		}
 		functions[name] = fn
 	}
-	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type"),pulumi.String("authorization")}, MaxAge: pulumi.Int(300)}})
+	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST"),pulumi.String("GET")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type"),pulumi.String("authorization")}, MaxAge: pulumi.Int(300)}})
 	if err != nil {
 		return err
 	}
@@ -203,6 +203,7 @@ func deploy(ctx *pulumi.Context) error {
         _,e=apigatewayv2.NewRoute(ctx,spec.name+"-route",&apigatewayv2.RouteArgs{ApiId:httpAPI.ID(),RouteKey:pulumi.String("POST /auth/"+spec.path),Target:pulumi.Sprintf("integrations/%s",integration.ID())});if e!=nil{return e}
         _,e=lambda.NewPermission(ctx,"allow-"+spec.name,&lambda.PermissionArgs{Action:pulumi.String("lambda:InvokeFunction"),Function:fn.Name,Principal:pulumi.String("apigateway.amazonaws.com"),SourceArn:pulumi.Sprintf("%s/*/POST/auth/%s",httpAPI.ExecutionArn,spec.path)});if e!=nil{return e}
     }
+	if err=deployCapture(ctx,cfg,httpAPI,pool,client,region);err!=nil{return err}
 	_, err = apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
 	if err != nil {
 		return err

@@ -5,7 +5,7 @@ $previousGOARCH = $env:GOARCH
 $previousCGO = $env:CGO_ENABLED
 Push-Location $PSScriptRoot
 try {
-    New-Item -ItemType Directory -Path 'dist/signup', 'dist/resend', 'dist/confirm', 'dist/challenge', 'dist/passkeyoptions', 'dist/passkeycomplete', 'dist/auth-email-start', 'dist/auth-email-complete', 'dist/auth-passkey-start', 'dist/auth-passkey-complete', 'dist/auth-refresh', 'dist/auth-status' -Force | Out-Null
+    New-Item -ItemType Directory -Path 'dist/signup', 'dist/resend', 'dist/confirm', 'dist/challenge', 'dist/passkeyoptions', 'dist/passkeycomplete', 'dist/capture', 'dist/capture-worker', 'dist/capture-dispatcher', 'dist/auth-email-start', 'dist/auth-email-complete', 'dist/auth-passkey-start', 'dist/auth-passkey-complete', 'dist/auth-refresh', 'dist/auth-status' -Force | Out-Null
 
     # Build the packaging tool for the host before cross-compiling the Lambdas.
     $zipTool = Join-Path $PSScriptRoot 'dist/build-lambda-zip.exe'
@@ -15,7 +15,7 @@ try {
     $env:GOOS = 'linux'
     $env:GOARCH = 'arm64'
     $env:CGO_ENABLED = '0'
-    foreach ($name in @('signup', 'resend', 'confirm', 'challenge', 'passkeyoptions', 'passkeycomplete')) {
+    foreach ($name in @('signup', 'resend', 'confirm', 'challenge', 'passkeyoptions', 'passkeycomplete', 'capture', 'capture-worker', 'capture-dispatcher')) {
         $binary = "dist/$name/bootstrap"
         $archive = "dist/$name.zip"
         & go build -trimpath -tags lambda.norpc -o $binary "./cmd/$name"
