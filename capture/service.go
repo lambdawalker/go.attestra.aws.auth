@@ -74,6 +74,9 @@ func (s Service) Current(ctx context.Context, owner string) (*Record, error) {
 		return nil, nil
 	}
 	r, e := s.Get(ctx, owner, a.CurrentID)
+	if e == ErrNotFound {
+		return nil, nil
+	}
 	return &r, e
 }
 func (s Service) Create(ctx context.Context, owner, key, kind string) (Record, error) {
@@ -97,7 +100,7 @@ func (s Service) Create(ctx context.Context, owner, key, kind string) (Record, e
 	}
 	if a.CurrentID != "" {
 		old, e := s.Get(ctx, owner, a.CurrentID)
-		if e != nil {
+		if e != nil && e != ErrNotFound {
 			return Record{}, e
 		}
 		if old.State == "uploading" || old.State == "finalizing" {

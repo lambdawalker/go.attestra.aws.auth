@@ -205,3 +205,20 @@ func TestExpiredFinalizingCaptureCannotPublishReady(t *testing.T) {
 		t.Fatal("expired finalizing evidence promoted")
 	}
 }
+func TestCurrentCaptureTTLDoesNotBlockFutureCapture(t *testing.T) {
+	s, m, _, now := fixture(t)
+	r, e := s.Create(context.Background(), "owner", "create_operation_1", "sample_card")
+	if e != nil {
+		t.Fatal(e)
+	}
+	delete(m.records, r.ID) // Completed metadata has aged out of DynamoDB.
+	*now = now.Add(91 * 24 * time.Hour)
+	current, e := s.Current(context.Background(), "owner")
+	if e != nil || current != nil {
+		t.Fatal("stale account pointer prevented status discovery", e)
+	}
+	created, e := s.Create(context.Background(), "owner", "create_operation_2", "sample_card")
+	if e != nil || created.EvidenceVersion != r.EvidenceVersion+1 {
+		t.Fatal("expired metadata prevented a new capture", e)
+	}
+}
