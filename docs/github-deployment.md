@@ -150,3 +150,20 @@ No cloud credentials or decrypted state are uploaded as artifacts. The Go CI mod
 - [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
 - [AWS credentials action](https://github.com/aws-actions/configure-aws-credentials)
 - [Pulumi S3 backend](https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/)
+
+## Capture concurrency per environment
+
+Configure these values in each stack's `infra/Pulumi.<stack>.yaml`, under `config`:
+
+| Key (prefix `attestra-auth-email:`) | Default | Dev | Meaning |
+| --- | --- | --- | --- |
+| `captureReservedConcurrency` | `5` | `-1` | Reservation and execution cap for **each** of the three capture Lambdas; `-1` uses shared account concurrency. |
+| `captureWorkerMaxConcurrency` | `5` | `2` | Maximum simultaneous invocations from the capture SQS queue (2–1000). This does not reserve account capacity. |
+
+The committed dev configuration uses the shared pool, allowing deployment with an account concurrency quota of 10. The queue can invoke at most two workers concurrently. Capture API and dispatcher functions share the remaining available account capacity with authentication functions; they have no individual concurrency cap in this mode, and competing traffic can cause throttling.
+
+For QA/prod, set explicit values appropriate to their traffic and account quotas. For example, reservation `5` and worker maximum `5` reserve **15 total** across the three functions. Ensure the regional quota also accommodates other reservations and AWS's required unreserved capacity. A reservation of `0` is rejected because it disables invocations. The worker maximum cannot exceed a positive reservation.
+
+These settings are independent of `captureEnabled`, which remains unchanged. Only dev is configured in the current deployment workflow; this change does not create QA/prod stacks or GitHub environments.
+
+After pulling a concurrency configuration change, start a **new** deployment run on `main`. Preserve the existing S3 state so Pulumi can resume a partial deployment; do not recreate the stack.

@@ -17,10 +17,11 @@ jobs:
           go vet ./...
           bash build.sh
           python3 scripts/check_lambda_archives.py
-      - name: Compile Pulumi stack
+      - name: Test and compile Pulumi stack
         working-directory: infra
         run: |
           go mod tidy
+          go test ./...
           go build ./...
       - name: Check formatting and committed dependencies
         run: |

@@ -17,6 +17,10 @@ import (
 )
 
 func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Api, pool *cognito.UserPool, client *cognito.UserPoolClient, region pulumi.StringOutput) error {
+	reserved, workerMax, err := parseCaptureConcurrency(cfg.Get("captureReservedConcurrency"), cfg.Get("captureWorkerMaxConcurrency"))
+	if err != nil {
+		return err
+	}
 	enabled := cfg.GetBool("captureEnabled")
 	kind := cfg.Get("captureDocumentType")
 	if kind == "" {
@@ -95,13 +99,13 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 		if name != "capture" {
 			timeout, memory = 90, 1024
 		}
-		fn, e := lambda.NewFunction(ctx, name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(archive), Timeout: pulumi.Int(timeout), MemorySize: pulumi.Int(memory), ReservedConcurrentExecutions: pulumi.Int(5), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"CAPTURE_TABLE": table.Name, "CAPTURE_BUCKET": bucket.ID(), "CAPTURE_QUEUE_URL": queue.Url, "CAPTURE_ENABLED": pulumi.String(fmt.Sprint(enabled)), "CAPTURE_DOCUMENT_TYPE": pulumi.String(kind), "CAPTURE_PURPOSE": pulumi.String(cfg.Get("capturePurpose")), "CAPTURE_JURISDICTION": pulumi.String(cfg.Get("captureJurisdiction"))}}}, pulumi.DependsOn([]pulumi.Resource{grant, versioning}))
+		fn, e := lambda.NewFunction(ctx, name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(archive), Timeout: pulumi.Int(timeout), MemorySize: pulumi.Int(memory), ReservedConcurrentExecutions: pulumi.Int(reserved), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"CAPTURE_TABLE": table.Name, "CAPTURE_BUCKET": bucket.ID(), "CAPTURE_QUEUE_URL": queue.Url, "CAPTURE_ENABLED": pulumi.String(fmt.Sprint(enabled)), "CAPTURE_DOCUMENT_TYPE": pulumi.String(kind), "CAPTURE_PURPOSE": pulumi.String(cfg.Get("capturePurpose")), "CAPTURE_JURISDICTION": pulumi.String(cfg.Get("captureJurisdiction"))}}}, pulumi.DependsOn([]pulumi.Resource{grant, versioning}))
 		if e != nil {
 			return e
 		}
 		functions[name] = fn
 	}
-	_, e = lambda.NewEventSourceMapping(ctx, "capture-queue-worker", &lambda.EventSourceMappingArgs{EventSourceArn: queue.Arn, FunctionName: functions["capture-worker"].Arn, BatchSize: pulumi.Int(1), FunctionResponseTypes: pulumi.StringArray{pulumi.String("ReportBatchItemFailures")}})
+	_, e = lambda.NewEventSourceMapping(ctx, "capture-queue-worker", &lambda.EventSourceMappingArgs{EventSourceArn: queue.Arn, FunctionName: functions["capture-worker"].Arn, BatchSize: pulumi.Int(1), ScalingConfig: &lambda.EventSourceMappingScalingConfigArgs{MaximumConcurrency: pulumi.Int(workerMax)}, FunctionResponseTypes: pulumi.StringArray{pulumi.String("ReportBatchItemFailures")}})
 	if e != nil {
 		return e
 	}

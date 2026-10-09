@@ -1,5 +1,7 @@
 encryptionsalt: v1:SPwlE5x5ETg=:v1:wCZxF6TyEhyKLkUp:5s1PBCz0SVYBVxUcnCKQVh0aTxVDYA==
 config:
+  attestra-auth-email:captureReservedConcurrency: -1
+  attestra-auth-email:captureWorkerMaxConcurrency: 2
   aws:region: us-east-2
   attestra-auth-email:appOrigin: https://attestrabond.com
   attestra-auth-email:senderDomain: info.attestrabond.com
