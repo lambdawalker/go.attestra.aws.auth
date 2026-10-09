@@ -1,2 +1,5 @@
 dist/
 .pulumi/
+
+# Encrypted pre-migration configuration backups (retain privately).
+infra/Pulumi.*.yaml.bak.*
