@@ -34,7 +34,7 @@ func TestDefineChallengePreservesCognitoEvent(t *testing.T) {
 	var response struct {
 		ChallengeName      string `json:"challengeName"`
 		IssueTokens        bool   `json:"issueTokens"`
-		FailAuthentication bool `json:"failAuthentication"`
+		FailAuthentication bool   `json:"failAuthentication"`
 	}
 	if err := json.Unmarshal(got["response"], &response); err != nil {
 		t.Fatal(err)
