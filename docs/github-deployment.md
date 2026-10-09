@@ -22,13 +22,31 @@ go -C tools/deploy run . -setup-github
 
 This Go terminal form asks for a GitHub personal access token using hidden input. Create a **fine-grained token** limited to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and the automatically included **Metadata: read** permissions. Authorize the token for the organization if your repository policy requires it. The token is only used in memory for this setup and is never stored in GitHub or a local file. No GitHub CLI or Python installation is required.
 
-Defaults are `lambdawalker/go.attestra.aws.auth`, environment `dev`, region `us-east-2`, state backend `s3://pulumi-state-1p8322nx`, and stack `dev`. Existing environment variable values take precedence. The AWS account ID is derived from an existing role ARN when possible; otherwise enter it. The suggested role name is `attestra-github-deploy`, but you must enter the ARN of an **actual AWS OIDC role** you created using the instructions below.
+Defaults are `lambdawalker/go.attestra.aws.auth`, environment `dev`, region `us-east-2`, state backend `s3://pulumi-state-1p8322nx`, and stack `dev`. Existing environment variable values take precedence.
+
+The wizard now configures AWS as well:
+
+1. Choose **SSO** (default, profile `attestra`), AWS browser login, or hidden access-key credentials. AWS CLI v2 must be installed; browser login requires v2.32.0+. An SSO profile must already be configured with `aws configure sso`.
+2. It verifies your identity through STS and derives the account ID. A mismatch with the existing GitHub environment stops setup.
+3. It checks the existing state bucket's ownership, versioning, public access block, and encryption. It does not create or migrate the state bucket.
+4. It inspects GitHub OIDC metadata, and creates the provider if missing or adds the STS audience without removing existing audiences. Default subject claims are required; custom templates stop setup without changing GitHub OIDC settings. Older repositories are asked whether they use immutable subjects.
+5. It creates `attestra-github-deploy` (editable), with trust restricted to this repository and `dev`. Repository/owner IDs come from GitHub, not hardcoded values. Existing roles tagged `attestra-setup=github-dev` and bound to the same repository/environment subject can be updated; other roles are left unchanged, so choose a new dedicated role name.
+6. It generates and displays trust and deployment permissions, asks for confirmation, applies them, and reads them back. The verified ARN returned by AWS becomes `AWS_ROLE_ARN`; you no longer type or construct it.
+7. It saves and verifies the GitHub environment using the existing flow.
+
+The AWS identity running setup needs permission to inspect/create the OIDC provider, create/tag the deployment role, read/update its trust and inline policies, and inspect the state bucket (and its KMS key when applicable). The script cannot grant permissions to your SSO identity: an administrator must authorize those first. `AccessDenied` stops setup and is never treated as a missing resource.
+
+Deployment policies allow the infrastructure services used by this repository. IAM management is restricted to the generated Lambda role name patterns, managed-policy attachment is restricted to `AWSLambdaBasicExecutionRole`, and `iam:PassRole` is limited to Lambda. State object access is limited to the selected bucket/prefix's `.pulumi/` directory. Regional API Gateway/Cognito management is broader because IDs are allocated on creation; application resource name patterns can match another stack using the same names in the account. Review the displayed policies with that scope in mind. These are deployment permissions, not a guarantee of strict least privilege or a sandbox against privilege escalation through application roles.
+
+If Pulumi manages SES DNS records, enter its Route53 hosted zone ID when asked; blank grants no DNS access. S3 KMS encryption is detected and key permissions are added automatically; an external key policy, SCP or permissions boundary can still deny access. Unrelated policies and existing role boundaries are preserved. Optional managed policies previously added by this wizard are retained when an option is later omitted; remove obsolete grants explicitly in IAM.
+
+Writes are logged by operation. On failure, completed AWS changes remain; rerunning inspects and reuses them. Unchanged policies are skipped. Cancelling the later GitHub form does not undo AWS changes. Verification checks configuration, not an actual GitHub OIDC exchange: run the workflow in **preview** mode for the end-to-end check.
 
 The script shows the proposed variables before saving. For a new environment it creates a deployment branch restriction for `main`. For an existing environment it preserves protection rules and pre-fills existing values; press Enter to keep them. Existing passphrase secrets cannot be read back: leave the hidden passphrase prompt blank to retain one, or enter and confirm a replacement. Use the **same passphrase used for S3 migration**, not a newly invented password.
 
 The passphrase is encrypted with the environment's GitHub public key before upload. The script verifies saved variables and secret presence. If a later API call fails, earlier successful changes remain and are listed by name; rerun after fixing the issue. It does not delete or roll back existing configuration.
 
-This configures **GitHub only**. It does not create an AWS role, migrate Pulumi state, or start a deployment. Existing environment protections should be reviewed at the settings link printed on completion.
+This configures **AWS IAM and GitHub**. It does not migrate Pulumi state or start a deployment. Existing environment protections are preserved; ensure `dev` permits only `main` at the settings link printed on completion.
 
 ## 1. Finish migration locally
 
@@ -58,7 +76,7 @@ Add this environment **secret**:
 
 Use the S3 URL/prefix you actually migrated to. Do not use the old Cloud-qualified stack name `isdavid/attestra-auth-email/dev`; the workflow selects the S3 stack `dev` in this project.
 
-## 3. Configure AWS trust once
+## 3. AWS trust (configured by the wizard; manual reference)
 
 In AWS IAM, create an OpenID Connect identity provider if it does not already exist:
 
