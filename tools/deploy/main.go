@@ -50,7 +50,7 @@ func main() {
 }
 func run() error {
 	var o options
-	var setupGitHub bool
+	var setupGitHub, bootstrap, build bool
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
@@ -62,15 +62,29 @@ func run() error {
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
 	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
 	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the GitHub dev environment interactively")
-	flag.Parse()
+	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh dev deployment, or resume setup")
+	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
+	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
+		return err
+	}
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
-	if setupGitHub {
+	root, err := filepath.Abs(o.Root)
+	if err != nil {
+		return err
+	}
+	if build {
+		if bootstrap || setupGitHub || o.CI != "" {
+			return errors.New("-build cannot be combined with setup or CI modes")
+		}
+		return buildLambdas(root)
+	}
+	if setupGitHub || bootstrap {
 		if o.CI != "" {
 			return errors.New("GitHub setup cannot run in CI mode")
 		}
-		return runGitHubSetup()
+		return runGitHubSetup(root, bootstrap)
 	}
 	if o.CI != "" {
 		return runCI(o)
@@ -78,12 +92,8 @@ func run() error {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("run in an interactive terminal; credentials are entered using hidden prompts")
 	}
-	root, err := filepath.Abs(o.Root)
-	if err != nil {
-		return err
-	}
 	o.Root = root
-	for _, file := range []string{"infra/Pulumi.yaml", "build.ps1", "build.sh"} {
+	for _, file := range []string{"infra/Pulumi.yaml", "build.bat", "build.sh"} {
 		if _, err := os.Stat(filepath.Join(root, file)); err != nil {
 			return fmt.Errorf("invalid repository root: missing %s", file)
 		}
@@ -189,4 +199,22 @@ func run() error {
 		}
 	}
 	return execute(runner, o)
+}
+
+// Retain the old Windows launcher spellings while all launchers now invoke Go.
+func normalizeArguments(args []string) []string {
+	result := append([]string(nil), args...)
+	names := map[string]string{"stack": "stack", "backend": "backend", "region": "region", "migratefrom": "migrate-from", "pull": "pull", "login": "login", "sso": "sso", "profile": "profile"}
+	for i, arg := range result {
+		if strings.HasPrefix(arg, "-") {
+			parts := strings.SplitN(strings.TrimLeft(arg, "-"), "=", 2)
+			if name, ok := names[strings.ToLower(parts[0])]; ok {
+				result[i] = "-" + name
+				if len(parts) == 2 {
+					result[i] += "=" + parts[1]
+				}
+			}
+		}
+	}
+	return result
 }

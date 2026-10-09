@@ -35,12 +35,23 @@ func validateSetupValues(v map[string]string) error {
 	}
 	return (options{Backend: v["PULUMI_BACKEND_URL"], Stack: v["PULUMI_STACK"], Region: v["AWS_REGION"]}).validate()
 }
-func runGitHubSetup() error {
+func runGitHubSetup(root string, full bool) error {
+	var bootstrap *bootstrapWizard
+	if full {
+		bootstrap = &bootstrapWizard{root: root}
+		defer bootstrap.cleanup()
+		if err := bootstrap.preflight(); err != nil {
+			return err
+		}
+	}
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("run GitHub setup in an interactive terminal")
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Attestra • GitHub environment setup"))
-	fmt.Println("Creates/configures dev. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Does not deploy the application.")
+	if full {
+		fmt.Println("Full bootstrap: state bucket → stack and secrets → IAM/GitHub → deploy and SES DNS guidance. Existing resources are preserved.")
+	}
+	fmt.Println("Creates/configures dev. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Application deployment is a separate explicit step.")
 	fmt.Println("Token permissions: Administration write, Environments write, Actions read, and Metadata read for this repository.")
 	repo, token := "lambdawalker/go.attestra.aws.auth", ""
 	repoField := input("GitHub repository", &repo, false, true).Validate(func(v string) error {
@@ -71,6 +82,14 @@ func runGitHubSetup() error {
 		return err
 	}
 	values := setupDefaults(previous.Variables)
+	if full && previous.Variables["PULUMI_BACKEND_URL"] == "" {
+		values["PULUMI_BACKEND_URL"] = freshBackend()
+	}
+	if full {
+		if err := bootstrap.loadSelections(repo, values, previous.Variables); err != nil {
+			return err
+		}
+	}
 	if previous.Exists {
 		fmt.Println("Existing environment found. Press Enter to retain prefilled variable values.")
 	}
@@ -84,27 +103,40 @@ func runGitHubSetup() error {
 	if err := (options{Backend: values["PULUMI_BACKEND_URL"], Region: values["AWS_REGION"], Stack: values["PULUMI_STACK"]}).validate(); err != nil {
 		return err
 	}
-	if err := setupAWSRole(client, repo, metadata, values); err != nil {
+	if full {
+		if values["PULUMI_STACK"] != "dev" {
+			return errors.New("bootstrap supports dev only; current workflow uses environment dev")
+		}
+		if err := bootstrap.saveSelections(repo, values); err != nil {
+			return err
+		}
+	}
+	if err := setupAWSRole(client, repo, metadata, values, bootstrap); err != nil {
 		return err
 	}
 	if err := validateSetupValues(values); err != nil {
 		return err
 	}
 	passphrase := ""
-	title := "Pulumi passphrase used during S3 migration (hidden)"
+	if bootstrap != nil {
+		passphrase = bootstrap.passphrase
+	}
+	title := "Existing S3 stack passphrase (hidden)"
 	if previous.SecretExists {
 		title += "; leave blank to keep the existing secret"
 	}
-	if err := input(title, &passphrase, true, !previous.SecretExists).Run(); err != nil {
-		return err
-	}
-	if passphrase != "" {
-		repeat := ""
-		if err := input("Repeat the Pulumi passphrase", &repeat, true, true).Run(); err != nil {
+	if bootstrap == nil {
+		if err := input(title, &passphrase, true, !previous.SecretExists).Run(); err != nil {
 			return err
 		}
-		if repeat != passphrase {
-			return errors.New("passphrases do not match; AWS setup changes were retained")
+		if passphrase != "" {
+			repeat := ""
+			if err := input("Repeat the Pulumi passphrase", &repeat, true, true).Run(); err != nil {
+				return err
+			}
+			if repeat != passphrase {
+				return errors.New("passphrases do not match; AWS setup changes were retained")
+			}
 		}
 	}
 	fmt.Printf("\nRepository: %s\nEnvironment: dev\n", repo)
@@ -133,6 +165,10 @@ func runGitHubSetup() error {
 	}
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓ Environment configured and verified."))
 	fmt.Printf("Review protections: https://github.com/%s/settings/environments\n", repo)
-	fmt.Println("The token was not saved. AWS role configured. Finish S3 migration before running Deploy AWS (S3 state).")
+	fmt.Println("The token was not saved. AWS role configured.")
+	if bootstrap != nil {
+		return bootstrap.finish(repo)
+	}
+	fmt.Println("Ensure the S3 stack is initialized or migrated before running Deploy AWS [Pulumi S3].")
 	return nil
 }

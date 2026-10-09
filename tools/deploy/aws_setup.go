@@ -31,6 +31,13 @@ type repositoryMetadata struct {
 // Credentials stay in the isolated child environment. Only the AWS error code
 // is surfaced; CLI output can contain credentials or sensitive policy values.
 type setupAWSClient struct{ env []string }
+
+type awsSetupError struct{ Operation, Code string }
+
+func (e *awsSetupError) Error() string {
+	return "AWS " + e.Operation + ": " + e.Code + " (check permissions/session; completed changes retained)"
+}
+
 type awsSetupAPI interface {
 	call(result any, args ...string) (bool, error)
 }
@@ -47,7 +54,7 @@ func (a *setupAWSClient) call(result any, args ...string) (bool, error) {
 			if code[1] == "NoSuchEntity" {
 				return false, nil
 			}
-			return false, fmt.Errorf("AWS %s: %s (check your SSO permissions/session; completed changes are retained)", strings.Join(args[:2], " "), code[1])
+			return false, &awsSetupError{Operation: strings.Join(args[:2], " "), Code: code[1]}
 		}
 		return false, fmt.Errorf("AWS %s failed; check AWS CLI installation, connectivity and session", strings.Join(args[:2], " "))
 	}
@@ -213,7 +220,7 @@ func applyAWSSetup(a awsSetupAPI, p awsSetupPlan) (string, error) {
 	return verified.Role.Arn, nil
 }
 
-func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, values map[string]string) error {
+func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, values map[string]string, bootstrap *bootstrapWizard) error {
 	if _, err := exec.LookPath("aws"); err != nil {
 		return errors.New("install AWS CLI v2 and add it to PATH")
 	}
@@ -222,6 +229,9 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 		return err
 	}
 	o := options{Region: values["AWS_REGION"], Backend: values["PULUMI_BACKEND_URL"], Stack: values["PULUMI_STACK"]}
+	if bootstrap != nil {
+		o.Root = bootstrap.root
+	}
 	var c credentials
 	var err error
 	if mode != "keys" {
@@ -230,6 +240,19 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 		}
 		o.Profile = profile
 		o.Sso = mode == "sso"
+		configure := false
+		if err = huh.NewConfirm().Title("Configure this AWS profile first? Choose yes for a new SSO profile.").Value(&configure).Run(); err != nil {
+			return err
+		}
+		if configure {
+			args := []string{"configure", "--profile", profile}
+			if o.Sso {
+				args = []string{"configure", "sso", "--profile", profile}
+			}
+			if _, err = (&processRunner{env: loginEnvironment(os.Environ(), o.Region)}).Exec(o.Root, false, "aws", args...); err != nil {
+				return err
+			}
+		}
 		c, err = loginCredentials(&processRunner{env: loginEnvironment(os.Environ(), o.Region)}, o)
 		if err != nil {
 			return err
@@ -267,6 +290,11 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 		return fmt.Errorf("AWS account %s differs from existing environment account %s; use the correct AWS profile", id.Account, old)
 	}
 	fmt.Printf("AWS account: %s\nIdentity: %s\n", id.Account, id.Arn)
+	if bootstrap != nil {
+		if err = bootstrap.prepare(a, c, o, id.Account); err != nil {
+			return err
+		}
+	}
 	if err = checkBucket(&processRunner{env: a.env}, o, id.Account); err != nil {
 		return err
 	}

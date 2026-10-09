@@ -1,190 +1,121 @@
 # First deployment from scratch
 
-Use this guide when there is **no existing application stack** to preserve. The current workflow deploys `dev` from `main` in `us-east-2`. QA/prod concurrency can be configured per stack, but the setup wizard and workflow do not yet provision or select those environments.
+Run the Go terminal wizard to create or resume the `dev` deployment. It handles AWS login, S3 state, Pulumi stack/configuration, IAM/OIDC and GitHub environment setup, then guides deployment, SES DNS verification and Android configuration. The interface uses Charm Huh/Lipgloss. Launchers invoke Go directly; no PowerShell wrapper is required.
 
-If you already have a working deployment, skip to [routine deployments](#routine-deployments). If resources already exist under Pulumi Cloud, use [state migration](deployment.md#one-time-migration-from-pulumi-cloud) instead of creating an empty stack. A local `.bak` YAML file alone is not the resource state.
+## Before you start
 
-## What is automated?
+You still need an AWS account, a GitHub repository checkout, an authorized AWS identity, and access to your domain's DNS. The wizard cannot create an AWS account, grant permissions to the identity running it, or register a domain.
 
-| Step | Who handles it today? |
-| --- | --- |
-| AWS account, authorized local login, developer tools | You / AWS administrator |
-| Private, versioned S3 state bucket | You, once |
-| Pulumi stack initialization and application configuration | You, once |
-| AWS GitHub OIDC provider, deployment IAM role and permissions | `setup-github.bat` |
-| GitHub `dev` environment, variables and passphrase secret | `setup-github.bat` |
-| Tests, Lambda archives, preview and infrastructure deployment | `Deploy AWS [Pulumi S3]` action |
-| SES identity and DKIM token creation | Pulumi |
-| Cloudflare DNS records and waiting for SES verification | You, for a new identity |
-| Android API/Cognito configuration | You, after deployment |
+Install **Git**, **Go 1.26.6+**, **AWS CLI v2** and **Pulumi CLI** on PATH. The workflow pins Pulumi 3.264.0. Choose a current AWS CLI supporting `aws configure export-credentials`; browser login requires v2.32.0+. No Python, GitHub CLI or external ZIP utility is needed for local setup/build/deployment. CI separately uses Python for archive verification.
 
-The setup script expects the state bucket to exist. The deployment action expects an initialized stack. Neither creates the state bucket or initializes a missing stack, and neither manages Cloudflare DNS. Normal operation does not use the Pulumi Cloud API or need a Pulumi Cloud token. S3 storage and requests can incur AWS charges.
+Create a fine-grained GitHub token restricted to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and **Metadata: read**. The wizard prompts for it with hidden input. It does not save the token. An AWS administrator must authorize S3 bucket creation/configuration, state access and the [IAM bootstrap operations](github-deployment.md#guided-environment-setup). Optional local deployment also requires permissions to provision application resources.
 
-## 1. Prepare tools and AWS access
+If you already have application resources managed in Pulumi Cloud, [migrate their state](deployment.md#one-time-migration-from-pulumi-cloud) first. Do not initialize an empty S3 stack for those existing resources. A `.bak` YAML file alone is not resource state.
 
-Install Git, Go 1.26.6+, a current AWS CLI v2, and Pulumi CLI (the workflow pins 3.264.0). Clone the repository and use `main`. Windows examples below assume `D:\dev\go.attestra.aws.auth`.
+## Run the wizard
 
-Your AWS identity needs permission to create the state bucket and bootstrap the deployment role/OIDC provider. The setup wizard cannot grant privileges to the identity running it. See [setup permissions](github-deployment.md#guided-environment-setup).
+Windows, from the repository root (PowerShell or Command Prompt):
 
-For IAM Identity Center, configure the profile once if necessary, then sign in:
-
-```powershell
-aws configure sso --profile attestra
-aws sso login --profile attestra
-aws sts get-caller-identity --profile attestra
+```text
+.\setup.bat
 ```
 
-Confirm the account ID is the intended account. For an already configured profile, omit `aws configure sso`. An SSO profile uses `aws sso login`; `aws login` is a separate browser login method and must use a suitable non-SSO profile. The setup wizard also supports entering an access key, secret key and, for temporary credentials, session token. A session token alone is not sufficient.
+Linux/macOS:
 
-## 2. Create the S3 state bucket
-
-In **S3 → Create bucket**, choose:
-
-- A globally unique bucket name, in the intended AWS account and **us-east-2**.
-- All four **Block Public Access** settings enabled.
-- **Bucket versioning** enabled.
-- Default server-side encryption (SSE-S3 is sufficient for this bootstrap).
-
-This bucket stores Pulumi state, locks and history. Keep it separate from the application stack and the ID-evidence bucket. Do not apply evidence expiration rules to state. For an existing configured deployment, reuse its exact bucket and prefix; do not create a replacement.
-
-The wizard's current default is `s3://pulumi-state-1p8322nx`. That is an existing deployment's bucket, not a reusable name for a new account. Supply your own bucket URL when bootstrapping elsewhere.
-
-## 3. Initialize a fresh Pulumi stack
-
-These instructions are **only for a new stack with no existing resources**. If `dev` already exists, select it and keep its configuration/passphrase; do not remove it to rerun these steps.
-
-In the same PowerShell window, choose the intended credentials and backend:
-
-```powershell
-Set-Location D:\dev\go.attestra.aws.auth\infra
-# Remove ambient key credentials so they do not override the chosen profile.
-Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
-$env:AWS_PROFILE = "attestra"
-$env:AWS_REGION = "us-east-2"
-$env:AWS_DEFAULT_REGION = "us-east-2"
-$stateBucket = Read-Host "Your existing S3 state bucket name"
-$env:PULUMI_BACKEND_URL = "s3://${stateBucket}?awssdk=v2&region=us-east-2"
-pulumi login $env:PULUMI_BACKEND_URL
-if ($LASTEXITCODE -ne 0) { throw "Backend login failed" }
+```sh
+./setup.sh
 ```
 
-A checkout contains `Pulumi.dev.yaml` for the existing deployment. For a **different, fresh deployment**, move that file to a private backup outside the repository before initialization; it contains encryption metadata belonging to another stack. Do not reuse its encrypted `proofKey` or salt. For an existing deployment, keep the file and skip initialization.
+`setup-github.bat` and `setup-github.sh` are aliases for the same full wizard. You can also invoke Go directly:
 
-Run the following complete block. `Invoke-BootstrapCommand` is defined here; it is a helper function, not software to install. It stops on failed CLI commands. Replace the example application origin/domain/address for your deployment.
-
-```powershell
-function Invoke-BootstrapCommand {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & pulumi @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "Pulumi command failed; stop and inspect the error" }
-}
-
-# Choose a strong passphrase, save it in your password manager, and use the
-# exact same value later in setup-github. Do not paste it into chat or Git.
-Remove-Item Env:PULUMI_CONFIG_PASSPHRASE_FILE -ErrorAction SilentlyContinue
-$securePassphrase = Read-Host "New dev stack passphrase" -AsSecureString
-$passphrasePointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassphrase)
-$keyBytes = New-Object byte[] 32
-try {
-    $env:PULUMI_CONFIG_PASSPHRASE = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passphrasePointer)
-    if ([string]::IsNullOrEmpty($env:PULUMI_CONFIG_PASSPHRASE)) { throw "A nonempty passphrase is required" }
-    Invoke-BootstrapCommand stack init dev --secrets-provider passphrase
-    Invoke-BootstrapCommand config set aws:region us-east-2 --stack dev
-    Invoke-BootstrapCommand config set attestra-auth-email:appOrigin https://attestrabond.com --stack dev
-    Invoke-BootstrapCommand config set attestra-auth-email:senderDomain info.attestrabond.com --stack dev
-    Invoke-BootstrapCommand config set attestra-auth-email:senderAddress verify@info.attestrabond.com --stack dev
-    Invoke-BootstrapCommand config set --stack dev attestra-auth-email:captureReservedConcurrency -- -1
-    Invoke-BootstrapCommand config set attestra-auth-email:captureWorkerMaxConcurrency 2 --stack dev
-
-    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
-    $proofKey = [Convert]::ToBase64String($keyBytes)
-    $proofKey | pulumi config set attestra-auth-email:proofKey --secret --stack dev
-    if ($LASTEXITCODE -ne 0) { throw "Saving proofKey failed" }
-} finally {
-    Remove-Item Env:PULUMI_CONFIG_PASSPHRASE -ErrorAction SilentlyContinue
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passphrasePointer)
-    $securePassphrase.Dispose()
-    [Array]::Clear($keyBytes, 0, $keyBytes.Length)
-    Remove-Variable proofKey -ErrorAction SilentlyContinue
-}
+```sh
+go -C tools/deploy run . -bootstrap
 ```
 
-The environment variable is necessary while piping `proofKey`: Pulumi cannot prompt for a passphrase through stdin when stdin contains the key. If key saving fails after stack initialization, **do not recreate the stack**. Supply the same passphrase again and resume the failed configuration step.
+For **IAM/GitHub maintenance only**, with an existing bucket/stack:
 
-Review `Pulumi.dev.yaml`: it should contain `encryptionsalt` and encrypted `proofKey` (`secure: v1:...`). Do not set `aws:profile` in this file: GitHub uses temporary OIDC credentials. A local `AWS_PROFILE` environment variable is fine for manual commands. Keep `route53ZoneId` unset when DNS is hosted in Cloudflare.
-
-Commit only the reviewed stack configuration, including its encrypted secret and salt:
-
-```powershell
-Set-Location D:\dev\go.attestra.aws.auth
-git branch --show-current
-git diff -- infra/Pulumi.dev.yaml
-git add infra/Pulumi.dev.yaml
-git commit -m "Configure dev stack with S3 state"
-git push origin main
+```sh
+go -C tools/deploy run . -setup-github
 ```
 
-Confirm you are on `main` before committing. If push is rejected, reconcile changes; do not force-push. Never commit plaintext keys/passphrases, private backups or state exports.
+## What the wizard does
 
-## 4. Run GitHub/AWS setup
+### 1. Choose the repository and AWS identity
 
-From the repository root:
+Enter the GitHub token and repository. The wizard reads existing `dev` environment settings and offers defaults. It asks for the deployment region, S3 backend URL and stack. Full bootstrap currently supports **dev only**; the workflow is still tied to GitHub environment `dev`, not a QA/prod selector.
 
-```powershell
-.\setup-github.bat
-```
+For a fresh deployment it proposes a random `attestra-state-...` bucket name, avoiding the existing project's bucket name. S3 names must be globally unique. Existing environment values take precedence. Non-secret selections (repository/region/backend/stack) are saved to ignored `bootstrap.local.json`, so an interrupted first setup can reuse its bucket before the GitHub environment exists. Keep this file locally when resuming.
 
-Follow the [guided setup](github-deployment.md#guided-environment-setup) for GitHub token permissions, AWS login choices and role creation. Use the same account, region, backend and stack initialized above. Enter the **same stack passphrase** for the GitHub environment secret `PULUMI_CONFIG_PASSPHRASE`.
+Choose SSO, AWS browser login, or access-key credentials. For SSO, the wizard can open `aws configure sso` to configure a new profile, then runs `aws sso login`. Use an existing SSO profile with the SSO option, not `aws login`. Temporary credentials require an access key, secret key **and** session token. Credentials are checked with STS; an account mismatch with an existing GitHub environment stops setup.
 
-The wizard creates or checks the OIDC provider, creates/updates its managed deployment role, and saves the verified `AWS_ROLE_ARN` with the GitHub environment settings. You do not need to construct the ARN or store AWS access keys in GitHub. Review the displayed permissions before applying them.
+### 2. Prepare the state bucket and stack
 
-## 5. Preview and deploy
+The wizard shows proposed changes and asks before applying them. It:
 
-Open **Actions → Deploy AWS [Pulumi S3] → Run workflow**:
+- Creates a missing S3 bucket only after an explicit not-found response. Access denied is never treated as a missing bucket.
+- Verifies existing bucket ownership and region, then ensures versioning and all four public access blocks are enabled. Existing objects and encryption settings are preserved; new S3 buckets use default encryption.
+- Prompts for and confirms the Pulumi passphrase. For an existing stack, use its **original** passphrase. Save it in a password manager.
+- Lists stacks in the selected project/backend before initializing a missing stack. Failed reads stop setup. No stack removal, resource destruction or automatic state migration occurs.
+- For a fresh stack, offers to retain an existing local `Pulumi.dev.yaml` as an ignored `.bak.<timestamp>` file before creating fresh encryption metadata.
+- Fills missing region, app origin, sender domain/address and dev concurrency settings. Existing values are retained; use Pulumi config explicitly to change existing settings.
+- Generates a cryptographically random 32-byte proof key **only if missing**, passing it through stdin to `pulumi config set --secret`. Existing encrypted keys are retained. Decrypted configuration is captured only in memory; secret command output is suppressed.
 
-1. Select `main` and operation `preview`.
-2. Review the proposed resources and account/stack/backend.
-3. Start another run with operation `deploy`.
+The passphrase is supplied to Pulumi subprocesses through their environment, including when piping the proof key, so Pulumi does not need to prompt on stdin. A wrong passphrase or incompatible existing YAML/provider configuration stops configuration writes. An interrupted initialization is resumed with the same passphrase rather than starting again.
 
-The action builds all Lambda ZIP archives before running Pulumi; you do not build them locally for GitHub deployment. Preview does not create resources and cannot prove that every AWS quota or service prerequisite will allow creation.
+The state bucket is separate from the application/ID-evidence bucket. Keep state versioning and do not add evidence expiry rules to it. S3 state avoids the Pulumi Cloud API, but AWS storage/requests can incur charges.
 
-## 6. Verify SES DNS and resume if necessary
+### 3. Configure IAM and GitHub
 
-Pulumi creates the SES identity and DKIM tokens. Cognito uses that identity for email and requires it to be verified. Currently the infrastructure does **not wait for SES verification**, so a first deployment can create resources and then fail at Cognito.
+The wizard inspects or creates the GitHub OIDC provider and setup-managed deployment role, displays the trust/permission policies for review, applies approved changes and verifies them. It obtains the actual `AWS_ROLE_ARN` from AWS. Unmanaged existing roles are left unchanged; choose a new dedicated role name.
 
-In the deployment's AWS account, open **SES in us-east-2**, select `info.attestrabond.com` (or your configured `senderDomain`), and follow [Cloudflare DNS instructions](../README.md#configure-sender-dns-in-cloudflare). They include read-only AWS CLI commands for retrieving records if stack outputs are unavailable after a partial deployment.
+It creates or updates the GitHub `dev` environment, preserving existing protection rules and restricting a new environment to `main`. It saves account, region, role ARN, backend and stack variables. The **same tested stack passphrase** is uploaded as `PULUMI_CONFIG_PASSPHRASE` using GitHub's encrypted secret upload. No AWS access keys or Pulumi Cloud token are stored in GitHub.
 
-For the example sender `verify@info.attestrabond.com`:
+For Cloudflare DNS, leave the optional Route 53 hosted zone blank. That field grants IAM access for a separately configured Route 53 integration; it does not configure Cloudflare.
 
-- Add or update the `_amazonses.info` TXT value and the three DKIM CNAME names/targets using the current SES values.
-- Keep CNAMEs **DNS only**. Preserve unrelated website/R2 and mailbox records.
-- Compare existing records before changing them: recreating an identity does not necessarily change every token.
-- The identity `info.attestrabond.com` must be verified in the correct account and region. An unverified separate root identity `attestrabond.com` does not block sending with this verified subdomain identity.
+### 4. Review configuration and deploy
 
-Wait for verification/DKIM success, then run the deployment again. Keep the existing stack and S3 state; Pulumi resumes the partial deployment. SES sandbox recipient restrictions are a separate concern: see [SES sending for test recipients](../README.md#enable-ses-sending-for-test-recipients).
+The wizard prints the commands to review, commit and push `infra/Pulumi.dev.yaml`. It does **not** run Git commit/push for you. Commit the encrypted `proofKey` and encryption salt, not plaintext secrets, state exports or backup files. Do not set `aws:profile` in the committed YAML; GitHub uses temporary OIDC credentials.
 
-## 7. Connect Android
+Then choose:
 
-After successful deployment, use the new `apiUrl`, `userPoolId` and `clientId` outputs to [configure Android](../README.md#configure-the-android-api-url). A fresh deployment can change all three. Infrastructure deployment does not automatically enable real ID capture: `captureEnabled` remains false until its document type, purpose and jurisdiction are configured deliberately.
+- **Finish here; deploy using GitHub Actions**: follow the printed workflow URL. Start a new `main` run with operation `preview`, review it, then run `deploy`.
+- **Build and preview locally**: uses the selected backend/account and does not deploy resources.
+- **Build, preview and deploy locally**: invokes the Go packager, previews and runs `pulumi up` with Pulumi's confirmation prompt. It deploys your current checkout, so review local changes first.
+- **Show SES DNS records and check verification**: reads the created SES identity and displays the exact TXT/CNAME records and verification status.
+- **Show deployed Android configuration**: prints `apiUrl`, `userPoolId` and `clientId` after a successful deployment.
 
-## Routine deployments
+The deployment menu stays open after a local failure so you can inspect SES or retry after addressing the reported error. Credentials are a snapshot of the AWS session; if they expire, rerun setup and authenticate again. Neither the wizard nor the action rolls back successful resources on failure.
 
-Once bootstrap is complete, push reviewed changes to `main` and run **Deploy AWS [Pulumi S3]**, optionally previewing separately first. You do not rerun setup, initialize the stack or change DNS for each code update.
+## SES and Cloudflare: the manual step
 
-Rerun setup when changing GitHub environment settings or its managed AWS role configuration. After a code/configuration fix, start a **new workflow run on main**; retrying an old run reuses the old commit.
+Pulumi creates the SES identity/DKIM tokens, but it does **not wait for verification** before creating Cognito. A first deployment can therefore fail at Cognito while SES is still pending. Preview alone cannot expose every AWS service prerequisite or quota limitation.
 
-## Common blockers
+Choose the wizard's DNS check after the first deployment attempt. Copy its TXT value and three CNAME names/targets into the authoritative Cloudflare DNS zone. Keep CNAMEs **DNS only**, preserve unrelated R2/website/mailbox records, and compare current values before replacing old records. [Detailed DNS instructions and manual verification commands](../README.md#configure-sender-dns-in-cloudflare) are available if needed.
+
+Wait for verification and DKIM success; choose the check again to reread status. Then resume deployment using the existing stack. Do not tear down resources or delete state. A verified `info.attestrabond.com` covers `verify@info.attestrabond.com`; an unverified separate root identity `attestrabond.com` is not a blocker. Verify in the correct AWS account and region (`us-east-2` for the current deployment). SES sandbox restrictions on recipients are [a separate step](../README.md#enable-ses-sending-for-test-recipients).
+
+## Connect Android
+
+Use the deployed `apiUrl`, `userPoolId` and `clientId` outputs to [configure Android](../README.md#configure-the-android-api-url). These can change after recreating infrastructure. The backend does not deploy your website's verification page or Android association files.
+
+Real ID capture remains disabled until `captureEnabled`, document type, purpose and jurisdiction are deliberately configured. Dev uses `captureReservedConcurrency: -1` (shared capacity) and `captureWorkerMaxConcurrency: 2`; see [per-stack concurrency](github-deployment.md#capture-concurrency-per-environment) for QA/prod settings and quotas.
+
+## Routine updates and recovery
+
+Once bootstrap is complete, push reviewed changes to `main` and run **Deploy AWS [Pulumi S3]**. Setup and DNS changes are not required for every code deployment. After a code/config fix, start a **new** workflow run; retrying an old run reuses the old commit.
+
+Rerun the wizard to resume setup, retaining `bootstrap.local.json` and the stack YAML. Existing resources/configuration are inspected and reused. Review confirmations: existing bucket protections are reasserted and the tested passphrase is saved to GitHub again. Cancelling after earlier stages leaves those changes intact.
 
 | Symptom | Next step |
 | --- | --- |
-| Missing `dist/capture.zip` during local preview | Run the repository build script first, or use the deploy tool/action that builds automatically. |
-| `aws login` says profile has SSO credentials | Use SSO login / the wizard's SSO option for that profile. |
-| Missing bucket or stack | Complete steps 2–3; the action does not bootstrap them. |
-| `aws:profile` rejected | Remove it from the stack YAML, commit and push; keep local profile selection in your shell. |
-| Passphrase must be set while saving `proofKey` | Set `PULUMI_CONFIG_PASSPHRASE` through hidden input before piping the key, as in step 3. |
-| Secret decryption error / `bad value` | Check matching YAML encryption metadata, backend secrets provider and GitHub passphrase. Old Cloud ciphertext must be migrated, not copied into a fresh passphrase stack. |
-| Cognito says SES identity is unverified | Check the exact identity ARN/account/region from the error; complete step 6. |
-| Reserved concurrency would reduce unreserved capacity below its minimum | Use dev's shared-pool configuration or request adequate regional quota for reservations. See [per-stack concurrency](github-deployment.md#capture-concurrency-per-environment). |
+| Missing tools | Install the named tool and restart the terminal; rerun the wizard. |
+| SSO profile rejected by browser login | Choose SSO and, if needed, configure the profile through the wizard. |
+| S3 access denied | Check ownership and permissions. The wizard will not assume the bucket is missing. |
+| Existing YAML or passphrase cannot decrypt secrets | Use matching YAML and the original passphrase; migrate Cloud state instead of copying ciphertext into a new stack. |
+| Profile override rejected | Remove `aws:profile` from stack config; use local profile selection only for AWS login. |
+| Cognito says SES identity is unverified | Check the exact identity/account/region and complete DNS verification, then resume. |
+| Lambda reserved concurrency exceeds available quota | Use dev's shared-pool values or request sufficient regional quota for reservations. Existing config is retained by setup, so update it deliberately if needed. |
+| Local preview cannot find Lambda ZIPs | Use `build.bat` / `build.sh`, or the wizard/deploy tool which builds automatically. |
+| Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
-Dev uses `captureReservedConcurrency: -1` and `captureWorkerMaxConcurrency: 2`. Other stacks default to 5 reserved executions **per capture function** (15 total) and a worker maximum of 5 unless overridden. The worker queue limit does not reserve capacity; all dev functions still share the account's available concurrency.
+The wizard does not request Lambda quota increases, leave the SES sandbox, provision QA/prod environments, alter external DNS or rotate existing proof keys automatically.

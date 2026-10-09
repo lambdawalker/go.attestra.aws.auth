@@ -138,14 +138,13 @@ func TestOptionsAndBuildPlatforms(t *testing.T) {
 	if o.validate() == nil {
 		t.Fatal("accepted different source stack")
 	}
-	command, args := buildCommand("windows")
-	if command != "powershell.exe" || args[len(args)-1] != "build.ps1" {
-		t.Fatal(command, args)
+	for _, platform := range []string{"windows", "linux", "darwin"} {
+		command, args := buildCommand(platform)
+		if command != "go" || !reflect.DeepEqual(args, []string{"-C", "tools/deploy", "run", ".", "-build"}) {
+			t.Fatal(command, args)
+		}
 	}
-	command, args = buildCommand("linux")
-	if command != "bash" || !reflect.DeepEqual(args, []string{"build.sh"}) {
-		t.Fatal(command, args)
-	}
+
 }
 
 type bucketRunner struct {

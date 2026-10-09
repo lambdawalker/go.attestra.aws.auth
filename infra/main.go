@@ -51,7 +51,7 @@ func deploy(ctx *pulumi.Context) error {
 	}
 	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive, authArchives["auth-email-start"], authArchives["auth-email-complete"], authArchives["auth-passkey-start"], authArchives["auth-passkey-complete"], authArchives["auth-refresh"], authArchives["auth-status"]} {
 		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("build Lambda archives with build.sh or build.ps1 first: %s: %w", path, err)
+			return fmt.Errorf("build Lambda archives with build.sh or build.bat first: %s: %w", path, err)
 		}
 	}
 	region := aws.GetRegionOutput(ctx, aws.GetRegionOutputArgs{}).Name()

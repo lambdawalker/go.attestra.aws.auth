@@ -2,12 +2,12 @@
 
 The Go tool in `tools/deploy` provides terminal forms using [Charm Huh](https://github.com/charmbracelet/huh). It runs on Windows, Linux and macOS. The UI dependencies live in a separate Go module and do not enter Lambda binaries.
 
-For a deployment from scratch, start with the [first-deployment guide](first-deployment.md). The local tool expects an existing bucket and stack; migration below is only for existing Pulumi Cloud stacks.
+For a deployment from scratch, start with the [first-deployment guide](first-deployment.md). The routine deploy tool expects an existing bucket and stack; the `setup.bat` / `setup.sh` wizard can create them. migration below is only for existing Pulumi Cloud stacks.
 
 ## Prerequisites
 
 - Go 1.26.6+, AWS CLI v2 and Pulumi on PATH. Migration requires Pulumi CLI 3.254.0+ (`pulumi version`).
-- Windows PowerShell on Windows; Bash and zip on Linux/macOS for the repository's build scripts.
+- Direct `.bat` launchers on Windows or a POSIX shell for `.sh` launchers. All build/deployment logic is Go; no PowerShell or external ZIP utility is needed.
 - AWS credentials authorized to deploy the stack and access the state bucket.
 - An existing private S3 state bucket in the same AWS account and region as the application stack.
 
@@ -94,7 +94,7 @@ If migration fails, no deployment follows and nothing is rolled back automatical
 
 ```powershell
 .\deploy.bat -Backend s3://YOUR-STATE-BUCKET
-.\deploy.ps1 -Stack dev -Backend s3://YOUR-STATE-BUCKET -Region us-east-2
+.\deploy.bat -Stack dev -Backend s3://YOUR-STATE-BUCKET -Region us-east-2
 # Optional: require clean Git status and pull the current branch first.
 .\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Pull
 ```
@@ -105,7 +105,7 @@ go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
 
 Omit `Backend` to enter the S3 URL in the form. A prefix such as `s3://YOUR-STATE-BUCKET/attestra` is supported. Use the exact same URL/prefix for migration and every deployment. The entered region must match `aws:region` in the stack.
 
-The sequence is: prompt → verify AWS identity and bucket → optional Git pull → select existing S3 stack → check secrets provider/configuration → build Lambda archives → `pulumi preview` → `pulumi up`. Each failure stops subsequent steps. Pulumi retains its native deployment confirmation; no `--yes` flag is used. The build delegates to `build.ps1`/`build.sh`, including any capture Lambdas added there.
+The sequence is: prompt → verify AWS identity and bucket → optional Git pull → select existing S3 stack → check secrets provider/configuration → build Lambda archives → `pulumi preview` → `pulumi up`. Each failure stops subsequent steps. Pulumi retains its native deployment confirmation; no `--yes` flag is used. The build invokes the Go packager in `tools/deploy`, also available through `build.bat`/`build.sh`.
 
 Git pull is opt-in so it does not prevent deploying reviewed local changes or interfere with migration edits. Commit/stash changes before choosing it. The launchers support paths containing spaces and forward failures. `go run` reports failures as a nonzero exit; its wrapper may report 1 rather than the underlying command's exact status.
 

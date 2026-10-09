@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 )
 
@@ -179,7 +178,7 @@ func execute(r commandRunner, o options) error {
 		return err
 	}
 	// Invoke the repository build scripts so new Lambda handlers remain included.
-	name, args := buildCommand(runtime.GOOS)
+	name, args := buildCommand("")
 	if _, err := r.Exec(o.Root, false, name, args...); err != nil {
 		return err
 	}
@@ -204,11 +203,8 @@ func execute(r commandRunner, o options) error {
 	fmt.Println("\nDeployment finished.")
 	return nil
 }
-func buildCommand(platform string) (string, []string) {
-	if platform == "windows" {
-		return "powershell.exe", []string{"-NoLogo", "-NoProfile", "-File", "build.ps1"}
-	}
-	return "bash", []string{"build.sh"}
+func buildCommand(_ string) (string, []string) {
+	return "go", []string{"-C", "tools/deploy", "run", ".", "-build"}
 }
 func checkStack(r commandRunner, o options) error {
 	infra := filepath.Join(o.Root, "infra")

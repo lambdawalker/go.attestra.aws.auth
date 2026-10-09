@@ -37,7 +37,7 @@ States: `uploading`, `finalizing`, `ready`, `requires_recapture`, `failed`, `can
 
 ## Deployment and operations
 
-`build.sh` / `build.ps1` package all three new Lambdas. `infra/capture.go` provisions a private versioned, owner-enforced SSE-S3 bucket; TLS-only policy; encrypted DynamoDB with PITR and a `work-due` GSI; encrypted SQS + DLQ; worker mapping; minute sweeper; JWT routes; scoped roles; and a DLQ alarm. Worker/dispatcher concurrency is capped at five. No resources were deployed during implementation.
+`build.sh` / `build.bat` package all three new Lambdas. `infra/capture.go` provisions a private versioned, owner-enforced SSE-S3 bucket; TLS-only policy; encrypted DynamoDB with PITR and a `work-due` GSI; encrypted SQS + DLQ; worker mapping; minute sweeper; JWT routes; scoped roles; and a DLQ alarm. Capture reservations and worker queue concurrency are [configured per stack](github-deployment.md#capture-concurrency-per-environment); dev uses shared capacity and a queue maximum of two. No resources were deployed during implementation.
 
 Capture defaults **disabled**. Before enabling, choose and evaluate a two-sided document type and jurisdiction, approve the purpose and seven-day image retention, verify the AWS region, connect alarm notifications, and complete the real-device/S3 smoke checks below. Set Pulumi `captureDocumentType`, `captureJurisdiction`, `capturePurpose` and then `captureEnabled=true`. `sample_card` cannot be enabled in live infrastructure. This release supports exactly `front`/`back`; passports and additional policies require another implementation/policy version. SSE-KMS is not configured by this release.
 
