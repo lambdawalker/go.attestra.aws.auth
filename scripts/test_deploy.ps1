@@ -67,3 +67,5 @@ try {
     Remove-Item $fixture -Recurse -Force
     Remove-Variable DeployTestCalls, DeployTestFailure, DeployTestConfig -Scope Global -ErrorAction SilentlyContinue
 }
+# The expected batch failure above must not become the test runner's exit status.
+$global:LASTEXITCODE = 0
