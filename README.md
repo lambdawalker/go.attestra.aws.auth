@@ -242,7 +242,7 @@ On Linux/macOS, from the repository root:
 go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
 ```
 
-**Existing Pulumi Cloud stacks must be migrated once before deployment.** See [deployment setup and migration](docs/deployment.md) for the private state bucket, credential requirements, migration command, passphrase recovery, and troubleshooting. Normal runs select an existing S3 stack, build all Lambdas, preview, and run `pulumi up` with its usual confirmation. Git pull is optional (`-Pull` on Windows, `-pull` in Go); it requires a clean working tree. Use `-Profile` with `-Login` to select the AWS login profile; `-Sso` is not supported.
+**Existing Pulumi Cloud stacks must be migrated once before deployment.** See [deployment setup and migration](docs/deployment.md) for the private state bucket, credential requirements, migration command, passphrase recovery, and troubleshooting. Normal runs select an existing S3 stack, build all Lambdas, preview, and run `pulumi up` with its usual confirmation. Git pull is optional (`-Pull` on Windows, `-pull` in Go); it requires a clean working tree. Use `-Sso -Profile attestra` for IAM Identity Center, or `-Login -Profile PROFILE` for AWS console login. If both switches are supplied, SSO takes precedence.
 
 ## Implementation map
 

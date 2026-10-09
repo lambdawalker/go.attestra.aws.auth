@@ -7,6 +7,7 @@ param(
     [string]$MigrateFrom,
     [switch]$Pull,
     [switch]$Login,
+    [switch]$Sso,
     [string]$Profile = 'default'
 )
 $ErrorActionPreference = 'Stop'
@@ -16,7 +17,9 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 $arguments = @('-repo-root', $PSScriptRoot, '-stack', $Stack, '-region', $Region)
 if ($Backend) { $arguments += @('-backend', $Backend) }
 if ($MigrateFrom) { $arguments += @('-migrate-from', $MigrateFrom) }
-if ($Login) { $arguments += @('-login', '-profile', $Profile) }
+if ($Login -or $Sso) { $arguments += @('-profile', $Profile) }
+if ($Login) { $arguments += '-login' }
+if ($Sso) { $arguments += '-sso' }
 if ($Pull) { $arguments += '-pull' }
 & go -C (Join-Path $PSScriptRoot 'tools/deploy') run . @arguments
 exit $LASTEXITCODE

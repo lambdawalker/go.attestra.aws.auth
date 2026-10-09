@@ -14,10 +14,10 @@ try {
 exit /b 23
 '@ | Set-Content (Join-Path $temp 'go.cmd') -Encoding ascii
     $env:PATH = "$temp;$previousPath"
-    & (Join-Path $temp 'deploy.bat') -Stack stage -Backend s3://test-state -MigrateFrom owner/attestra-auth-email/stage -Pull -Login -Profile attestra
+    & (Join-Path $temp 'deploy.bat') -Stack stage -Backend s3://test-state -MigrateFrom owner/attestra-auth-email/stage -Pull -Login -Sso -Profile attestra
     if ($LASTEXITCODE -ne 23) { throw "Exit code was not forwarded: $LASTEXITCODE" }
     $trace = Get-Content $env:DEPLOY_TEST_TRACE -Raw
-    foreach ($expected in @('tools\deploy', '-repo-root', '-stack stage', '-backend s3://test-state', '-migrate-from owner/attestra-auth-email/stage', '-pull', '-login', '-profile attestra')) {
+    foreach ($expected in @('tools\deploy', '-repo-root', '-stack stage', '-backend s3://test-state', '-migrate-from owner/attestra-auth-email/stage', '-pull', '-login', '-sso', '-profile attestra')) {
         if (-not $trace.Contains($expected)) { throw "Missing forwarded argument: $expected" }
     }
     if (-not $trace.Contains($temp)) { throw 'Repository path with spaces was not forwarded.' }

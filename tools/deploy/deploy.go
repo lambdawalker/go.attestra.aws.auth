@@ -16,7 +16,7 @@ import (
 
 type options struct {
 	Root, Stack, Backend, Region, MigrateFrom, Profile string
-	Pull, Login                                        bool
+	Pull, Login, Sso                                   bool
 }
 type credentials struct{ Access, Secret, Token, Passphrase, CloudToken string }
 type commandRunner interface {

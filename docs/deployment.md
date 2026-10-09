@@ -24,6 +24,22 @@ By default, the tool prompts using hidden input:
 
 Copy temporary credentials from your AWS credential source. Credentials are passed to AWS/Pulumi subprocesses through their environment, never as arguments or saved profiles. Existing AWS environment settings and shared profile files are isolated to avoid accidentally using another identity. The tool displays the account and ARN and asks you to confirm them. It does not refresh expired credentials; obtain a fresh set and rerun if they expire.
 
+### IAM Identity Center (SSO)
+
+For an existing SSO profile such as `attestra`, use:
+
+```powershell
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Sso -Profile attestra
+# First migration:
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Sso -Profile attestra -MigrateFrom isdavid/attestra-auth-email/dev
+```
+
+```bash
+go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET -sso -profile attestra
+```
+
+`-Sso` runs `aws sso login --profile attestra` and then captures temporary credentials without displaying them. The SSO region comes from your existing profile/session; it can differ from the deployment region. Your SSO configuration is preserved. `-Sso` works alone; when combined with `-Login`, SSO takes precedence. Login failures stop deployment and retain the AWS diagnostic rather than assuming the CLI is outdated.
+
 ### AWS login alternative
 
 Use AWS CLI's browser login instead of entering access keys:

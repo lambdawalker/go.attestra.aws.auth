@@ -23,8 +23,16 @@ func loginCredentials(r commandRunner, o options) (credentials, error) {
 	if strings.TrimSpace(o.Profile) == "" {
 		return credentials{}, errors.New("AWS login profile is required")
 	}
-	if _, err := r.Exec(o.Root, false, "aws", "login", "--profile", o.Profile, "--region", o.Region); err != nil {
-		return credentials{}, errors.New("AWS login failed; use a current AWS CLI v2 with aws login support")
+	args := []string{"login", "--profile", o.Profile, "--region", o.Region}
+	failure := "AWS console login failed; see the AWS error above. For an IAM Identity Center profile, use -Sso; aws login requires AWS CLI v2.32.0+"
+	if o.Sso {
+		// The SSO region comes from the profile/session and may differ from the
+		// application's deployment region. Do not override it with --region.
+		args = []string{"sso", "login", "--profile", o.Profile}
+		failure = "AWS SSO login failed; see the AWS error above and verify this profile's IAM Identity Center configuration"
+	}
+	if _, err := r.Exec(o.Root, false, "aws", args...); err != nil {
+		return credentials{}, errors.New(failure)
 	}
 	// Capture JSON in memory, never stream credentials to the terminal or a file.
 	data, err := r.Exec(o.Root, true, "aws", "configure", "export-credentials", "--profile", o.Profile, "--format", "process")

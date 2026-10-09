@@ -57,7 +57,8 @@ func run() error {
 	flag.StringVar(&o.MigrateFrom, "migrate-from", "", "One-time migration from a fully qualified Pulumi Cloud stack; stops before deployment")
 	flag.BoolVar(&o.Pull, "pull", false, "Require a clean working tree and git pull --ff-only before deployment")
 	flag.BoolVar(&o.Login, "login", false, "Use aws login instead of prompting for AWS credentials")
-	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login")
+	flag.BoolVar(&o.Sso, "sso", false, "Use aws sso login with an existing IAM Identity Center profile")
+	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
@@ -93,7 +94,7 @@ func run() error {
 		return err
 	}
 	c := credentials{}
-	if o.Login {
+	if o.Login || o.Sso {
 		if err := input("AWS login profile", &o.Profile, false, true).Run(); err != nil {
 			return err
 		}
