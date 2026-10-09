@@ -19,10 +19,10 @@ import (
 )
 
 type bootstrapWizard struct {
-	root, temporary, passphrase, account string
-	o                                    options
-	r                                    *processRunner
-	a                                    *setupAWSClient
+	root, temporary, passphrase, account, environment string
+	o                                                 options
+	r                                                 *processRunner
+	a                                                 *setupAWSClient
 }
 
 func (w *bootstrapWizard) cleanup() {
@@ -122,8 +122,11 @@ func ensureStateBucket(a awsSetupAPI, o options, account string, approve func(st
 }
 
 func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, account string) error {
-	if o.Stack != "dev" {
-		return errors.New("bootstrap currently supports dev only; the deployment workflow is bound to GitHub environment dev")
+	if err := validateEnvironment(w.environment); err != nil {
+		return err
+	}
+	if o.Stack != w.environment {
+		return errors.New("stack must match selected environment")
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("1 / 4 • State bucket and Pulumi stack"))
 	if err := ensureStateBucket(a, o, account, confirm); err != nil {
@@ -139,7 +142,15 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if repeated != c.Passphrase {
 		return errors.New("passphrases do not match")
 	}
-	origin, domain, sender := "https://attestrabond.com", "info.attestrabond.com", "verify@info.attestrabond.com"
+	base := "attestrabond.com"
+	if err := input("Base domain (without https:// or an environment prefix)", &base, false, true).Validate(func(s string) error { _, e := applicationDefaults(w.environment, s); return e }).Run(); err != nil {
+		return err
+	}
+	app, err := applicationDefaults(w.environment, base)
+	if err != nil {
+		return err
+	}
+	origin, domain, sender := app["attestra-auth-email:appOrigin"], app["attestra-auth-email:senderDomain"], app["attestra-auth-email:senderAddress"]
 	fmt.Println("These application defaults fill missing configuration only. Existing configuration and proof keys are retained.")
 	if err := huh.NewForm(huh.NewGroup(input("HTTPS app origin", &origin, false, true), input("SES sender domain", &domain, false, true), input("SES sender email", &sender, false, true))).Run(); err != nil {
 		return err
@@ -147,7 +158,6 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if err := validateBootstrapApp(origin, domain, sender); err != nil {
 		return err
 	}
-	var err error
 	w.temporary, err = os.MkdirTemp("", "attestra-bootstrap-")
 	if err != nil {
 		return err
@@ -160,7 +170,11 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	env := cloudEnvironment(os.Environ(), c, o, empty)
 	w.r = &processRunner{env: env}
 	w.a = &setupAWSClient{env: env}
-	defaults := map[string]string{"aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": "-1", "attestra-auth-email:captureWorkerMaxConcurrency": "2"}
+	reserved, worker := "5", "5"
+	if w.environment == "dev" {
+		reserved, worker = "-1", "2"
+	}
+	defaults := map[string]string{"aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
 	if err = bootstrapStack(w.r, o, defaults, confirm, w.saveProofKey); err != nil {
 		return err
 	}
@@ -187,10 +201,10 @@ func (w *bootstrapWizard) saveProofKey(value string) error {
 }
 func (w *bootstrapWizard) finish(repo string) error {
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("3 / 4 • Commit configuration and deploy"))
-	fmt.Println("Review and commit infra/Pulumi.dev.yaml on main, then push. This wizard does not commit or push for you:")
-	fmt.Println("  git diff -- infra/Pulumi.dev.yaml\n  git add infra/Pulumi.dev.yaml\n  git commit -m \"Configure dev stack\"\n  git push origin main")
+	fmt.Printf("Review and commit infra/Pulumi.%s.yaml on main, then push. This wizard does not commit or push for you:\n", w.o.Stack)
+	fmt.Printf("  git diff -- infra/Pulumi.%s.yaml\n  git add infra/Pulumi.%s.yaml\n  git commit -m \"Configure %s stack\"\n  git push origin main\n", w.o.Stack, w.o.Stack, w.o.Stack)
 	fmt.Printf("GitHub deployment: https://github.com/%s/actions/workflows/deploy.yml\n", repo)
-	fmt.Println("Start a NEW run on main: preview, then deploy. The action builds the Lambda archives. Do not retry an old commit after changing configuration.")
+	fmt.Printf("Start a NEW run on main, select environment %s: preview, then deploy. The action builds the Lambda archives. Do not retry an old commit after changing configuration.\n", w.environment)
 	fmt.Println("Alternatively, you can deploy this local checkout below. Local deployment uses your current AWS session and Pulumi's confirmation prompt.")
 	for {
 		choice := "finish"

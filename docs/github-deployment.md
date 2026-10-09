@@ -1,6 +1,6 @@
 # GitHub Actions deployment
 
-[Deploy AWS \[Pulumi S3\]](../.github/workflows/deploy.yml) runs manually from `main`. Choose `preview` (the default) or `deploy`. Both test the Go code, authenticate to AWS, check the existing S3 stack, build all Lambda archives and run Pulumi preview. `deploy` then runs `pulumi up --yes --non-interactive`. It uses the same Go deployment tool as the local scripts, in explicit CI mode.
+[Deploy AWS \[Pulumi S3\]](../.github/workflows/deploy.yml) runs manually from `main`. Choose an **environment** from the dropdown, then `preview` (the default) or `deploy`. The dropdown uses GitHub’s native `environment` input type and automatically lists repository environments created by setup. Both test the Go code, authenticate to AWS, check the existing S3 stack, build all Lambda archives and run Pulumi preview. `deploy` then runs `pulumi up --yes --non-interactive`. It uses the same Go deployment tool as the local scripts, in explicit CI mode.
 
 AWS authentication uses GitHub OIDC to assume an IAM role and obtain temporary credentials. No AWS access-key secret, interactive AWS login/SSO, or Pulumi Cloud API token is used in the workflow. The only application secret required in GitHub is the Pulumi state passphrase.
 
@@ -24,7 +24,7 @@ On Linux/macOS:
 
 This Go terminal form asks for a GitHub personal access token using hidden input. Create a **fine-grained token** limited to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and the automatically included **Metadata: read** permissions. Authorize the token for the organization if your repository policy requires it. The token is only used in memory for this setup and is never stored in GitHub or a local file. No GitHub CLI or Python installation is required.
 
-Defaults are `lambdawalker/go.attestra.aws.auth`, environment `dev`, region `us-east-2`, and stack `dev`. Full bootstrap proposes a randomly suffixed bucket name when none exists in the GitHub environment or local resume selections. Existing environment values take precedence. IAM-only maintenance retains its legacy bucket default; verify it before proceeding.
+Defaults are `lambdawalker/go.attestra.aws.auth` and region `us-east-2`. Choose `dev`, `qa`, `prod`, an existing environment, or invent a DNS-safe name. The stack name equals the selected environment. Full bootstrap proposes a randomly suffixed bucket name when none exists in the GitHub environment or local resume selections. Existing environment values take precedence. IAM-only maintenance also offers a fresh bucket name when no environment setting exists, but requires that bucket to already exist.
 
 The wizard now configures AWS as well:
 
@@ -32,7 +32,7 @@ The wizard now configures AWS as well:
 2. It verifies your identity through STS and derives the account ID. A mismatch with the existing GitHub environment stops setup.
 3. Full bootstrap creates or reuses the state bucket after confirmation, enables versioning and public access blocks, verifies region/ownership, and initializes or selects the Pulumi stack. Existing encryption and proof keys are retained. IAM-only maintenance checks the existing bucket without initializing resources.
 4. It inspects GitHub OIDC metadata, and creates the provider if missing or adds the STS audience without removing existing audiences. Default subject claims are required; custom templates stop setup without changing GitHub OIDC settings. Older repositories are asked whether they use immutable subjects.
-5. It creates `attestra-github-deploy` (editable), with trust restricted to this repository and `dev`. Repository/owner IDs come from GitHub, not hardcoded values. Existing roles tagged `attestra-setup=github-dev` and bound to the same repository/environment subject can be updated; other roles are left unchanged, so choose a new dedicated role name.
+5. It creates `attestra-github-deploy-<environment>` (editable), with trust restricted to this repository and the selected environment. Existing configured role names, including the original dev role, are reused. Repository/owner IDs come from GitHub, not hardcoded values. Existing roles tagged `attestra-setup=github-<environment>` and bound to the same repository/environment subject can be updated; other roles are left unchanged, so choose a new dedicated role name.
 6. It generates and displays trust and deployment permissions, asks for confirmation, applies them, and reads them back. The verified ARN returned by AWS becomes `AWS_ROLE_ARN`; you no longer type or construct it.
 7. It saves and verifies the GitHub environment using the existing flow.
 
@@ -48,17 +48,25 @@ The script shows the proposed variables before saving. For a new environment it 
 
 The passphrase is encrypted with the environment's GitHub public key before upload. The script verifies saved variables and secret presence. If a later API call fails, earlier successful changes remain and are listed by name; rerun after fixing the issue. It does not delete or roll back existing configuration.
 
-The IAM-only command configures **AWS IAM and GitHub**. Full bootstrap additionally prepares S3/Pulumi and offers a deployment menu. Neither automatically migrates existing Pulumi Cloud state or commits/pushes your YAML. Existing environment protections are preserved; ensure `dev` permits only `main` at the settings link printed on completion.
+The IAM-only command configures **AWS IAM and GitHub**. Full bootstrap additionally prepares S3/Pulumi and offers a deployment menu. Neither automatically migrates existing Pulumi Cloud state or commits/pushes your YAML. Existing environment protections are preserved; ensure each environment permits only `main` at the settings link printed on completion.
+
+## Environment isolation and domains
+
+Setup proposes a separate state bucket, stack, proof key/passphrase, and IAM role for each new environment. Choose the appropriate AWS account/profile during each setup; production can use a separate account. Environments in one account still share service quotas, and the current application deployment policies can manage matching resources across stacks. Separate accounts provide a stronger boundary.
+
+Domain defaults follow `<environment>.info.<base-domain>` for SES and `https://<environment>.<base-domain>` for the app. See [domain defaults and existing-dev compatibility](first-deployment.md#domain-defaults-for-each-environment). Configure SES DNS and host the app/association files for every new environment.
+
+The action loads the selected GitHub environment’s variables and secrets, requires `PULUMI_STACK` to match its name, and requires `infra/Pulumi.<environment>.yaml` to be committed. Each environment has a separate workflow concurrency group. Configure production reviewers/protection rules in GitHub as needed; setup preserves existing rules and restricts new environments to `main`.
 
 ## 1. Prepare the S3 stack locally
 
-For a fresh deployment, follow [the bootstrap wizard](first-deployment.md#run-the-wizard). For an existing Cloud stack, complete the [S3 migration](deployment.md#one-time-migration-from-pulumi-cloud) and commit the migrated `infra/Pulumi.dev.yaml`, including its passphrase encryption metadata and encrypted configuration. Remove the old `aws:profile` setting as the migration tool does. Keep the passphrase in your password manager.
+For a fresh deployment, follow [the bootstrap wizard](first-deployment.md#run-the-wizard). For an existing Cloud stack, complete the [S3 migration](deployment.md#one-time-migration-from-pulumi-cloud) and commit the migrated `infra/Pulumi.<environment>.yaml`, including its passphrase encryption metadata and encrypted configuration. Remove the old `aws:profile` setting as the migration tool does. Keep the passphrase in your password manager.
 
 The workflow does not migrate state, create a missing stack, or fall back to Pulumi Cloud. The committed configuration must belong to the selected S3 stack. A missing stack, Cloud-encrypted state, profile override, wrong region, or unavailable passphrase stops the run.
 
 ## 2. GitHub environment (configured by the wizard; manual reference)
 
-Open this repository's **Settings → Environments → New environment**, named **dev**. Restrict deployment branches to **main**. Add required reviewers if you want approval before a run receives credentials. That approval happens before the job, not between preview and update.
+Open this repository's **Settings → Environments → New environment**, named for your target, such as **qa**. Restrict deployment branches to **main**. Add required reviewers if you want approval before a run receives credentials. That approval happens before the job, not between preview and update.
 
 Add these environment **variables**:
 
@@ -67,8 +75,8 @@ Add these environment **variables**:
 | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
 | `AWS_REGION` | `us-east-2` |
 | `AWS_ROLE_ARN` | ARN of the deployment IAM role created below |
-| `PULUMI_BACKEND_URL` | `s3://pulumi-state-1p8322nx` |
-| `PULUMI_STACK` | `dev` |
+| `PULUMI_BACKEND_URL` | Your selected environment’s S3 state bucket/prefix |
+| `PULUMI_STACK` | Exactly the GitHub environment name (for example `qa`) |
 
 Add this environment **secret**:
 
@@ -76,7 +84,7 @@ Add this environment **secret**:
 | --- | --- |
 | `PULUMI_CONFIG_PASSPHRASE` | The exact passphrase used for the S3 stack |
 
-Use the S3 URL/prefix where you initialized or migrated the stack. Do not use the old Cloud-qualified stack name `isdavid/attestra-auth-email/dev`; the workflow selects the S3 stack `dev` in this project.
+Use the S3 URL/prefix where you initialized or migrated the stack. Do not use the old Cloud-qualified stack name `isdavid/attestra-auth-email/dev`; the workflow selects a simple S3 stack name matching the environment in this project.
 
 ## 3. AWS trust (configured by the wizard; manual reference)
 
@@ -85,7 +93,7 @@ In AWS IAM, create an OpenID Connect identity provider if it does not already ex
 - Provider URL: `https://token.actions.githubusercontent.com`
 - Audience: `sts.amazonaws.com`
 
-Create an IAM role for GitHub deployment with the following trust policy, replacing `AWS_ACCOUNT_ID`. It must match this repository's exact OIDC subject and the `dev` environment:
+Create an IAM role for GitHub deployment with the following trust policy, replacing `AWS_ACCOUNT_ID`. It must match this repository’s exact OIDC subject and selected environment. This example shows the existing `dev` environment; substitute your environment suffix:
 
 ```json
 {
@@ -137,13 +145,13 @@ An SSE-KMS bucket additionally needs appropriate KMS key access. The state bucke
 After committing the workflow and initialized or migrated stack configuration to `main`:
 
 1. Open **Actions → Deploy AWS [Pulumi S3] → Run workflow**.
-2. Select branch **main** and operation **preview**.
+2. Select branch **main**, the target **environment** from the dropdown, and operation **preview**.
 3. Inspect the build and Pulumi preview logs.
-4. Run again with operation **deploy** when ready.
+4. Run again for the same environment with operation **deploy** when ready.
 
 A deployment run previews again against its own checked-out commit and the current state. It does not apply a saved plan from an earlier preview run. Use environment approval to review the selected commit before deployment. The workflow never runs automatically on push or pull request, and rejects non-main refs.
 
-All dev runs share a concurrency group and running updates are not automatically cancelled. Local deployments still rely on Pulumi's S3 state lock; coordinate local work and CI. Do not manually cancel an active update unless necessary. If a run is interrupted, inspect the stack/lock before retrying rather than deleting state.
+All runs for the same environment share a concurrency group and running updates are not automatically cancelled. Local deployments still rely on Pulumi's S3 state lock; coordinate local work and CI. Do not manually cancel an active update unless necessary. If a run is interrupted, inspect the stack/lock before retrying rather than deleting state.
 
 No cloud credentials or decrypted state are uploaded as artifacts. The Go CI mode uses environment credentials only, prohibits interactive login/migration/git pull, and removes credential settings from build subprocesses. Failures stop the sequence; a failed preview never proceeds to update.
 
@@ -166,6 +174,6 @@ The committed dev configuration uses the shared pool, allowing deployment with a
 
 For QA/prod, set explicit values appropriate to their traffic and account quotas. For example, reservation `5` and worker maximum `5` reserve **15 total** across the three functions. Ensure the regional quota also accommodates other reservations and AWS's required unreserved capacity. A reservation of `0` is rejected because it disables invocations. The worker maximum cannot exceed a positive reservation.
 
-These settings are independent of `captureEnabled`, which remains unchanged. Only dev is configured in the current deployment workflow; this change does not create QA/prod stacks or GitHub environments.
+These settings are independent of `captureEnabled`, which remains unchanged. Run setup separately for each environment to create its stack and GitHub environment. The workflow selects the environment’s own variables, role, secret and stack YAML. No new cloud environments are created merely by pulling this code.
 
 After pulling a concurrency configuration change, start a **new** deployment run on `main`. Preserve the existing S3 state so Pulumi can resume a partial deployment; do not recreate the stack.

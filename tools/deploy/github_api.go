@@ -59,7 +59,9 @@ func (g *githubClient) request(method, path string, body any, result any) (bool,
 	}
 	return true, nil
 }
-func environmentPath(repo string) string { return "/repos/" + repo + "/environments/dev" }
+func environmentPath(repo, environment string) string {
+	return "/repos/" + repo + "/environments/" + url.PathEscape(environment)
+}
 
 type environmentSnapshot struct {
 	Exists       bool
@@ -69,9 +71,9 @@ type environmentSnapshot struct {
 
 var environmentVariables = []string{"AWS_ACCOUNT_ID", "AWS_ROLE_ARN", "AWS_REGION", "PULUMI_BACKEND_URL", "PULUMI_STACK"}
 
-func (g *githubClient) inspectEnvironment(repo string) (environmentSnapshot, error) {
+func (g *githubClient) inspectEnvironment(repo, environment string) (environmentSnapshot, error) {
 	s := environmentSnapshot{Variables: map[string]string{}}
-	path := environmentPath(repo)
+	path := environmentPath(repo, environment)
 	exists, err := g.request("GET", path, nil, nil)
 	if err != nil {
 		return s, err
@@ -109,14 +111,14 @@ func sealGitHubSecret(publicKey, secret string) (string, error) {
 
 // Returns names already saved if a later request fails. Never retries writes or
 // attempts a destructive rollback of a partially configured environment.
-func (g *githubClient) saveEnvironment(repo string, previous environmentSnapshot, values map[string]string, passphrase string) (saved []string, err error) {
-	path := environmentPath(repo)
+func (g *githubClient) saveEnvironment(repo, environment string, previous environmentSnapshot, values map[string]string, passphrase string) (saved []string, err error) {
+	path := environmentPath(repo, environment)
 	if !previous.Exists {
 		_, err = g.request("PUT", path, map[string]any{"deployment_branch_policy": map[string]bool{"protected_branches": false, "custom_branch_policies": true}}, nil)
 		if err != nil {
 			return
 		}
-		saved = append(saved, "dev environment")
+		saved = append(saved, environment+" environment")
 		_, err = g.request("POST", path+"/deployment-branch-policies", map[string]string{"name": "main", "type": "branch"}, nil)
 		if err != nil {
 			return
@@ -166,7 +168,7 @@ func (g *githubClient) saveEnvironment(repo string, previous environmentSnapshot
 	}
 	// Verify public values and secret presence; GitHub never returns secret values.
 	var after environmentSnapshot
-	after, err = g.inspectEnvironment(repo)
+	after, err = g.inspectEnvironment(repo, environment)
 	if err != nil {
 		return
 	}

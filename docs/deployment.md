@@ -123,3 +123,13 @@ go -C tools/deploy vet ./...
 ```
 
 CI runs these on Linux and Windows and checks the Windows launchers with a stub Go executable. Tests cover failure short-circuiting, migration without deployment, credential isolation and configuration guards. They do not contact AWS or migrate real state.
+
+## Deploy a specific environment locally
+
+Run setup once for each target. Use its backend and stack explicitly for routine local deployments:
+
+```text
+.\deploy.bat -Stack qa -Backend s3://YOUR-QA-STATE-BUCKET -Region us-east-2 -Sso -Profile attestra
+```
+
+On Linux/macOS use `./deploy.sh -stack qa -backend s3://YOUR-QA-STATE-BUCKET -region us-east-2 -sso -profile attestra`. Local deployment defaults to `dev`; it does not choose a GitHub environment. For GitHub deployment, choose the matching environment from the workflow dropdown.

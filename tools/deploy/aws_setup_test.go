@@ -10,6 +10,7 @@ import (
 
 type setupFake struct {
 	subject                  string
+	environment              string
 	provider, audience, role bool
 	trust                    map[string]any
 	policies                 map[string]any
@@ -48,7 +49,7 @@ func (f *setupFake) call(result any, args ...string) (bool, error) {
 		}
 		tags := []map[string]string{}
 		if f.owned {
-			tags = append(tags, map[string]string{"Key": "attestra-setup", "Value": "github-dev"}, map[string]string{"Key": "attestra-subject", "Value": f.subject})
+			tags = append(tags, map[string]string{"Key": "attestra-setup", "Value": "github-" + f.environment}, map[string]string{"Key": "attestra-subject", "Value": f.subject})
 		}
 		decode(map[string]any{"Role": map[string]any{"Arn": "arn:aws:iam::123456789012:role/attestra-github-deploy", "AssumeRolePolicyDocument": f.trust, "Tags": tags}})
 	case "get-role-policy":
@@ -67,6 +68,9 @@ func (f *setupFake) call(result any, args ...string) (bool, error) {
 			f.audience = true
 		case "create-role":
 			for _, arg := range args {
+				if strings.HasPrefix(arg, "Key=attestra-setup,Value=github-") {
+					f.environment = strings.TrimPrefix(arg, "Key=attestra-setup,Value=github-")
+				}
 				if strings.HasPrefix(arg, "Key=attestra-subject,Value=") {
 					f.subject = strings.TrimPrefix(arg, "Key=attestra-subject,Value=")
 				}
@@ -87,7 +91,7 @@ func (f *setupFake) call(result any, args ...string) (bool, error) {
 func TestAWSSetupCreateAndRerun(t *testing.T) {
 	f := &setupFake{policies: map[string]any{}}
 	policies := deploymentPolicies("123456789012", options{Region: "us-east-2", Backend: "s3://bucket-state/team", Stack: "dev"})
-	plan, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "repo:o/r:environment:dev", policies)
+	plan, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "repo:o/r:environment:dev", "dev", policies)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -99,7 +103,7 @@ func TestAWSSetupCreateAndRerun(t *testing.T) {
 		t.Fatal(arn)
 	}
 	f.writes = nil
-	plan, e = inspectAWSSetup(f, "123456789012", "attestra-github-deploy", plan.Subject, policies)
+	plan, e = inspectAWSSetup(f, "123456789012", "attestra-github-deploy", plan.Subject, "dev", policies)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -112,7 +116,7 @@ func TestAWSSetupCreateAndRerun(t *testing.T) {
 }
 func TestAWSSetupDoesNotTreatAccessDeniedAsMissing(t *testing.T) {
 	f := &setupFake{fail: "get-open-id-connect-provider"}
-	if _, e := inspectAWSSetup(f, "123456789012", "deploy", "subject", nil); e == nil {
+	if _, e := inspectAWSSetup(f, "123456789012", "deploy", "subject", "dev", nil); e == nil {
 		t.Fatal("expected failure")
 	}
 	if len(f.writes) > 0 {
@@ -121,14 +125,14 @@ func TestAWSSetupDoesNotTreatAccessDeniedAsMissing(t *testing.T) {
 }
 func TestAWSSetupPreservesUnmanagedRole(t *testing.T) {
 	f := &setupFake{provider: true, audience: true, role: true}
-	if _, e := inspectAWSSetup(f, "123456789012", "deploy", "subject", nil); e == nil {
+	if _, e := inspectAWSSetup(f, "123456789012", "deploy", "subject", "dev", nil); e == nil {
 		t.Fatal("expected unmanaged role rejection")
 	}
 }
 func TestAWSSetupPartialFailureCanResume(t *testing.T) {
 	f := &setupFake{policies: map[string]any{}, fail: "put-role-policy"}
 	policies := deploymentPolicies("123456789012", options{Region: "us-east-2", Backend: "s3://bucket-state"})
-	p, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "subject", policies)
+	p, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "subject", "dev", policies)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -140,7 +144,7 @@ func TestAWSSetupPartialFailureCanResume(t *testing.T) {
 	}
 	f.fail = ""
 	f.writes = nil
-	p, e = inspectAWSSetup(f, p.Account, p.RoleName, p.Subject, policies)
+	p, e = inspectAWSSetup(f, p.Account, p.RoleName, p.Subject, "dev", policies)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -154,8 +158,8 @@ func TestAWSSetupPartialFailureCanResume(t *testing.T) {
 	}
 }
 func TestAWSSetupAddsAudienceAndRepairsOwnedTrust(t *testing.T) {
-	f := &setupFake{provider: true, role: true, owned: true, subject: "subject", policies: map[string]any{}, trust: map[string]any{}}
-	p, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "subject", nil)
+	f := &setupFake{provider: true, role: true, owned: true, environment: "dev", subject: "subject", policies: map[string]any{}, trust: map[string]any{}}
+	p, e := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "subject", "dev", nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -186,13 +190,36 @@ func TestDefaultSubjectUsesRepositoryMetadata(t *testing.T) {
 	m.Owner.ID = 456
 	m.Owner.Login = "owner"
 	m.CreatedAt = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	got, e := defaultSubject(m)
+	got, e := defaultSubject(m, "dev")
 	if e != nil || got != "repo:owner@456/repo@123:environment:dev" {
 		t.Fatal(got, e)
 	}
 	m.CreatedAt = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	got, e = defaultSubject(m)
+	got, e = defaultSubject(m, "dev")
 	if e != nil || got != "repo:owner/repo:environment:dev" {
 		t.Fatal(got, e)
+	}
+}
+
+func TestAWSRoleCannotBeReusedAcrossEnvironments(t *testing.T) {
+	f := &setupFake{provider: true, audience: true, role: true, owned: true, environment: "dev", subject: "repo:o/r:environment:dev"}
+	if _, err := inspectAWSSetup(f, "123456789012", "attestra-github-deploy", "repo:o/r:environment:qa", "qa", nil); err == nil {
+		t.Fatal("allowed QA to take ownership of dev role")
+	}
+	if len(f.writes) != 0 {
+		t.Fatal(f.writes)
+	}
+}
+func TestAWSSetupCustomEnvironmentRoundTrip(t *testing.T) {
+	f := &setupFake{policies: map[string]any{}}
+	p, err := inspectAWSSetup(f, "123456789012", "attestra-github-deploy-demo", "repo:o/r:environment:demo", "demo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = applyAWSSetup(f, p); err != nil {
+		t.Fatal(err)
+	}
+	if f.environment != "demo" || f.subject != "repo:o/r:environment:demo" {
+		t.Fatal(f)
 	}
 }

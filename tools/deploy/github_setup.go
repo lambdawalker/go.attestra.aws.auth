@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-func setupDefaults(existing map[string]string) map[string]string {
-	v := map[string]string{"AWS_ACCOUNT_ID": "", "AWS_ROLE_ARN": "", "AWS_REGION": "us-east-2", "PULUMI_BACKEND_URL": "s3://pulumi-state-1p8322nx", "PULUMI_STACK": "dev"}
+func setupDefaults(environment string, existing map[string]string) map[string]string {
+	v := map[string]string{"AWS_ACCOUNT_ID": "", "AWS_ROLE_ARN": "", "AWS_REGION": "us-east-2", "PULUMI_BACKEND_URL": freshBackend(), "PULUMI_STACK": environment}
 	for key, value := range existing {
 		v[key] = value
 	}
@@ -51,7 +51,7 @@ func runGitHubSetup(root string, full bool) error {
 	if full {
 		fmt.Println("Full bootstrap: state bucket → stack and secrets → IAM/GitHub → deploy and SES DNS guidance. Existing resources are preserved.")
 	}
-	fmt.Println("Creates/configures dev. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Application deployment is a separate explicit step.")
+	fmt.Println("Creates/configures the selected environment. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Application deployment is a separate explicit step.")
 	fmt.Println("Token permissions: Administration write, Environments write, Actions read, and Metadata read for this repository.")
 	repo, token := "lambdawalker/go.attestra.aws.auth", ""
 	repoField := input("GitHub repository", &repo, false, true).Validate(func(v string) error {
@@ -76,15 +76,23 @@ func runGitHubSetup(root string, full bool) error {
 	if !found {
 		return errors.New("repository not found or token lacks access")
 	}
-	fmt.Printf("Signed in as %s. Configuring %s / dev.\n", user.Login, repo)
-	previous, err := client.inspectEnvironment(repo)
+	names, err := client.listEnvironments(repo)
 	if err != nil {
 		return err
 	}
-	values := setupDefaults(previous.Variables)
-	if full && previous.Variables["PULUMI_BACKEND_URL"] == "" {
-		values["PULUMI_BACKEND_URL"] = freshBackend()
+	environment, err := chooseEnvironment(names)
+	if err != nil {
+		return err
 	}
+	if bootstrap != nil {
+		bootstrap.environment = environment
+	}
+	fmt.Printf("Signed in as %s. Configuring %s / %s.\n", user.Login, repo, environment)
+	previous, err := client.inspectEnvironment(repo, environment)
+	if err != nil {
+		return err
+	}
+	values := setupDefaults(environment, previous.Variables)
 	if full {
 		if err := bootstrap.loadSelections(repo, values, previous.Variables); err != nil {
 			return err
@@ -93,7 +101,7 @@ func runGitHubSetup(root string, full bool) error {
 	if previous.Exists {
 		fmt.Println("Existing environment found. Press Enter to retain prefilled variable values.")
 	}
-	for _, name := range []string{"AWS_REGION", "PULUMI_BACKEND_URL", "PULUMI_STACK"} {
+	for _, name := range []string{"AWS_REGION", "PULUMI_BACKEND_URL"} {
 		value := values[name]
 		if err := input(name, &value, false, true).Run(); err != nil {
 			return err
@@ -103,15 +111,15 @@ func runGitHubSetup(root string, full bool) error {
 	if err := (options{Backend: values["PULUMI_BACKEND_URL"], Region: values["AWS_REGION"], Stack: values["PULUMI_STACK"]}).validate(); err != nil {
 		return err
 	}
+	if values["PULUMI_STACK"] != environment {
+		return errors.New("PULUMI_STACK must match the selected environment; inspect its existing configuration before resuming")
+	}
 	if full {
-		if values["PULUMI_STACK"] != "dev" {
-			return errors.New("bootstrap supports dev only; current workflow uses environment dev")
-		}
 		if err := bootstrap.saveSelections(repo, values); err != nil {
 			return err
 		}
 	}
-	if err := setupAWSRole(client, repo, metadata, values, bootstrap); err != nil {
+	if err := setupAWSRole(client, repo, environment, metadata, values, bootstrap); err != nil {
 		return err
 	}
 	if err := validateSetupValues(values); err != nil {
@@ -139,7 +147,7 @@ func runGitHubSetup(root string, full bool) error {
 			}
 		}
 	}
-	fmt.Printf("\nRepository: %s\nEnvironment: dev\n", repo)
+	fmt.Printf("\nRepository: %s\nEnvironment: %s\n", repo, environment)
 	for _, name := range environmentVariables {
 		fmt.Printf("%s: %s\n", name, values[name])
 	}
@@ -156,7 +164,7 @@ func runGitHubSetup(root string, full bool) error {
 	if err := confirm("Save this GitHub environment configuration?"); err != nil {
 		return err
 	}
-	saved, err := client.saveEnvironment(repo, previous, values, passphrase)
+	saved, err := client.saveEnvironment(repo, environment, previous, values, passphrase)
 	if err != nil {
 		if len(saved) > 0 {
 			fmt.Println("Already saved:", strings.Join(saved, ", "))

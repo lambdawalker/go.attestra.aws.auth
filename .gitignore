@@ -6,3 +6,5 @@ infra/Pulumi.*.yaml.bak.*
 
 # Non-secret local selections for resumable bootstrap.
 bootstrap.local.json
+
+bootstrap.*.local.json

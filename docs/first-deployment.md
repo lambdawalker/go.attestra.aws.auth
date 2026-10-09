@@ -1,6 +1,6 @@
 # First deployment from scratch
 
-Run the Go terminal wizard to create or resume the `dev` deployment. It handles AWS login, S3 state, Pulumi stack/configuration, IAM/OIDC and GitHub environment setup, then guides deployment, SES DNS verification and Android configuration. The interface uses Charm Huh/Lipgloss. Launchers invoke Go directly; no PowerShell wrapper is required.
+Run the Go terminal wizard to create or resume a deployment for `dev`, `qa`, `prod`, or a custom environment. It handles AWS login, S3 state, Pulumi stack/configuration, IAM/OIDC and GitHub environment setup, then guides deployment, SES DNS verification and Android configuration. The interface uses Charm Huh/Lipgloss. Launchers invoke Go directly; no PowerShell wrapper is required.
 
 ## Before you start
 
@@ -42,9 +42,9 @@ go -C tools/deploy run . -setup-github
 
 ### 1. Choose the repository and AWS identity
 
-Enter the GitHub token and repository. The wizard reads existing `dev` environment settings and offers defaults. It asks for the deployment region, S3 backend URL and stack. Full bootstrap currently supports **dev only**; the workflow is still tied to GitHub environment `dev`, not a QA/prod selector.
+Enter the GitHub token and repository. Select **dev**, **qa**, **prod**, an existing environment, or **Create another environment** and enter your own name. Names use 1–32 lowercase letters/digits with single internal hyphens and start with a letter (for example `demo-2`). The GitHub environment and Pulumi stack use the same name. The wizard reads only that environment’s settings and asks for its deployment region and S3 backend URL.
 
-For a fresh deployment it proposes a random `attestra-state-...` bucket name, avoiding the existing project's bucket name. S3 names must be globally unique. Existing environment values take precedence. Non-secret selections (repository/region/backend/stack) are saved to ignored `bootstrap.local.json`, so an interrupted first setup can reuse its bucket before the GitHub environment exists. Keep this file locally when resuming.
+For a fresh deployment it proposes a random `attestra-state-...` bucket name, avoiding the existing project's bucket name. S3 names must be globally unique. Existing environment values take precedence. Non-secret selections (repository/region/backend/stack) are saved to ignored `bootstrap.<environment>.local.json`, so an interrupted first setup can reuse its bucket before the GitHub environment exists. Keep this file locally when resuming. Legacy `bootstrap.local.json` is read only for `dev`. A checkpoint from another environment is never reused.
 
 Choose SSO, AWS browser login, or access-key credentials. For SSO, the wizard can open `aws configure sso` to configure a new profile, then runs `aws sso login`. Use an existing SSO profile with the SSO option, not `aws login`. Temporary credentials require an access key, secret key **and** session token. Credentials are checked with STS; an account mismatch with an existing GitHub environment stops setup.
 
@@ -56,29 +56,44 @@ The wizard shows proposed changes and asks before applying them. It:
 - Verifies existing bucket ownership and region, then ensures versioning and all four public access blocks are enabled. Existing objects and encryption settings are preserved; new S3 buckets use default encryption.
 - Prompts for and confirms the Pulumi passphrase. For an existing stack, use its **original** passphrase. Save it in a password manager.
 - Lists stacks in the selected project/backend before initializing a missing stack. Failed reads stop setup. No stack removal, resource destruction or automatic state migration occurs.
-- For a fresh stack, offers to retain an existing local `Pulumi.dev.yaml` as an ignored `.bak.<timestamp>` file before creating fresh encryption metadata.
-- Fills missing region, app origin, sender domain/address and dev concurrency settings. Existing values are retained; use Pulumi config explicitly to change existing settings.
+- For a fresh stack, offers to retain an existing local `Pulumi.<environment>.yaml` as an ignored `.bak.<timestamp>` file before creating fresh encryption metadata.
+- Fills missing region, app origin, sender domain/address and environment-specific concurrency settings. Existing values are retained; use Pulumi config explicitly to change existing settings.
 - Generates a cryptographically random 32-byte proof key **only if missing**, passing it through stdin to `pulumi config set --secret`. Existing encrypted keys are retained. Decrypted configuration is captured only in memory; secret command output is suppressed.
 
 The passphrase is supplied to Pulumi subprocesses through their environment, including when piping the proof key, so Pulumi does not need to prompt on stdin. A wrong passphrase or incompatible existing YAML/provider configuration stops configuration writes. An interrupted initialization is resumed with the same passphrase rather than starting again.
 
 The state bucket is separate from the application/ID-evidence bucket. Keep state versioning and do not add evidence expiry rules to it. S3 state avoids the Pulumi Cloud API, but AWS storage/requests can incur charges.
 
+### Domain defaults for each environment
+
+Enter a base domain such as `example.com`. Setup offers editable defaults:
+
+| Environment | App origin | SES identity | Sender |
+| --- | --- | --- | --- |
+| `dev` | `https://dev.example.com` | `dev.info.example.com` | `verify@dev.info.example.com` |
+| `qa` | `https://qa.example.com` | `qa.info.example.com` | `verify@qa.info.example.com` |
+| `prod` | `https://prod.example.com` | `prod.info.example.com` | `verify@prod.info.example.com` |
+| `demo-2` | `https://demo-2.example.com` | `demo-2.info.example.com` | `verify@demo-2.info.example.com` |
+
+All environments, including production, receive the prefix. App origin drives email links, CORS, and WebAuthn origin/RP ID settings. The API Gateway URL is already generated separately for each stack; this repository has no custom API domain setting. Host your verification page and Android association files on each app origin and configure its DNS/HTTPS separately; this backend wizard does not provision that website.
+
+Existing stack configuration wins over proposed defaults. In particular, the deployed dev stack keeps `https://attestrabond.com` and `info.attestrabond.com`. Moving it to `dev.*` is an explicit configuration change requiring DNS/SES verification and frontend/Android updates; setup does not silently rename live identities.
+
 ### 3. Configure IAM and GitHub
 
-The wizard inspects or creates the GitHub OIDC provider and setup-managed deployment role, displays the trust/permission policies for review, applies approved changes and verifies them. It obtains the actual `AWS_ROLE_ARN` from AWS. Unmanaged existing roles are left unchanged; choose a new dedicated role name.
+The wizard inspects or creates the GitHub OIDC provider and setup-managed deployment role, displays the trust/permission policies for review, applies approved changes and verifies them. It obtains the actual `AWS_ROLE_ARN` from AWS. The default role is `attestra-github-deploy-<environment>`, with an exact repository/environment OIDC subject. Existing configured role names (including the original dev role) are retained. A role owned by another environment is rejected. Unmanaged existing roles are left unchanged; choose a new dedicated role name.
 
-It creates or updates the GitHub `dev` environment, preserving existing protection rules and restricting a new environment to `main`. It saves account, region, role ARN, backend and stack variables. The **same tested stack passphrase** is uploaded as `PULUMI_CONFIG_PASSPHRASE` using GitHub's encrypted secret upload. No AWS access keys or Pulumi Cloud token are stored in GitHub.
+It creates or updates the selected GitHub environment, preserving existing protection rules and restricting a new environment to `main`. It saves account, region, role ARN, backend and stack variables. The **same tested stack passphrase** is uploaded as `PULUMI_CONFIG_PASSPHRASE` using GitHub's encrypted secret upload. No AWS access keys or Pulumi Cloud token are stored in GitHub. The environment appears automatically in the Deploy action dropdown once created; no workflow edits are needed. Commit the stack YAML before running it.
 
 For Cloudflare DNS, leave the optional Route 53 hosted zone blank. That field grants IAM access for a separately configured Route 53 integration; it does not configure Cloudflare.
 
 ### 4. Review configuration and deploy
 
-The wizard prints the commands to review, commit and push `infra/Pulumi.dev.yaml`. It does **not** run Git commit/push for you. Commit the encrypted `proofKey` and encryption salt, not plaintext secrets, state exports or backup files. Do not set `aws:profile` in the committed YAML; GitHub uses temporary OIDC credentials.
+The wizard prints the commands to review, commit and push `infra/Pulumi.<environment>.yaml`. It does **not** run Git commit/push for you. Commit the encrypted `proofKey` and encryption salt, not plaintext secrets, state exports or backup files. Do not set `aws:profile` in the committed YAML; GitHub uses temporary OIDC credentials.
 
 Then choose:
 
-- **Finish here; deploy using GitHub Actions**: follow the printed workflow URL. Start a new `main` run with operation `preview`, review it, then run `deploy`.
+- **Finish here; deploy using GitHub Actions**: follow the printed workflow URL. Select the new environment in the **environment dropdown**, then start a new `main` run with operation `preview`, review it, then run `deploy`.
 - **Build and preview locally**: uses the selected backend/account and does not deploy resources.
 - **Build, preview and deploy locally**: invokes the Go packager, previews and runs `pulumi up` with Pulumi's confirmation prompt. It deploys your current checkout, so review local changes first.
 - **Show SES DNS records and check verification**: reads the created SES identity and displays the exact TXT/CNAME records and verification status.
@@ -98,13 +113,13 @@ Wait for verification and DKIM success; choose the check again to reread status.
 
 Use the deployed `apiUrl`, `userPoolId` and `clientId` outputs to [configure Android](../README.md#configure-the-android-api-url). These can change after recreating infrastructure. The backend does not deploy your website's verification page or Android association files.
 
-Real ID capture remains disabled until `captureEnabled`, document type, purpose and jurisdiction are deliberately configured. Dev uses `captureReservedConcurrency: -1` (shared capacity) and `captureWorkerMaxConcurrency: 2`; see [per-stack concurrency](github-deployment.md#capture-concurrency-per-environment) for QA/prod settings and quotas.
+Real ID capture remains disabled until `captureEnabled`, document type, purpose and jurisdiction are deliberately configured. Dev uses `captureReservedConcurrency: -1` (shared capacity) and `captureWorkerMaxConcurrency: 2`; see [per-stack concurrency](github-deployment.md#capture-concurrency-per-environment) for QA/prod settings and quotas. New non-dev stacks default to reservation `5` per capture function and worker maximum `5`; confirm regional quota before deployment.
 
 ## Routine updates and recovery
 
-Once bootstrap is complete, push reviewed changes to `main` and run **Deploy AWS [Pulumi S3]**. Setup and DNS changes are not required for every code deployment. After a code/config fix, start a **new** workflow run; retrying an old run reuses the old commit.
+Once bootstrap is complete, push reviewed changes to `main` and run **Deploy AWS [Pulumi S3]**, selecting the matching environment. Setup and DNS changes are not required for every code deployment. After a code/config fix, start a **new** workflow run; retrying an old run reuses the old commit.
 
-Rerun the wizard to resume setup, retaining `bootstrap.local.json` and the stack YAML. Existing resources/configuration are inspected and reused. Review confirmations: existing bucket protections are reasserted and the tested passphrase is saved to GitHub again. Cancelling after earlier stages leaves those changes intact.
+Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json` and the stack YAML. Existing resources/configuration are inspected and reused. Review confirmations: existing bucket protections are reasserted and the tested passphrase is saved to GitHub again. Cancelling after earlier stages leaves those changes intact.
 
 | Symptom | Next step |
 | --- | --- |

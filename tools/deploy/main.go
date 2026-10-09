@@ -61,8 +61,8 @@ func run() error {
 	flag.BoolVar(&o.Sso, "sso", false, "Use aws sso login with an existing IAM Identity Center profile")
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
 	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
-	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the GitHub dev environment interactively")
-	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh dev deployment, or resume setup")
+	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the selected GitHub environment interactively")
+	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh environment deployment, or resume setup")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err

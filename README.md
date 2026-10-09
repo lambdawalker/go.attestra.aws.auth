@@ -97,9 +97,9 @@ cd infra
 go mod tidy
 pulumi stack init dev
 pulumi config set aws:region us-east-2
-pulumi config set appOrigin https://attestrabond.com
-pulumi config set senderDomain info.attestrabond.com
-pulumi config set senderAddress verify@info.attestrabond.com
+pulumi config set appOrigin https://dev.attestrabond.com
+pulumi config set senderDomain dev.info.attestrabond.com
+pulumi config set senderAddress verify@dev.info.attestrabond.com
 pulumi config set --secret proofKey "$(openssl rand -base64 32)"
 pulumi preview
 pulumi up
@@ -263,3 +263,7 @@ go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
 | `debug`, `scripts` | Read-only SES diagnostics and deployment archive validation |
 
 Historical implementation decisions are preserved in the [archived original plan](docs/history/2026-09-24-aws-onboarding.md); its unchecked tasks are not current instructions.
+
+### Set up another deployment environment
+
+Run `setup.bat` (Windows) or `./setup.sh` (Linux/macOS). Choose `dev`, `qa`, `prod`, an existing environment, or create a custom name. Setup uses that name for the GitHub environment and Pulumi stack, offers environment-prefixed domains, and preserves existing stack values. Commit the resulting `infra/Pulumi.<environment>.yaml`, then select the environment in **Deploy AWS [Pulumi S3] → Run workflow**. New environments appear automatically in the dropdown. See [the setup guide](docs/first-deployment.md#domain-defaults-for-each-environment).

@@ -1,8 +1,14 @@
 name: "Deploy AWS [Pulumi S3]"
+run-name: "${{ inputs.operation }} AWS • ${{ inputs.environment }}"
 
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: Environment configured by setup
+        required: true
+        type: environment
+        default: dev
       operation:
         description: Preview only, or preview and deploy
         required: true
@@ -15,9 +21,9 @@ on:
 permissions:
   contents: read
 
-# Serialize every dev operation, including previews. Never cancel an update.
+# Serialize operations for each environment, including previews. Never cancel an update.
 concurrency:
-  group: attestra-auth-dev-deployment
+  group: attestra-auth-${{ inputs.environment }}-deployment
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +31,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: dev
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -35,6 +41,7 @@ jobs:
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       STATE_BACKEND: ${{ vars.PULUMI_BACKEND_URL }}
       STACK_NAME: ${{ vars.PULUMI_STACK }}
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
       OPERATION: ${{ inputs.operation }}
     steps:
       - uses: actions/checkout@v4
@@ -46,10 +53,18 @@ jobs:
           set -euo pipefail
           for name in AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_ARN STATE_BACKEND STACK_NAME; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::Set $name in the dev environment (STATE_BACKEND is PULUMI_BACKEND_URL; STACK_NAME is PULUMI_STACK)."
+              echo "::error::Set $name in the $DEPLOY_ENVIRONMENT environment (STATE_BACKEND is PULUMI_BACKEND_URL; STACK_NAME is PULUMI_STACK)."
               exit 1
             fi
           done
+          if [[ ! "$DEPLOY_ENVIRONMENT" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ || ${#DEPLOY_ENVIRONMENT} -gt 32 || "$STACK_NAME" != "$DEPLOY_ENVIRONMENT" ]]; then
+            echo "::error::Environment must be a lowercase DNS-safe name and PULUMI_STACK must match it. Run setup for the selected environment."
+            exit 1
+          fi
+          if [[ ! -f "infra/Pulumi.$STACK_NAME.yaml" ]]; then
+            echo "::error::Missing infra/Pulumi.$STACK_NAME.yaml. Run setup and commit the encrypted stack configuration to main."
+            exit 1
+          fi
           [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
           [[ "$OPERATION" == preview || "$OPERATION" == deploy ]]
       - uses: actions/setup-go@v5

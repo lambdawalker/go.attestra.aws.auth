@@ -254,12 +254,12 @@ func TestExistingStackWithoutLocalProofNeverRotates(t *testing.T) {
 	}
 }
 func TestCheckpointRetainsBucketWithoutStoringSecrets(t *testing.T) {
-	w := &bootstrapWizard{root: t.TempDir()}
+	w := &bootstrapWizard{root: t.TempDir(), environment: "dev"}
 	values := map[string]string{"AWS_REGION": "us-east-2", "PULUMI_BACKEND_URL": "s3://existing-state", "PULUMI_STACK": "dev", "PULUMI_CONFIG_PASSPHRASE": "never-save-this"}
 	if err := w.saveSelections("o/r", values); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(filepath.Join(w.root, "bootstrap.local.json"))
+	b, _ := os.ReadFile(w.checkpointPath())
 	if strings.Contains(string(b), "never-save-this") {
 		t.Fatal("secret leaked")
 	}

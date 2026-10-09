@@ -81,7 +81,7 @@ func githubTrust(account, subject string) map[string]any {
 		}},
 	}}}
 }
-func defaultSubject(m repositoryMetadata) (string, error) {
+func defaultSubject(m repositoryMetadata, environment string) (string, error) {
 	if m.ID <= 0 || m.Owner.ID <= 0 || m.Name == "" || m.Owner.Login == "" || m.CreatedAt.IsZero() {
 		return "", errors.New("GitHub repository metadata is incomplete")
 	}
@@ -89,7 +89,7 @@ func defaultSubject(m repositoryMetadata) (string, error) {
 	if !m.CreatedAt.Before(time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)) {
 		repo = fmt.Sprintf("%s@%d/%s@%d", m.Owner.Login, m.Owner.ID, m.Name, m.ID)
 	}
-	return "repo:" + repo + ":environment:dev", nil
+	return "repo:" + repo + ":environment:" + environment, nil
 }
 
 type awsRoleSnapshot struct {
@@ -98,7 +98,7 @@ type awsRoleSnapshot struct {
 	Tags                     []struct{ Key, Value string }
 }
 type awsSetupPlan struct {
-	Account, RoleName, Subject                 string
+	Account, RoleName, Subject, Environment    string
 	ProviderExists, AudienceExists, RoleExists bool
 	Role                                       awsRoleSnapshot
 	Trust                                      map[string]any
@@ -106,8 +106,8 @@ type awsSetupPlan struct {
 	ExistingPolicies                           map[string]any
 }
 
-func inspectAWSSetup(a awsSetupAPI, account, name, subject string, policies map[string]any) (awsSetupPlan, error) {
-	p := awsSetupPlan{Account: account, RoleName: name, Subject: subject, Trust: githubTrust(account, subject), Policies: policies, ExistingPolicies: map[string]any{}}
+func inspectAWSSetup(a awsSetupAPI, account, name, subject, environment string, policies map[string]any) (awsSetupPlan, error) {
+	p := awsSetupPlan{Environment: environment, Account: account, RoleName: name, Subject: subject, Trust: githubTrust(account, subject), Policies: policies, ExistingPolicies: map[string]any{}}
 	var provider struct {
 		Url          string
 		ClientIDList []string
@@ -137,7 +137,7 @@ func inspectAWSSetup(a awsSetupAPI, account, name, subject string, policies map[
 			if tag.Key == "attestra-subject" && tag.Value == subject {
 				sameRepository = true
 			}
-			if tag.Key == "attestra-setup" && tag.Value == "github-dev" {
+			if tag.Key == "attestra-setup" && tag.Value == "github-"+environment {
 				owned = true
 			}
 		}
@@ -188,7 +188,7 @@ func applyAWSSetup(a awsSetupAPI, p awsSetupPlan) (string, error) {
 		}
 	}
 	if !p.RoleExists {
-		if e := write("iam", "create-role", "--role-name", p.RoleName, "--assume-role-policy-document", policyJSON(p.Trust), "--tags", "Key=attestra-setup,Value=github-dev", "Key=attestra-subject,Value="+p.Subject, "--max-session-duration", "3600"); e != nil {
+		if e := write("iam", "create-role", "--role-name", p.RoleName, "--assume-role-policy-document", policyJSON(p.Trust), "--tags", "Key=attestra-setup,Value=github-"+p.Environment, "Key=attestra-subject,Value="+p.Subject, "--max-session-duration", "3600"); e != nil {
 			return "", e
 		}
 	} else if !sameJSON(p.Role.AssumeRolePolicyDocument, p.Trust) {
@@ -205,7 +205,7 @@ func applyAWSSetup(a awsSetupAPI, p awsSetupPlan) (string, error) {
 		}
 	}
 	// Read back identity, trust, provider audience, and each managed policy.
-	verified, e := inspectAWSSetup(a, p.Account, p.RoleName, p.Subject, p.Policies)
+	verified, e := inspectAWSSetup(a, p.Account, p.RoleName, p.Subject, p.Environment, p.Policies)
 	if e != nil {
 		return "", e
 	}
@@ -220,7 +220,7 @@ func applyAWSSetup(a awsSetupAPI, p awsSetupPlan) (string, error) {
 	return verified.Role.Arn, nil
 }
 
-func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, values map[string]string, bootstrap *bootstrapWizard) error {
+func setupAWSRole(g *githubClient, repo, environment string, metadata repositoryMetadata, values map[string]string, bootstrap *bootstrapWizard) error {
 	if _, err := exec.LookPath("aws"); err != nil {
 		return errors.New("install AWS CLI v2 and add it to PATH")
 	}
@@ -298,7 +298,7 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 	if err = checkBucket(&processRunner{env: a.env}, o, id.Account); err != nil {
 		return err
 	}
-	subject, err := defaultSubject(metadata)
+	subject, err := defaultSubject(metadata, environment)
 	if err != nil {
 		return err
 	}
@@ -319,10 +319,10 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 			return err
 		}
 		if immutable {
-			subject = fmt.Sprintf("repo:%s@%d/%s@%d:environment:dev", metadata.Owner.Login, metadata.Owner.ID, metadata.Name, metadata.ID)
+			subject = fmt.Sprintf("repo:%s@%d/%s@%d:environment:%s", metadata.Owner.Login, metadata.Owner.ID, metadata.Name, metadata.ID, environment)
 		}
 	}
-	name := "attestra-github-deploy"
+	name := "attestra-github-deploy-" + environment
 	if old := values["AWS_ROLE_ARN"]; old != "" {
 		parts := strings.Split(old, "/")
 		name = parts[len(parts)-1]
@@ -388,7 +388,7 @@ func setupAWSRole(g *githubClient, repo string, metadata repositoryMetadata, val
 			policies["attestra-state-kms"] = map[string]any{"Version": "2012-10-17", "Statement": []any{map[string]any{"Effect": "Allow", "Action": []string{"kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"}, "Resource": result.KeyMetadata.Arn, "Condition": map[string]any{"StringEquals": map[string]string{"kms:ViaService": "s3." + o.Region + ".amazonaws.com"}}}}}
 		}
 	}
-	plan, err := inspectAWSSetup(a, id.Account, name, subject, policies)
+	plan, err := inspectAWSSetup(a, id.Account, name, subject, environment, policies)
 	if err != nil {
 		return err
 	}
