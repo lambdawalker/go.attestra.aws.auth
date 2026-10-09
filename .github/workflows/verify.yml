@@ -15,7 +15,7 @@ jobs:
           go mod tidy
           go test ./...
           go vet ./...
-          ./build.sh
+          bash build.sh
           python3 scripts/check_lambda_archives.py
       - name: Compile Pulumi stack
         working-directory: infra
@@ -38,6 +38,39 @@ jobs:
         run: |
           ./build.ps1
           python scripts/check_lambda_archives.py
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Capture contract and AWS adapter tests
+        run: go test -race ./capture ./captureapi ./awscapture
+      - name: Compile capture entrypoints
+        run: go build ./cmd/capture ./cmd/capture-worker ./cmd/capture-dispatcher
+      - name: Compile capture infrastructure
+        working-directory: infra
+        run: go build ./...
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check Go formatting
+        run: |
+          gofmt -w $(git ls-files '*.go')
+          git diff -- '*.go' > formatting.patch
+          test ! -s formatting.patch
+      - name: Upload suggested formatting patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-formatting
+          path: formatting.patch
   deploy-script:
     strategy:
       matrix:

@@ -50,6 +50,7 @@ func main() {
 }
 func run() error {
 	var o options
+	var setupGitHub bool
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
@@ -60,9 +61,16 @@ func run() error {
 	flag.BoolVar(&o.Sso, "sso", false, "Use aws sso login with an existing IAM Identity Center profile")
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
 	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
+	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the GitHub dev environment interactively")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
+	}
+	if setupGitHub {
+		if o.CI != "" {
+			return errors.New("GitHub setup cannot run in CI mode")
+		}
+		return runGitHubSetup()
 	}
 	if o.CI != "" {
 		return runCI(o)

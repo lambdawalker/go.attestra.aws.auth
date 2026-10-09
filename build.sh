@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-for name in signup resend confirm challenge passkeyoptions passkeycomplete; do
+for name in signup resend confirm challenge passkeyoptions passkeycomplete capture capture-worker capture-dispatcher; do
   mkdir -p "dist/$name"
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -tags lambda.norpc -o "dist/$name/bootstrap" "./cmd/$name"
   chmod 755 "dist/$name/bootstrap"

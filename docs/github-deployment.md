@@ -4,6 +4,32 @@
 
 AWS authentication uses GitHub OIDC to assume an IAM role and obtain temporary credentials. No AWS access-key secret, interactive AWS login/SSO, or Pulumi Cloud API token is used in the workflow. The only application secret required in GitHub is the Pulumi state passphrase.
 
+## Guided environment setup
+
+After pulling `main`, run from the repository root:
+
+```powershell
+.\setup-github.bat
+# Or:
+.\setup-github.ps1
+```
+
+On Linux/macOS:
+
+```bash
+go -C tools/deploy run . -setup-github
+```
+
+This Go terminal form asks for a GitHub personal access token using hidden input. Create a **fine-grained token** limited to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and the automatically included **Metadata: read** permissions. Authorize the token for the organization if your repository policy requires it. The token is only used in memory for this setup and is never stored in GitHub or a local file. No GitHub CLI or Python installation is required.
+
+Defaults are `lambdawalker/go.attestra.aws.auth`, environment `dev`, region `us-east-2`, state backend `s3://pulumi-state-1p8322nx`, and stack `dev`. Existing environment variable values take precedence. The AWS account ID is derived from an existing role ARN when possible; otherwise enter it. The suggested role name is `attestra-github-deploy`, but you must enter the ARN of an **actual AWS OIDC role** you created using the instructions below.
+
+The script shows the proposed variables before saving. For a new environment it creates a deployment branch restriction for `main`. For an existing environment it preserves protection rules and pre-fills existing values; press Enter to keep them. Existing passphrase secrets cannot be read back: leave the hidden passphrase prompt blank to retain one, or enter and confirm a replacement. Use the **same passphrase used for S3 migration**, not a newly invented password.
+
+The passphrase is encrypted with the environment's GitHub public key before upload. The script verifies saved variables and secret presence. If a later API call fails, earlier successful changes remain and are listed by name; rerun after fixing the issue. It does not delete or roll back existing configuration.
+
+This configures **GitHub only**. It does not create an AWS role, migrate Pulumi state, or start a deployment. Existing environment protections should be reviewed at the settings link printed on completion.
+
 ## 1. Finish migration locally
 
 Complete the [S3 migration](deployment.md#one-time-migration-from-pulumi-cloud) and commit the migrated `infra/Pulumi.dev.yaml`, including its passphrase encryption metadata and encrypted configuration. Remove the old `aws:profile` setting as the migration tool does. Keep the passphrase in your password manager.
@@ -62,7 +88,7 @@ Create an IAM role for GitHub deployment with the following trust policy, replac
 
 GitHub documents immutable owner/repository IDs in subjects for repositories created after July 15, 2026; this repository was created after that date. If your repository uses the legacy subject format instead, use the exact subject `repo:lambdawalker/go.attestra.aws.auth:environment:dev`. Do not use a wildcard repository or environment. The environment branch restriction is important because an environment subject does not itself restrict the branch.
 
-The role needs permissions for the resources managed by `infra/`, including Lambda, IAM role/policy management and restricted `iam:PassRole`, API Gateway, Cognito, DynamoDB, SES, and Route 53 when configured. After the capture changes are merged, include S3, SQS, EventBridge and CloudWatch permissions used there. Scope permissions to this deployment's resources and account; the trust policy above alone does not grant those permissions. Use a deployment role, not a Lambda runtime role.
+The role needs permissions for the resources managed by `infra/`, including Lambda, IAM role/policy management and restricted `iam:PassRole`, API Gateway, Cognito, DynamoDB, SES, and Route 53 when configured. Include S3, SQS, EventBridge and CloudWatch permissions for the ID-capture resources. Scope permissions to this deployment's resources and account; the trust policy above alone does not grant those permissions. Use a deployment role, not a Lambda runtime role.
 
 Add the following **state-bucket permissions** to the role as well (adjust bucket/prefix if different):
 

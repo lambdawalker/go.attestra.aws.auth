@@ -6,7 +6,7 @@ $previousPath = $env:PATH
 $previousTrace = $env:DEPLOY_TEST_TRACE
 try {
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
-    Copy-Item (Join-Path $root 'deploy.ps1'), (Join-Path $root 'deploy.bat') $temp
+    Copy-Item (Join-Path $root 'deploy.ps1'), (Join-Path $root 'deploy.bat'), (Join-Path $root 'setup-github.ps1'), (Join-Path $root 'setup-github.bat') $temp
     $env:DEPLOY_TEST_TRACE = Join-Path $temp 'trace.txt'
     @'
 @echo off
@@ -21,7 +21,11 @@ exit /b 23
         if (-not $trace.Contains($expected)) { throw "Missing forwarded argument: $expected" }
     }
     if (-not $trace.Contains($temp)) { throw 'Repository path with spaces was not forwarded.' }
-    Write-Host 'Deployment launcher checks passed.'
+    & (Join-Path $temp 'setup-github.bat')
+    if ($LASTEXITCODE -ne 23) { throw 'Setup launcher exit code was not forwarded.' }
+    $setupTrace = Get-Content $env:DEPLOY_TEST_TRACE -Raw
+    if (-not $setupTrace.Contains('-setup-github') -or -not $setupTrace.Contains($temp)) { throw 'Setup launcher arguments/path were not forwarded.' }
+    Write-Host 'Deployment and setup launcher checks passed.'
 } finally {
     $env:PATH = $previousPath
     $env:DEPLOY_TEST_TRACE = $previousTrace
