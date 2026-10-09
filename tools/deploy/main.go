@@ -1,4 +1,4 @@
-// deploy is an interactive local deployment tool. It never persists AWS credentials.
+// deploy is an interactive local deployment tool. AWS CLI manages login caching.
 package main
 
 import (
@@ -56,6 +56,8 @@ func run() error {
 	flag.StringVar(&o.Region, "region", "us-east-2", "AWS region")
 	flag.StringVar(&o.MigrateFrom, "migrate-from", "", "One-time migration from a fully qualified Pulumi Cloud stack; stops before deployment")
 	flag.BoolVar(&o.Pull, "pull", false, "Require a clean working tree and git pull --ff-only before deployment")
+	flag.BoolVar(&o.Login, "login", false, "Use aws login instead of prompting for AWS credentials")
+	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
@@ -79,7 +81,7 @@ func run() error {
 		}
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Attestra • Deploy"))
-	fmt.Println("S3 state • credentials stay in this process and its cloud commands")
+	fmt.Println("S3 state • interactive AWS authentication")
 	if err := huh.NewForm(huh.NewGroup(
 		input("S3 state URL (bucket must already exist)", &o.Backend, false, true),
 		input("AWS region", &o.Region, false, true),
@@ -91,19 +93,31 @@ func run() error {
 		return err
 	}
 	c := credentials{}
-	fmt.Println("Temporary AWS credentials need all three fields. For long-lived keys only, leave session token blank.")
-	if err := huh.NewForm(huh.NewGroup(
-		input("AWS access key ID", &c.Access, true, true),
-		input("AWS secret access key", &c.Secret, true, true),
-		input("AWS session token (required for temporary credentials)", &c.Token, true, false),
-	)).Run(); err != nil {
-		return err
-	}
-	c.Access = strings.TrimSpace(c.Access)
-	c.Secret = strings.TrimSpace(c.Secret)
-	c.Token = strings.TrimSpace(c.Token)
-	if strings.HasPrefix(c.Access, "ASIA") && c.Token == "" {
-		return errors.New("temporary AWS access keys require the session token")
+	if o.Login {
+		if err := input("AWS login profile", &o.Profile, false, true).Run(); err != nil {
+			return err
+		}
+		fmt.Println("AWS CLI will open its login flow and cache the session in your selected profile.")
+		loginRunner := &processRunner{env: loginEnvironment(os.Environ(), o.Region)}
+		c, err = loginCredentials(loginRunner, o)
+		if err != nil {
+			return err
+		}
+	} else {
+		fmt.Println("Temporary AWS credentials need all three fields. For long-lived keys only, leave session token blank.")
+		if err := huh.NewForm(huh.NewGroup(
+			input("AWS access key ID", &c.Access, true, true),
+			input("AWS secret access key", &c.Secret, true, true),
+			input("AWS session token (required for temporary credentials)", &c.Token, true, false),
+		)).Run(); err != nil {
+			return err
+		}
+		c.Access = strings.TrimSpace(c.Access)
+		c.Secret = strings.TrimSpace(c.Secret)
+		c.Token = strings.TrimSpace(c.Token)
+		if strings.HasPrefix(c.Access, "ASIA") && c.Token == "" {
+			return errors.New("temporary AWS access keys require the session token")
+		}
 	}
 	if err := input("Pulumi state passphrase (keep a recoverable copy)", &c.Passphrase, true, true).Run(); err != nil {
 		return err

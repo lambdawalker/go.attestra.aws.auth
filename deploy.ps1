@@ -5,7 +5,9 @@ param(
     [string]$Backend,
     [string]$Region = 'us-east-2',
     [string]$MigrateFrom,
-    [switch]$Pull
+    [switch]$Pull,
+    [switch]$Login,
+    [string]$Profile = 'default'
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
@@ -14,6 +16,7 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 $arguments = @('-repo-root', $PSScriptRoot, '-stack', $Stack, '-region', $Region)
 if ($Backend) { $arguments += @('-backend', $Backend) }
 if ($MigrateFrom) { $arguments += @('-migrate-from', $MigrateFrom) }
+if ($Login) { $arguments += @('-login', '-profile', $Profile) }
 if ($Pull) { $arguments += '-pull' }
 & go -C (Join-Path $PSScriptRoot 'tools/deploy') run . @arguments
 exit $LASTEXITCODE

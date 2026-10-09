@@ -227,10 +227,11 @@ For Android setup and device validation, follow the [Credential Manager and asso
 
 ### Interactive deployment with S3 state
 
-The deployment tool is written in Go, using Charm Huh for terminal forms. `deploy.ps1` and `deploy.bat` are thin Windows launchers. It prompts for AWS access key ID, secret access key, optional session token, and a Pulumi secrets passphrase. It uses S3 for state and does not run `aws login`.
+The deployment tool is written in Go, using Charm Huh for terminal forms. `deploy.ps1` and `deploy.bat` are thin Windows launchers. It prompts for AWS access key ID, secret access key, optional session token, and a Pulumi secrets passphrase. It uses S3 for state. Add `-Login -Profile attestra` to use `aws login` instead of entering AWS credentials.
 
 ```powershell
 .\deploy.bat -Backend s3://YOUR-STATE-BUCKET
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Login -Profile attestra
 # Equivalent:
 .\deploy.ps1 -Backend s3://YOUR-STATE-BUCKET -Stack dev
 ```
@@ -241,7 +242,7 @@ On Linux/macOS, from the repository root:
 go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
 ```
 
-**Existing Pulumi Cloud stacks must be migrated once before deployment.** See [deployment setup and migration](docs/deployment.md) for the private state bucket, credential requirements, migration command, passphrase recovery, and troubleshooting. Normal runs select an existing S3 stack, build all Lambdas, preview, and run `pulumi up` with its usual confirmation. Git pull is optional (`-Pull` on Windows, `-pull` in Go); it requires a clean working tree. The old `-Profile` and `-Sso` switches are replaced by credential prompts.
+**Existing Pulumi Cloud stacks must be migrated once before deployment.** See [deployment setup and migration](docs/deployment.md) for the private state bucket, credential requirements, migration command, passphrase recovery, and troubleshooting. Normal runs select an existing S3 stack, build all Lambdas, preview, and run `pulumi up` with its usual confirmation. Git pull is optional (`-Pull` on Windows, `-pull` in Go); it requires a clean working tree. Use `-Profile` with `-Login` to select the AWS login profile; `-Sso` is not supported.
 
 ## Implementation map
 

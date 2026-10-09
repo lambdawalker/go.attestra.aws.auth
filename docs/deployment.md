@@ -15,7 +15,7 @@ The deployment credentials need `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`,
 
 ## AWS credentials
 
-The tool always prompts using hidden input; no AWS login/browser flow is used:
+By default, the tool prompts using hidden input:
 
 1. AWS access key ID.
 2. AWS secret access key.
@@ -23,6 +23,22 @@ The tool always prompts using hidden input; no AWS login/browser flow is used:
 4. Pulumi passphrase for encrypting the stack's secrets.
 
 Copy temporary credentials from your AWS credential source. Credentials are passed to AWS/Pulumi subprocesses through their environment, never as arguments or saved profiles. Existing AWS environment settings and shared profile files are isolated to avoid accidentally using another identity. The tool displays the account and ARN and asks you to confirm them. It does not refresh expired credentials; obtain a fresh set and rerun if they expire.
+
+### AWS login alternative
+
+Use AWS CLI's browser login instead of entering access keys:
+
+```powershell
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Login -Profile attestra
+```
+
+```bash
+go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET -login -profile attestra
+```
+
+This requires a current AWS CLI v2 supporting `aws login` and `aws configure export-credentials`. The profile defaults to `default`; you can edit it in the prompt. The tool runs `aws login --profile PROFILE`, then captures temporary credentials using `aws configure export-credentials --format process`. Credential output is never displayed or written to a file by the deployment tool. AWS CLI itself updates the selected profile and caches the login session in its normal files.
+
+The deployment uses a snapshot of the exported credentials, so rerun if they expire during a long deployment. Existing environment credentials are cleared for login; custom AWS config, shared-credentials and login-cache paths are honored. The same identity confirmation and isolated deployment credential handling apply. Add `-Login -Profile attestra` to the migration command below if desired. The Pulumi passphrase is still required.
 
 Keep the Pulumi passphrase in a password manager. It is separate from AWS credentials. Losing it prevents decrypting the stack's secrets. It is not persisted by the tool or sent to Pulumi Cloud during normal deployment. Normal deployments require no Pulumi Cloud token. Local processes running as your user can still inspect process memory/environment; use a trusted machine.
 
