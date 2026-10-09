@@ -4,5 +4,5 @@ config:
   attestra-auth-email:senderDomain: info.attestrabond.com
   attestra-auth-email:senderAddress: verify@info.attestrabond.com
   attestra-auth-email:proofKey:
-    secure: AAABAPvUujwbcYEaR5BUf54dW5cIc/AOa6RSTnrbzm8CR8rZ73Zerwq9PaCvUrdZZa5ALOWPT/D6e6mujoOa2iVT9aoA/v8/6gnhUw==
-  aws:profile: attestra
+    secure: v1:yZGfkoLqHQPfnQ1r:002FQOyvGPFnxCfg/BLDHin9AfhIa0u8HkOczVYOUvWjWHdrADK6ocr7M/1JkoYJLT/HOFT87cZFTVbM
+encryptionsalt: v1:99BNeZ87EAQ=:v1:/PNM2Jv1AS2+zAE1:8/21IEM5+yRGR/W7UXAD+84GJyXD9w==
