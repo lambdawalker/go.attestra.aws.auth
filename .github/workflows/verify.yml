@@ -38,3 +38,10 @@ jobs:
         run: |
           ./build.ps1
           python scripts/check_lambda_archives.py
+  deploy-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployment orchestration without cloud access
+        shell: pwsh
+        run: ./scripts/test_deploy.ps1

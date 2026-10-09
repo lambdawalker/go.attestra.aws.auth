@@ -230,9 +230,21 @@ From the repository root, after configuring your AWS profile and Pulumi stack on
 ```powershell
 .\deploy.ps1                 # current branch, dev stack
 .\deploy.ps1 -Stack dev
+.\deploy.bat -Stack dev      # Windows batch entry point
 ```
 
-The script requires a clean Git working tree and `git`, `go`, and `pulumi` on `PATH`. It runs `git pull --ff-only`, invokes `build.ps1` for all Lambda archives, then runs `pulumi up --stack dev` from `infra`. The Pulumi confirmation prompt stays interactive so you can review the preview. The script uses your existing AWS profile/configuration; it does not change credentials or stack configuration. If any step fails, deployment stops before the next step. For a different stack, pass its name with `-Stack`.
+`deploy.bat` calls the adjacent `deploy.ps1` with Windows PowerShell, forwards all arguments, and returns its exit code. Both entry points work from any directory.
+
+The script requires a clean Git working tree and `git`, AWS CLI v2 (with `aws login` support), `go`, and `pulumi` on `PATH`. It runs `git pull --ff-only`, logs in to AWS, checks the caller identity, builds every Lambda with `build.ps1`, runs `pulumi preview`, then runs `pulumi up`. Each failed step stops the sequence. Pulumi keeps its normal interactive confirmation; the script does not pass `--yes` or deploy on your behalf until you confirm.
+
+Login uses the stack's `aws:profile`, then `AWS_PROFILE`, then `default`. You can supply `-Profile`, but it must match any profile configured on the stack. The script restores your shell's original `AWS_PROFILE` and working directory afterward. It does not log in to Pulumi; run `pulumi login` once if needed.
+
+```powershell
+.\deploy.ps1 -Stack dev -Profile my-aws-profile
+.\deploy.ps1 -Stack dev -Profile my-sso-profile -Sso  # aws sso login instead
+```
+
+The default login command is [`aws login`](https://docs.aws.amazon.com/cli/latest/reference/login/), which opens the AWS console sign-in flow. `-Sso` uses your existing IAM Identity Center profile. No AWS deployment is performed by the script's CI tests; they substitute local command stubs.
 
 ### Return to onboarding and sign in
 
