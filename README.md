@@ -66,6 +66,8 @@ pulumi preview
 
 Do not paste access keys, secret keys, or session tokens into an issue or chat. `pulumi config set aws:profile` saves only the profile name; the actual credentials remain in the local AWS configuration.
 
+For the interactive Go tool with S3 state and credential prompts, use [the deployment guide](docs/deployment.md). The profile commands above are for manual CLI operation.
+
 ### Build and deploy
 
 On Windows PowerShell, run:
@@ -213,7 +215,7 @@ The `awsstore` implementation uses a DynamoDB table keyed by `id`, conditional w
 
 ## Checks and rollout
 
-Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `infra`. The included GitHub Actions workflow performs those checks plus ARM64 Lambda builds. Before production, test both proof paths, concurrent confirmation, SES delivery, Cognito custom auth, a failed session exchange, account enumeration timing, hourly bucket boundaries, and resend races against a deployed nonproduction stack. This repository is not deployed by CI.
+Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `infra`. The included GitHub Actions workflow performs those checks plus ARM64 Lambda builds. Before production, test both proof paths, concurrent confirmation, SES delivery, Cognito custom auth, a failed session exchange, account enumeration timing, hourly bucket boundaries, and resend races against a deployed nonproduction stack. The manual [GitHub deployment workflow](docs/github-deployment.md) can preview or deploy from `main` after S3 state migration and environment setup.
 
 ### Passkey registration
 
@@ -223,25 +225,28 @@ The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cogn
 
 For Android setup and device validation, follow the [Credential Manager and association guide](https://github.com/lambdawalker/android.attestra.auth/blob/main/README.md#passkey-registration-in-the-live-onboarding-flow). Registration endpoints use the same `apiUrl` output as email confirmation.
 
-### One-command Windows deployment
+### GitHub Actions deployment
 
-From the repository root, after configuring your AWS profile and Pulumi stack once, run:
+Run `.\setup-github.bat` (or `go -C tools/deploy run . -setup-github`) for guided GitHub environment setup with a token prompt and default values. See [GitHub deployment setup](docs/github-deployment.md) for the manual preview/deploy workflow, AWS OIDC role, and `dev` environment variables and passphrase secret. No stored AWS access keys or Pulumi Cloud token are needed.
+
+### Interactive deployment with S3 state
+
+The deployment tool is written in Go, using Charm Huh for terminal forms. `deploy.ps1` and `deploy.bat` are thin Windows launchers. It prompts for AWS access key ID, secret access key, optional session token, and a Pulumi secrets passphrase. It uses S3 for state. Add `-Login -Profile attestra` to use `aws login` instead of entering AWS credentials.
 
 ```powershell
-.\deploy.ps1                 # current branch, dev stack
-.\deploy.ps1 -Stack dev
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET
+.\deploy.bat -Backend s3://YOUR-STATE-BUCKET -Login -Profile attestra
+# Equivalent:
+.\deploy.ps1 -Backend s3://YOUR-STATE-BUCKET -Stack dev
 ```
 
-The script requires a clean Git working tree and `git`, `go`, and `pulumi` on `PATH`. It runs `git pull --ff-only`, invokes `build.ps1` for all Lambda archives, then runs `pulumi up --stack dev` from `infra`. The Pulumi confirmation prompt stays interactive so you can review the preview. The script uses your existing AWS profile/configuration; it does not change credentials or stack configuration. If any step fails, deployment stops before the next step. For a different stack, pass its name with `-Stack`.
+On Linux/macOS, from the repository root:
 
-### Return to onboarding and sign in
+```bash
+go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
+```
 
-A stored access token can be refreshed through `POST /auth/refresh` with `{"refresh_token":"..."}`. The response uses the existing `AuthSession` fields; Cognito may omit a new refresh token, so clients must retain the old one. `POST /auth/status` requires `Authorization: Bearer <access_token>` and returns `{"passkey_registered":true|false}` from Cognito `ListWebAuthnCredentials`.
-
-For an expired or missing session, `POST /auth/email/start` and `POST /auth/passkey/start` accept `{"email":"..."}`. They return a Cognito challenge `session` and passkey `options` where applicable. Finish with `POST /auth/email/complete` (`email`, `session`, six-digit `code`) or `POST /auth/passkey/complete` (`email`, `session`, WebAuthn `credential` object). Both return a Cognito token set in the same shape as `/confirm`. These are distinct from the one-time signup proof. Deploy after building the six additional Lambda archives. API logs retain request IDs and coarse status, without OTPs, credentials, or tokens.
-
-
-The sign-in handler returns `401 sign_in_required`, `400 authentication_failed`, or `503 temporarily_unavailable`; provider exceptions are not the public error contract. Passkey challenge `options` is a JSON-encoded string in the start response, while registration `creation_options` is a JSON object. Keep these adapters distinct.
+**Existing Pulumi Cloud stacks must be migrated once before deployment.** See [deployment setup and migration](docs/deployment.md) for the private state bucket, credential requirements, migration command, passphrase recovery, and troubleshooting. Normal runs select an existing S3 stack, build all Lambdas, preview, and run `pulumi up` with its usual confirmation. Git pull is optional (`-Pull` on Windows, `-pull` in Go); it requires a clean working tree. Use `-Sso -Profile attestra` for IAM Identity Center, or `-Login -Profile PROFILE` for AWS console login. If both switches are supplied, SSO takes precedence.
 
 ## Implementation map
 

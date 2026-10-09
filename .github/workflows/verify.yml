@@ -71,3 +71,26 @@ jobs:
         with:
           name: go-formatting
           path: formatting.patch
+  deploy-script:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache-dependency-path: tools/deploy/go.sum
+      - name: Test deployment orchestration without cloud access
+        working-directory: tools/deploy
+        run: |
+          go test ./...
+          go vet ./...
+          go build -o deploy-check .
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Check Windows launchers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test_deploy.ps1
