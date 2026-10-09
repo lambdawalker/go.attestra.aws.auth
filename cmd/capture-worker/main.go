@@ -1,3 +1,32 @@
 package main
-import("context";"encoding/json";"log";"github.com/aws/aws-lambda-go/events";"github.com/aws/aws-lambda-go/lambda";"github.com/lambdawalker/go.attestra.aws.auth/awscapture";"github.com/lambdawalker/go.attestra.aws.auth/capture")
-func main(){s,_,_,e:=awscapture.New(context.Background());if e!=nil{log.Fatal("capture initialization failed")};lambda.Start(func(ctx context.Context,event events.SQSEvent)(events.SQSEventResponse,error){out:=events.SQSEventResponse{BatchItemFailures:[]events.SQSBatchItemFailure{}};for _,message:=range event.Records{var job capture.Job;e:=json.Unmarshal([]byte(message.Body),&job);if e==nil{e=s.Work(ctx,job)};if e!=nil{out.BatchItemFailures=append(out.BatchItemFailures,events.SQSBatchItemFailure{ItemIdentifier:message.MessageId})}};return out,nil})}
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/lambdawalker/go.attestra.aws.auth/awscapture"
+	"github.com/lambdawalker/go.attestra.aws.auth/capture"
+	"log"
+)
+
+func main() {
+	s, _, _, e := awscapture.New(context.Background())
+	if e != nil {
+		log.Fatal("capture initialization failed")
+	}
+	lambda.Start(func(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
+		out := events.SQSEventResponse{BatchItemFailures: []events.SQSBatchItemFailure{}}
+		for _, message := range event.Records {
+			var job capture.Job
+			e := json.Unmarshal([]byte(message.Body), &job)
+			if e == nil {
+				e = s.Work(ctx, job)
+			}
+			if e != nil {
+				out.BatchItemFailures = append(out.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: message.MessageId})
+			}
+		}
+		return out, nil
+	})
+}
