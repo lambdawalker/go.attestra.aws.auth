@@ -1,4 +1,4 @@
-name: Deploy AWS (S3 state)
+name: "Deploy AWS [Pulumi S3]"
 
 on:
   workflow_dispatch:
