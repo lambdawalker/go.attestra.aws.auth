@@ -1,8 +1,10 @@
 # GitHub Actions deployment
 
-[Deploy AWS (S3 state)](../.github/workflows/deploy.yml) runs manually from `main`. Choose `preview` (the default) or `deploy`. Both test the Go code, authenticate to AWS, check the existing S3 stack, build all Lambda archives and run Pulumi preview. `deploy` then runs `pulumi up --yes --non-interactive`. It uses the same Go deployment tool as the local scripts, in explicit CI mode.
+[Deploy AWS \[Pulumi S3\]](../.github/workflows/deploy.yml) runs manually from `main`. Choose `preview` (the default) or `deploy`. Both test the Go code, authenticate to AWS, check the existing S3 stack, build all Lambda archives and run Pulumi preview. `deploy` then runs `pulumi up --yes --non-interactive`. It uses the same Go deployment tool as the local scripts, in explicit CI mode.
 
 AWS authentication uses GitHub OIDC to assume an IAM role and obtain temporary credentials. No AWS access-key secret, interactive AWS login/SSO, or Pulumi Cloud API token is used in the workflow. The only application secret required in GitHub is the Pulumi state passphrase.
+
+Starting with no infrastructure? Follow the [complete first-deployment guide](first-deployment.md) before running the setup wizard. It covers the state bucket, fresh stack, encrypted configuration, DNS verification and routine updates.
 
 ## Guided environment setup
 
@@ -42,19 +44,19 @@ If Pulumi manages SES DNS records, enter its Route53 hosted zone ID when asked; 
 
 Writes are logged by operation. On failure, completed AWS changes remain; rerunning inspects and reuses them. Unchanged policies are skipped. Cancelling the later GitHub form does not undo AWS changes. Verification checks configuration, not an actual GitHub OIDC exchange: run the workflow in **preview** mode for the end-to-end check.
 
-The script shows the proposed variables before saving. For a new environment it creates a deployment branch restriction for `main`. For an existing environment it preserves protection rules and pre-fills existing values; press Enter to keep them. Existing passphrase secrets cannot be read back: leave the hidden passphrase prompt blank to retain one, or enter and confirm a replacement. Use the **same passphrase used for S3 migration**, not a newly invented password.
+The script shows the proposed variables before saving. For a new environment it creates a deployment branch restriction for `main`. For an existing environment it preserves protection rules and pre-fills existing values; press Enter to keep them. Existing passphrase secrets cannot be read back: leave the hidden passphrase prompt blank to retain one, or enter and confirm a replacement. Use the **same passphrase used to initialize or migrate the S3 stack**, not a newly invented password.
 
 The passphrase is encrypted with the environment's GitHub public key before upload. The script verifies saved variables and secret presence. If a later API call fails, earlier successful changes remain and are listed by name; rerun after fixing the issue. It does not delete or roll back existing configuration.
 
 This configures **AWS IAM and GitHub**. It does not migrate Pulumi state or start a deployment. Existing environment protections are preserved; ensure `dev` permits only `main` at the settings link printed on completion.
 
-## 1. Finish migration locally
+## 1. Prepare the S3 stack locally
 
-Complete the [S3 migration](deployment.md#one-time-migration-from-pulumi-cloud) and commit the migrated `infra/Pulumi.dev.yaml`, including its passphrase encryption metadata and encrypted configuration. Remove the old `aws:profile` setting as the migration tool does. Keep the passphrase in your password manager.
+For a fresh deployment, follow [stack initialization](first-deployment.md#3-initialize-a-fresh-pulumi-stack). For an existing Cloud stack, complete the [S3 migration](deployment.md#one-time-migration-from-pulumi-cloud) and commit the migrated `infra/Pulumi.dev.yaml`, including its passphrase encryption metadata and encrypted configuration. Remove the old `aws:profile` setting as the migration tool does. Keep the passphrase in your password manager.
 
-The workflow does not migrate state, create a missing stack, or fall back to Pulumi Cloud. The checked-in configuration currently needs your local migration result before deployment can succeed. A missing stack, Cloud-encrypted state, profile override, wrong region, or unavailable passphrase stops the run.
+The workflow does not migrate state, create a missing stack, or fall back to Pulumi Cloud. The committed configuration must belong to the selected S3 stack. A missing stack, Cloud-encrypted state, profile override, wrong region, or unavailable passphrase stops the run.
 
-## 2. Create the GitHub environment
+## 2. GitHub environment (configured by the wizard; manual reference)
 
 Open this repository's **Settings → Environments → New environment**, named **dev**. Restrict deployment branches to **main**. Add required reviewers if you want approval before a run receives credentials. That approval happens before the job, not between preview and update.
 
@@ -72,9 +74,9 @@ Add this environment **secret**:
 
 | Name | Value |
 | --- | --- |
-| `PULUMI_CONFIG_PASSPHRASE` | The exact passphrase used for the migrated S3 stack |
+| `PULUMI_CONFIG_PASSPHRASE` | The exact passphrase used for the S3 stack |
 
-Use the S3 URL/prefix you actually migrated to. Do not use the old Cloud-qualified stack name `isdavid/attestra-auth-email/dev`; the workflow selects the S3 stack `dev` in this project.
+Use the S3 URL/prefix where you initialized or migrated the stack. Do not use the old Cloud-qualified stack name `isdavid/attestra-auth-email/dev`; the workflow selects the S3 stack `dev` in this project.
 
 ## 3. AWS trust (configured by the wizard; manual reference)
 
@@ -132,9 +134,9 @@ An SSE-KMS bucket additionally needs appropriate KMS key access. The state bucke
 
 ## 4. Run
 
-After merging the workflow and migration configuration into `main`:
+After committing the workflow and initialized or migrated stack configuration to `main`:
 
-1. Open **Actions → Deploy AWS (S3 state) → Run workflow**.
+1. Open **Actions → Deploy AWS [Pulumi S3] → Run workflow**.
 2. Select branch **main** and operation **preview**.
 3. Inspect the build and Pulumi preview logs.
 4. Run again with operation **deploy** when ready.

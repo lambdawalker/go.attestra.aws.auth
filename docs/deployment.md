@@ -2,6 +2,8 @@
 
 The Go tool in `tools/deploy` provides terminal forms using [Charm Huh](https://github.com/charmbracelet/huh). It runs on Windows, Linux and macOS. The UI dependencies live in a separate Go module and do not enter Lambda binaries.
 
+For a deployment from scratch, start with the [first-deployment guide](first-deployment.md). The local tool expects an existing bucket and stack; migration below is only for existing Pulumi Cloud stacks.
+
 ## Prerequisites
 
 - Go 1.26.6+, AWS CLI v2 and Pulumi on PATH. Migration requires Pulumi CLI 3.254.0+ (`pulumi version`).
