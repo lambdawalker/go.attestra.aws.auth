@@ -109,6 +109,10 @@ Git pull is opt-in so it does not prevent deploying reviewed local changes or in
 
 For standalone Pulumi commands, explicitly select the S3 backend with `pulumi login s3://YOUR-STATE-BUCKET` and supply the same AWS credentials/passphrase in your shell. The deployment tool sets these only for its own subprocesses; it does not change your shell's login or persist secrets.
 
+## GitHub Actions
+
+For unattended deployment using AWS OIDC credentials and the same S3 stack, see [GitHub deployment setup](github-deployment.md). Local login and SSO remain available for interactive runs.
+
 ## Verification
 
 ```bash

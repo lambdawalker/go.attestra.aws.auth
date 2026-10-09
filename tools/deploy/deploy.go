@@ -15,8 +15,8 @@ import (
 )
 
 type options struct {
-	Root, Stack, Backend, Region, MigrateFrom, Profile string
-	Pull, Login, Sso                                   bool
+	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string
+	Pull, Login, Sso                                       bool
 }
 type credentials struct{ Access, Secret, Token, Passphrase, CloudToken string }
 type commandRunner interface {
@@ -183,11 +183,22 @@ func execute(r commandRunner, o options) error {
 	if _, err := r.Exec(o.Root, false, name, args...); err != nil {
 		return err
 	}
-	if _, err := r.Exec(infra, false, "pulumi", "preview", "--stack", o.Stack); err != nil {
+	previewArgs := []string{"preview", "--stack", o.Stack}
+	if o.CI != "" {
+		previewArgs = append(previewArgs, "--non-interactive")
+	}
+	if _, err := r.Exec(infra, false, "pulumi", previewArgs...); err != nil {
 		return err
 	}
-	// Retain Pulumi's native interactive confirmation. Never auto-approve.
-	if _, err := r.Exec(infra, false, "pulumi", "up", "--stack", o.Stack); err != nil {
+	if o.CI == "preview" {
+		return nil
+	}
+	// Interactive runs retain confirmation. CI requires explicit deploy mode.
+	upArgs := []string{"up", "--stack", o.Stack}
+	if o.CI == "deploy" {
+		upArgs = append(upArgs, "--yes", "--non-interactive")
+	}
+	if _, err := r.Exec(infra, false, "pulumi", upArgs...); err != nil {
 		return err
 	}
 	fmt.Println("\nDeployment finished.")

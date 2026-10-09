@@ -215,7 +215,7 @@ The `awsstore` implementation uses a DynamoDB table keyed by `id`, conditional w
 
 ## Checks and rollout
 
-Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `infra`. The included GitHub Actions workflow performs those checks plus ARM64 Lambda builds. Before production, test both proof paths, concurrent confirmation, SES delivery, Cognito custom auth, a failed session exchange, account enumeration timing, hourly bucket boundaries, and resend races against a deployed nonproduction stack. This repository is not deployed by CI.
+Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `infra`. The included GitHub Actions workflow performs those checks plus ARM64 Lambda builds. Before production, test both proof paths, concurrent confirmation, SES delivery, Cognito custom auth, a failed session exchange, account enumeration timing, hourly bucket boundaries, and resend races against a deployed nonproduction stack. The manual [GitHub deployment workflow](docs/github-deployment.md) can preview or deploy from `main` after S3 state migration and environment setup.
 
 ### Passkey registration
 
@@ -224,6 +224,10 @@ After email confirmation issues an access token, the Android app calls `POST /pa
 The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `build.ps1` (Windows) or `./build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey and email sign-in endpoints are documented under [Return to onboarding and sign in](#return-to-onboarding-and-sign-in).
 
 For Android setup and device validation, follow the [Credential Manager and association guide](https://github.com/lambdawalker/android.attestra.auth/blob/main/README.md#passkey-registration-in-the-live-onboarding-flow). Registration endpoints use the same `apiUrl` output as email confirmation.
+
+### GitHub Actions deployment
+
+See [GitHub deployment setup](docs/github-deployment.md) for the manual preview/deploy workflow, AWS OIDC role, and `dev` environment variables and passphrase secret. No stored AWS access keys or Pulumi Cloud token are needed.
 
 ### Interactive deployment with S3 state
 

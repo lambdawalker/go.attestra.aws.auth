@@ -1,0 +1,95 @@
+name: Deploy AWS (S3 state)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview only, or preview and deploy
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - deploy
+
+permissions:
+  contents: read
+
+# Serialize every dev operation, including previews. Never cancel an update.
+concurrency:
+  group: attestra-auth-dev-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      STATE_BACKEND: ${{ vars.PULUMI_BACKEND_URL }}
+      STACK_NAME: ${{ vars.PULUMI_STACK }}
+      OPERATION: ${{ inputs.operation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check environment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_ARN STATE_BACKEND STACK_NAME; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Set $name in the dev environment (STATE_BACKEND is PULUMI_BACKEND_URL; STACK_NAME is PULUMI_STACK)."
+              exit 1
+            fi
+          done
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$OPERATION" == preview || "$OPERATION" == deploy ]]
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache-dependency-path: |
+            go.sum
+            infra/go.sum
+            tools/deploy/go.sum
+      - name: Test and compile deployment tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          go vet ./...
+          go -C tools/deploy test ./...
+          go -C tools/deploy vet ./...
+          go -C tools/deploy build -o "$RUNNER_TEMP/attestra-deploy" .
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6; install only
+        with:
+          pulumi-version: '3.264.0'
+      - name: Obtain temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+          role-session-name: attestra-deploy-${{ github.run_id }}
+          role-duration-seconds: 3600
+          unset-current-credentials: true
+      - name: Build, preview, and optionally deploy
+        env:
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/attestra-deploy" \
+            -repo-root "$GITHUB_WORKSPACE" \
+            -ci "$OPERATION" \
+            -backend "$STATE_BACKEND" \
+            -region "$AWS_REGION" \
+            -stack "$STACK_NAME"

@@ -59,9 +59,13 @@ func run() error {
 	flag.BoolVar(&o.Login, "login", false, "Use aws login instead of prompting for AWS credentials")
 	flag.BoolVar(&o.Sso, "sso", false, "Use aws sso login with an existing IAM Identity Center profile")
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
+	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
+	}
+	if o.CI != "" {
+		return runCI(o)
 	}
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("run in an interactive terminal; credentials are entered using hidden prompts")
