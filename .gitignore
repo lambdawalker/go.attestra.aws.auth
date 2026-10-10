@@ -19,3 +19,6 @@ teardown.*.local.json*
 # Public configuration plus private recovery receipts; never commit.
 index-publication.*.local.json*
 infra-index/Pulumi.*.yaml.bak*
+
+# Generated environment-specific Android configuration
+/android-config/

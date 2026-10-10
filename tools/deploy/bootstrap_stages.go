@@ -70,6 +70,9 @@ func (w *bootstrapWizard) deployStages() error {
 	if err := w.checkSummaryHealth(); err != nil {
 		return err
 	}
+	if err := exportAndroidConfiguration(w.r, w.o, defaultAndroidExport(w.o)); err != nil {
+		return err
+	}
 	return w.recordCompletion(before, configuration)
 }
 func (w *bootstrapWizard) deployStagesActual() error {

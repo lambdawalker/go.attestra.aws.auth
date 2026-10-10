@@ -87,7 +87,7 @@ func TestCapturePreflightFallbackWithoutConfigWrites(t *testing.T) {
 	}
 }
 func TestCapturePreflightCreditsOnlyOwnedLiveReservations(t *testing.T) {
-	r := &capacityRunner{config: `{"aws:region":{"value":"us-east-2"}}`, state: `{"deployment":{"resources":[{"type":"aws:lambda/function:Function","urn":"urn:pulumi:qa::attestra-auth-email::aws:lambda/function:Function::capture","id":"capture-owned"},{"type":"aws:lambda/function:Function","urn":"urn:pulumi:qa::attestra-auth-email::aws:lambda/function:Function::email-signup","id":"unrelated"}]}}`, account: `{"AccountLimit":{"ConcurrentExecutions":1000,"UnreservedConcurrentExecutions":110}}`}
+	r := &capacityRunner{config: `{"aws:region":{"value":"us-east-2"},"attestra-auth-email:captureReservedConcurrency":{"value":"5"}}`, state: `{"deployment":{"resources":[{"type":"aws:lambda/function:Function","urn":"urn:pulumi:qa::attestra-auth-email::aws:lambda/function:Function::capture","id":"capture-owned"},{"type":"aws:lambda/function:Function","urn":"urn:pulumi:qa::attestra-auth-email::aws:lambda/function:Function::email-signup","id":"unrelated"}]}}`, account: `{"AccountLimit":{"ConcurrentExecutions":1000,"UnreservedConcurrentExecutions":110}}`}
 	got, err := captureConcurrencyPreflight(r, "/repo/infra", "qa")
 	if err != nil || got != 5 {
 		t.Fatal(got, err)
@@ -102,5 +102,27 @@ func TestCaptureEnvironmentDoesNotMutateRunnerCredentials(t *testing.T) {
 	after := captureEnvironment(before, -1)
 	if before[1] != captureConcurrencyEnv+"=5" || len(after) != 2 || after[1] != captureConcurrencyEnv+"=-1" {
 		t.Fatal(before, after)
+	}
+}
+
+func TestProductionRequiresExplicitCapacityAndRejectsFallback(t *testing.T) {
+	r := &capacityRunner{config: `{"aws:region":{"value":"us-east-2"}}`}
+	if _, err := captureConcurrencyPreflight(r, "/repo/infra", "prod"); err == nil {
+		t.Fatal("production accepted implicit capacity")
+	}
+	r.config = `{"aws:region":{"value":"us-east-2"},"attestra-auth-email:environmentClass":{"value":"production"},"attestra-auth-email:captureReservedConcurrency":{"value":"5"},"attestra-auth-email:captureWorkerMaxConcurrency":{"value":"2"}}`
+	r.state = `{"deployment":{"resources":[]}}`
+	r.account = `{"AccountLimit":{"ConcurrentExecutions":10,"UnreservedConcurrentExecutions":10}}`
+	if _, err := captureConcurrencyPreflight(r, "/repo/infra", "live"); err == nil {
+		t.Fatal("production silently fell back")
+	}
+}
+func TestTestEnvironmentDefaultsUseSharedCapacity(t *testing.T) {
+	for _, stack := range []string{"dev", "qa", "feature-test"} {
+		r := &capacityRunner{config: `{}`}
+		got, err := captureConcurrencyPreflight(r, "/repo/infra", stack)
+		if err != nil || got != -1 || len(r.calls) != 1 {
+			t.Fatalf("%s: %d %v", stack, got, err)
+		}
 	}
 }

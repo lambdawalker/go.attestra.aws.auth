@@ -22,10 +22,24 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	if err != nil {
 		return err
 	}
+	class := cfg.Get("environmentClass")
+	if class != "" && class != "test" && class != "production" {
+		return fmt.Errorf("environmentClass must be test or production")
+	}
+	production := ctx.Stack() == "prod" || class == "production"
+	if ctx.Stack() == "prod" && class == "test" {
+		return fmt.Errorf("prod requires production capacity")
+	}
+	if production && (cfg.Get("captureReservedConcurrency") == "" || cfg.Get("captureWorkerMaxConcurrency") == "" || reserved < 1) {
+		return fmt.Errorf("production requires explicit reserved and worker concurrency")
+	}
 	requested := reserved
 	reserved, err = effectiveCaptureReservation(reserved, os.Getenv("ATTESTRA_CAPTURE_RESERVED_CONCURRENCY"))
 	if err != nil {
 		return err
+	}
+	if production && (reserved != requested || os.Getenv("ATTESTRA_CAPTURE_RESERVED_CONCURRENCY") == "") {
+		return fmt.Errorf("production requires a successful quota check; deploy using the deployment tool or GitHub action")
 	}
 	if reserved != requested {
 		ctx.Log.Warn(fmt.Sprintf("Capture reserved concurrency %d per function exceeds available capacity; deploying with shared concurrency. Stack configuration is unchanged.", requested), nil)

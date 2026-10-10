@@ -9,7 +9,7 @@ import (
 // explicitly opts into the shared account pool with -1. Zero would disable the
 // functions, so it is deliberately rejected.
 func parseCaptureConcurrency(reservedValue, workerValue string) (int, int, error) {
-	reserved, worker := 5, 5
+	reserved, worker := -1, 2
 	var err error
 	if reservedValue != "" {
 		reserved, err = strconv.Atoi(reservedValue)

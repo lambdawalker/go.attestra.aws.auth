@@ -1,5 +1,6 @@
 encryptionsalt: v1:4XmH4c3MoHk=:v1:5rFFHaKqjlGcXXHJ:LGkZHsFcukp2QJehSrnFl3GfaOoLCg==
 config:
+  attestra-auth-email:environmentClass: test
   attestra-auth-email:apiDomain: qa.api.attestrabond.com
   attestra-auth-email:appOrigin: https://qa.attestrabond.com
   attestra-auth-email:captureReservedConcurrency: "-1"

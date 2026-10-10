@@ -266,11 +266,14 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	for k, v := range map[string]string{"App": origin, "API": "https://" + apiDomain, "Sender domain": domain, "Sender email": sender} {
 		w.memory.Summary.Domains[k] = v
 	}
-	reserved, worker := "5", "5"
-	if w.environment == "dev" {
-		reserved, worker = "-1", "2"
+	defaults, err := w.capacityDefaults(current)
+	if err != nil {
+		return err
 	}
-	defaults := map[string]string{"attestra-auth-email:apiDomain": apiDomain, "aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
+	for k, v := range map[string]string{"attestra-auth-email:apiDomain": apiDomain, "aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender} {
+		defaults[k] = v
+	}
+
 	zone, err := w.selectDNSProvider(current["attestra-auth-email:route53ZoneId"].Value)
 	if err != nil {
 		return err
@@ -364,7 +367,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 		if w.memory.Settings["dnsProvider"] != "route53" {
 			choices = append(choices, huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"))
 		}
-		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"), huh.NewOption("Run environment health check", "health"), huh.NewOption("Show setup summary", "summary"))
+		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"), huh.NewOption("Run environment health check", "health"), huh.NewOption("Show setup summary", "summary"), huh.NewOption("Export Android configuration", "export-android"))
 		if err := huh.NewSelect[string]().Title("Next step").Options(choices...).Value(&choice).Run(); err != nil {
 			return err
 		}
@@ -396,6 +399,10 @@ func (w *bootstrapWizard) finish(repo string) error {
 		case "dns":
 			if err := w.showDNS(); err != nil {
 				fmt.Println("DNS check:", err)
+			}
+		case "export-android":
+			if err := exportAndroidConfiguration(w.r, w.o, defaultAndroidExport(w.o)); err != nil {
+				fmt.Println("Android export:", err)
 			}
 		case "summary":
 			w.showSetupSummary()

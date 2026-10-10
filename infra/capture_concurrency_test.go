@@ -8,7 +8,7 @@ func TestCaptureConcurrency(t *testing.T) {
 		wantReserved, wantWorker int
 		invalid                  bool
 	}{
-		{"defaults", "", "", 5, 5, false},
+		{"defaults", "", "", -1, 2, false},
 		{"dev shared pool", "-1", "2", -1, 2, false},
 		{"production overrides", "20", "10", 20, 10, false},
 		{"zero disables functions", "0", "2", 0, 0, true},

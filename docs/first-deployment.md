@@ -179,7 +179,7 @@ Wait for verification and DKIM success; choose the check again to reread status.
 
 Use the deployed `apiUrl`, `userPoolId` and `clientId` outputs to [configure Android](../README.md#configure-the-android-api-url). These can change after recreating infrastructure. The backend does not deploy your website's verification page or Android association files.
 
-Real ID capture remains disabled until `captureEnabled`, document type, purpose and jurisdiction are deliberately configured. Dev uses `captureReservedConcurrency: -1` (shared capacity) and `captureWorkerMaxConcurrency: 2`; see [per-stack concurrency](github-deployment.md#capture-concurrency-per-environment) for QA/prod settings and quotas. New non-dev stacks default to reservation `5` per capture function and worker maximum `5`; confirm regional quota before deployment.
+Real ID capture remains disabled until `captureEnabled`, document type, purpose and jurisdiction are deliberately configured. Dev, QA, and custom test environments use `captureReservedConcurrency: -1` (shared capacity) and `captureWorkerMaxConcurrency: 2`. Production requires explicit capacity values and a successful quota check; custom environments can select the production profile. Existing explicit values are preserved. See [capacity profiles](deployment.md#environment-capacity-profiles).
 
 ## Routine updates and recovery
 

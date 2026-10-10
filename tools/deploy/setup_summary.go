@@ -180,7 +180,7 @@ func (w *bootstrapWizard) setupSummary() string {
 		}
 		fmt.Fprintf(&b, "  %-8s %s\n", status, step.label)
 	}
-	fmt.Fprintln(&b, "\nManual follow-up: review/commit configuration; apply Android settings; test email/sign-in and any enabled ID capture. Website hosting is separate.")
+	fmt.Fprintln(&b, "\nManual follow-up: review/commit configuration; load android-config/<environment>.properties in Android; test email/sign-in and any enabled ID capture. Website hosting is separate.")
 	return b.String()
 }
 func (w *bootstrapWizard) showSetupSummary() {

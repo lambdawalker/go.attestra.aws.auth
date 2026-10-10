@@ -154,3 +154,43 @@ Each result is shown as PASS, FAIL, WARN, or INFO. A required failure stops succ
 This authenticates and reads the selected stack without building or deploying. The recovery menu also offers **Run environment health check**. A standalone successful check does not mark an interrupted setup complete; rerun setup to finish its remaining steps.
 
 Disabled ID capture and an unconfigured optional index are warnings. These checks are not a full sign-in/email/upload test, do not establish SES production access, and do not validate website hosting or every Lambda/queue. The existing unchanged-commit shortcut remains an explicitly local receipt, not a live health check; use `-health-check` when you want current remote evidence.
+
+
+### Environment capacity profiles
+
+Each stack saves `attestra-auth-email:environmentClass` as `test` or `production`. `dev`, `qa`, and new custom test environments default to:
+
+```yaml
+config:
+  attestra-auth-email:environmentClass: test
+  attestra-auth-email:captureReservedConcurrency: "-1"
+  attestra-auth-email:captureWorkerMaxConcurrency: "2"
+```
+
+Existing explicit YAML values are preserved. The `prod` stack always uses production rules. For a custom name such as `live`, select Production in setup or set `environmentClass: production`. Production prompts for explicit capacity, requires positive reservations and a worker maximum of 2–1000 no larger than the reservation, and checks quota before preview/update. A reservation is per function; there are three capture functions. Two workers means at most two simultaneous SQS worker invocations.
+
+Insufficient production capacity stops deployment with required and available figures. Test environments retain the logged shared-capacity fallback. Direct production `pulumi` commands must be run through the deployment tool/GitHub action so the quota preflight runs. Quotas can still change after a preflight if another deployment changes reservations.
+
+### Manage saved credentials without setup
+
+Run `credentials.bat` on Windows or `./credentials.sh` on Unix (`deploy -manage-credentials` is equivalent). Select the environment, then replace GitHub/Cloudflare tokens, a manual AWS credential set, or a saved Pulumi passphrase; change the vault passphrase; or delete the environment's vault. Inputs are hidden. Replacement and passphrase rotation preserve other entries and use the existing encrypted-file replacement mechanism. Rotation requires the current passphrase; deletion requires typing the environment name and works even if the passphrase is lost.
+
+These operations are local. They do not rotate/revoke provider tokens, alter GitHub secrets, change Pulumi stack encryption, or remove AWS CLI session caches. Replacing a saved Pulumi passphrase means saving the stack's current passphrase, not changing that stack's encryption password.
+
+### Export Android configuration
+
+Successful setup automatically writes `android-config/<environment>.properties` (ignored by Git). It contains only public settings: environment, API URL, app link host, region, Cognito pool/client IDs, capture enabled flag, and document type. Failed output reads leave any previous export intact. The capture document policy is still enforced by the server.
+
+Export again without deployment:
+
+```powershell
+.\deploy.bat -export-android .\android-config\qa.properties -Backend s3://YOUR-STATE-BUCKET -Stack qa -Region us-east-2 -Sso -Profile attestra
+```
+
+The setup recovery menu also offers **Export Android configuration**. In `android.attestra.auth`, build using the generated file:
+
+```powershell
+.\gradlew.bat :app:assembleDebug -PattestraConfigFile=D:/dev/go.attestra.aws.auth/android-config/qa.properties
+```
+
+On Unix, use `./deploy.sh` and `./gradlew` with the same flags. Re-export and rebuild when switching environments; the file does not change an already installed app. No AWS access keys, tokens, or Pulumi secrets are exported.

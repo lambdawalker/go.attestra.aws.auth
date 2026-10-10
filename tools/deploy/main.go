@@ -53,7 +53,9 @@ func run() error {
 		return runCredentialProcess(os.Args[2])
 	}
 	var o options
-	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials bool
+	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault bool
+	flag.StringVar(&o.ExportAndroid, "export-android", "", "Export deployed public Android settings to a properties file without deployment")
+	flag.BoolVar(&manageVault, "manage-credentials", false, "Manage the local credential vault without running setup")
 	flag.BoolVar(&o.HealthCheck, "health-check", false, "Check the deployed environment without building or deploying")
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
@@ -76,6 +78,9 @@ func run() error {
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
 	}
+	if o.ExportAndroid != "" && (o.HealthCheck || build || bootstrap || setupGitHub || teardown || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex) {
+		return errors.New("-export-android cannot be combined with other operation flags")
+	}
 	if o.HealthCheck && (build || bootstrap || setupGitHub || teardown || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex) {
 		return errors.New("-health-check cannot be combined with deployment, setup, build, migration, index recovery, or CI operation flags")
 	}
@@ -89,6 +94,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if manageVault {
+		unsupported := ""
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "manage-credentials" && f.Name != "repo-root" {
+				unsupported = f.Name
+			}
+		})
+		if unsupported != "" {
+			return fmt.Errorf("-%s cannot be combined with -manage-credentials", unsupported)
+		}
+		return manageCredentials(root)
+	}
+
 	if (forceSetup || freshCredentials) && !bootstrap {
 		return errors.New("-force-setup and -fresh-credentials require -bootstrap")
 	}
@@ -233,6 +251,9 @@ func run() error {
 		if err := pullRepository(&processRunner{}, o.Root); err != nil {
 			return err
 		}
+	}
+	if o.ExportAndroid != "" {
+		return exportAndroidConfiguration(runner, o, o.ExportAndroid)
 	}
 	if o.HealthCheck {
 		return runEnvironmentHealth(runner, o)

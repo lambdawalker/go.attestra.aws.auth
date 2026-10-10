@@ -15,6 +15,7 @@ import (
 
 type options struct {
 	ReleaseIndex, SkipIndex, PublishOnly                   bool
+	ExportAndroid                                          string
 	HealthCheck                                            bool
 	ReuseBuild                                             bool // Internal: only after a successful build in this staged run.
 	Targets                                                []string

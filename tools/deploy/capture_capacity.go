@@ -39,12 +39,36 @@ func captureConcurrencyPreflight(r commandRunner, dir, stack string) (int, error
 	if json.Unmarshal(raw, &config) != nil {
 		return 0, errors.New("cannot read capture concurrency configuration")
 	}
-	requested := 5
+	class := config["attestra-auth-email:environmentClass"].Value
+	if class != "" && class != "test" && class != "production" {
+		return 0, errors.New("environmentClass must be test or production")
+	}
+	production := productionEnvironment(stack, class)
+	if stack == "prod" && class == "test" {
+		return 0, errors.New("prod requires environmentClass production")
+	}
+	if production && (config["attestra-auth-email:captureReservedConcurrency"].Value == "" || config["attestra-auth-email:captureWorkerMaxConcurrency"].Value == "") {
+		return 0, errors.New("production requires explicit captureReservedConcurrency and captureWorkerMaxConcurrency in the stack YAML")
+	}
+	requested := -1
 	if value := config["attestra-auth-email:captureReservedConcurrency"].Value; value != "" {
 		requested, err = strconv.Atoi(value)
 		if err != nil || requested == 0 || requested < -1 {
 			return 0, errors.New("captureReservedConcurrency must be -1 or a positive integer")
 		}
+	}
+	if production && requested < 1 {
+		return 0, errors.New("production requires positive reserved concurrency")
+	}
+	worker := 2
+	if value := config["attestra-auth-email:captureWorkerMaxConcurrency"].Value; value != "" {
+		worker, err = strconv.Atoi(value)
+		if err != nil {
+			return 0, errors.New("invalid worker concurrency")
+		}
+	}
+	if worker < 2 || worker > 1000 || requested > 0 && worker > requested {
+		return 0, errors.New("worker concurrency must be 2–1000 and not exceed reservation")
 	}
 	if requested == -1 {
 		return -1, nil
@@ -106,6 +130,9 @@ func captureConcurrencyPreflight(r commandRunner, dir, stack string) (int, error
 	effective, additional, available, err := captureCapacity(requested, total, unreserved, existing)
 	if err != nil {
 		return 0, err
+	}
+	if effective == -1 && production {
+		return 0, fmt.Errorf("production capacity unavailable: %d additional reserved executions required, %d available (account quota %d); request a quota increase or explicitly revise capacity settings; no shared-capacity fallback", additional, available, total)
 	}
 	if effective == -1 {
 		fmt.Printf("WARNING: capture requests %d reserved executions per function; %d additional needed, %d available after preserving the unreserved pool (quota %d, unreserved %d). Using shared concurrency for all three capture functions for this deployment. Requested configuration is unchanged; SQS worker maximum is unchanged.\n", requested, additional, available, total, unreserved)
