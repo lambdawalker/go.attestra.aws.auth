@@ -30,7 +30,7 @@ func TestDirectLaunchers(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, goName), []byte(stub), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for name, flag := range map[string]string{"deploy": "-backend", "setup": "-bootstrap", "setup-github": "-bootstrap", "build": "-build"} {
+	for name, flag := range map[string]string{"deploy": "-backend", "setup": "-bootstrap", "setup-github": "-bootstrap", "build": "-build", "teardown": "-teardown"} {
 		data, e := os.ReadFile(filepath.Join(root, name+ext))
 		if e != nil {
 			t.Fatal(e)

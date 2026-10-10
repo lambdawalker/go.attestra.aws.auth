@@ -141,3 +141,7 @@ Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json`
 | Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
 The wizard does not request Lambda quota increases, leave the SES sandbox, provision website hosting or rotate existing proof keys automatically. Cloudflare DNS changes require the dedicated menu option and confirmation; manual DNS setup remains available.
+
+## Remove an environment
+
+Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.

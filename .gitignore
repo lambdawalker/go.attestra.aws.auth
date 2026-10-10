@@ -8,3 +8,6 @@ infra/Pulumi.*.yaml.bak.*
 bootstrap.local.json
 
 bootstrap.*.local.json
+
+# Non-secret teardown recovery plans; keep privately until cleanup is complete.
+teardown.*.local.json*

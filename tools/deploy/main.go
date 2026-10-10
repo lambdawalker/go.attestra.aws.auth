@@ -50,7 +50,7 @@ func main() {
 }
 func run() error {
 	var o options
-	var setupGitHub, bootstrap, build bool
+	var setupGitHub, bootstrap, build, teardown bool
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
@@ -63,6 +63,7 @@ func run() error {
 	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
 	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the selected GitHub environment interactively")
 	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh environment deployment, or resume setup")
+	flag.BoolVar(&teardown, "teardown", false, "Interactively tear down an environment and its GitHub/Cloudflare configuration")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
@@ -73,6 +74,21 @@ func run() error {
 	root, err := filepath.Abs(o.Root)
 	if err != nil {
 		return err
+	}
+	if teardown {
+		var unsupported string
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "teardown" && f.Name != "repo-root" {
+				unsupported = f.Name
+			}
+		})
+		if unsupported != "" {
+			return fmt.Errorf("-%s is not supported with teardown; select the target in its reviewed interactive flow", unsupported)
+		}
+		if build || bootstrap || setupGitHub || o.CI != "" || o.MigrateFrom != "" || o.Pull {
+			return errors.New("-teardown cannot be combined with build, setup, migration, pull, or CI")
+		}
+		return runTeardown(root)
 	}
 	if build {
 		if bootstrap || setupGitHub || o.CI != "" {

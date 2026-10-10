@@ -179,3 +179,7 @@ These settings are independent of `captureEnabled`, which remains unchanged. Run
 After pulling a concurrency configuration change, start a **new** deployment run on `main`. Preserve the existing S3 state so Pulumi can resume a partial deployment; do not recreate the stack.
 
 Cloudflare DNS token permissions, record handling, and the first-deployment sequence are documented in [SES and Cloudflare DNS setup](first-deployment.md#ses-and-cloudflare-dns-setup).
+
+## Remove an environment
+
+Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.

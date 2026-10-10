@@ -269,3 +269,7 @@ Historical implementation decisions are preserved in the [archived original plan
 ### Set up another deployment environment
 
 Run `setup.bat` (Windows) or `./setup.sh` (Linux/macOS). Choose `dev`, `qa`, `prod`, an existing environment, or create a custom name. Setup uses that name for the GitHub environment and Pulumi stack, offers environment-prefixed domains, and preserves existing stack values. Commit the resulting `infra/Pulumi.<environment>.yaml`, then select the environment in **Deploy AWS [Pulumi S3] → Run workflow**. New environments appear automatically in the dropdown. See [the setup guide](docs/first-deployment.md#domain-defaults-for-each-environment).
+
+## Remove an environment
+
+Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](docs/teardown.md). The state bucket and shared OIDC provider are retained.
