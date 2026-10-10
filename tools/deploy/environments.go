@@ -66,6 +66,9 @@ func (g *githubClient) listEnvironments(repo string) ([]string, error) {
 	}
 }
 func chooseEnvironment(existing []string) (string, error) {
+	return chooseEnvironmentFor(existing, "Environment to set up")
+}
+func chooseEnvironmentFor(existing []string, title string) (string, error) {
 	names := []string{"dev", "qa", "prod"}
 	for _, name := range existing {
 		if validateEnvironment(name) != nil {
@@ -86,11 +89,15 @@ func chooseEnvironment(existing []string) (string, error) {
 	}
 	choices = append(choices, huh.NewOption("Use another environment…", ""))
 	selected := "dev"
-	if err := environmentSelect(choices, &selected).Run(); err != nil {
+	if err := environmentSelect(choices, &selected).Title(title).Run(); err != nil {
 		return "", err
 	}
 	if selected == "" {
-		if err := input("Environment name (existing or new, for example staging or demo-2)", &selected, false, true).Validate(validateEnvironment).Run(); err != nil {
+		namePrompt := "Environment name (existing or new, for example staging or demo-2)"
+		if title == "Environment to tear down" {
+			namePrompt = "Existing environment name to tear down"
+		}
+		if err := input(namePrompt, &selected, false, true).Validate(validateEnvironment).Run(); err != nil {
 			return "", err
 		}
 	}

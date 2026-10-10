@@ -11,15 +11,17 @@ git pull
 
 Linux/macOS: `./teardown.sh`. Direct Go: `go -C tools/deploy run . -teardown`.
 
+The **first question is Environment to tear down**, with dev, qa, prod, locally known environments, and a custom-name option. Local teardown checkpoints are included so interrupted custom-environment removals remain selectable. Repository and credentials are requested only afterward; a saved teardown/setup repository is used as the default.
+
 ## Credentials and prerequisites
 
-Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. Cloudflare cleanup is optional: choose **Skip Cloudflare** before the token prompt to leave SES DNS records in place and continue tearing down AWS and GitHub. No Cloudflare token or API requests are needed when skipped. To clean up DNS automatically, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint.
+Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. Cloudflare cleanup is optional: choose **Skip Cloudflare** before the token prompt to leave SES DNS records in place and continue tearing down AWS and GitHub. No Cloudflare token or API requests are needed when skipped. To clean up DNS automatically, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint. If the selected repository/environment has a credential vault, you can unlock it and reuse its GitHub/Cloudflare tokens, manual AWS credentials, and application Pulumi passphrase. SSO/browser credentials still use the refreshable AWS profile provider. Expired saved credentials can be replaced separately with `credentials.bat` or `credentials.sh`.
 
 Stop all local deployments and finish/cancel pending GitHub deployment runs first. The wizard checks for active/waiting Deploy workflow runs across the repository, but cannot prevent someone starting a new run afterward. Keep the environment in a maintenance window until teardown finishes.
 
 ## Removal sequence
 
-1. Enter the repository and exact environment name. The script reads its saved GitHub variables, verifies the AWS account/region/backend/stack, and refuses a role or stack referenced by another GitHub environment in this repository.
+1. Select the environment first, then confirm the repository. The script reads its saved GitHub variables, verifies the AWS account/region/backend/stack, and refuses a role or stack referenced by another GitHub environment in this repository.
 2. Before destruction, capture the SES TXT/DKIM values and application evidence bucket from Pulumi state. Select the Cloudflare zone and review exact matching record IDs/values. Additional TXT values are retained. Conflicting CNAMEs stop the operation. If the stack manages its SES verification record through Route53, Pulumi handles those DNS records and Cloudflare cleanup is skipped.
 3. Review `pulumi destroy --preview-only`. Type the environment name to authorize permanent teardown. Confirm that no other service uses the SES identity or selected DNS records; the script cannot discover other repositories or outside consumers.
 4. If ID evidence exists, choose whether to purge its bucket. Purging requires typing the **bucket name** separately and permanently deletes every object version and delete marker. The state bucket can never be purged through this option. If you decline, a nonempty evidence bucket will block Pulumi destruction. Export anything you need before confirming. Object-lock/access errors stop cleanup; retention is never bypassed.
@@ -47,3 +49,12 @@ An HTTP 400 alone does not establish a permissions problem. The wizard reports t
 If a Cloudflare read fails before the destruction preview and confirmation, no teardown deletion has started in that invocation. Pull the latest script and rerun with the same environment. Preserve any checkpoint from earlier attempts. If it still fails, share the new error line, never your credentials.
 
 API custom domains are included in teardown: Pulumi removes the API mapping, custom domain and ACM certificate. Before destruction, the wizard captures the API CNAME and ACM validation CNAME from state, alongside SES DNS evidence, for exact-match Cloudflare cleanup. Only approve deletion if those validation records are not used by another certificate/service. The selected Cloudflare zone must cover every captured record. Route53-managed records are removed by Pulumi. **Skip Cloudflare** retains both SES and API DNS records for manual cleanup. The shared API Gateway service-linked role is retained.
+
+
+## Local cleanup and shared infrastructure
+
+After cloud and GitHub cleanup succeeds, teardown removes the selected environment's `bootstrap.<environment>.local.json` and `.bak` (including saved health/completion summaries), the legacy `bootstrap.local.json` record for dev when present, and the default `android-config/<environment>.properties` export. Other environments are untouched. Setup records for another repository stop local cleanup for review. Copies exported to custom paths, installed Android apps, and existing builds are not changed.
+
+Before final authorization, the wizard separately asks whether to delete the selected credential vault; the default is **keep**, because it can contain the shared-index passphrase. This decision is checkpointed for retries. Vault deletion does not revoke provider tokens or clear AWS CLI login caches. The teardown checkpoint and encrypted Pulumi YAML backup remain available for recovery/audit.
+
+The environment is removed from the shared index, but the shared index Pulumi project, service, DNS, state bucket, and shared OIDC provider remain. Production capacity settings do not trigger reservation allocation during teardown; the normal destruction preview and typed confirmations still apply.

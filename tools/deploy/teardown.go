@@ -18,6 +18,7 @@ import (
 )
 
 type teardownProgress struct {
+	LocalDone, DeleteVault                                           bool
 	Index                                                            *pendingIndex
 	IndexRemoved, IndexRetired, CleanupDone                          bool
 	Repository, Environment                                          string
@@ -134,19 +135,39 @@ func runTeardown(root string) error {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("teardown requires an interactive terminal; there is no unattended destroy mode")
 	}
+	fmt.Println("Attestra • Teardown environment")
+	environment, err := chooseEnvironmentFor(teardownEnvironments(root), "Environment to tear down")
+	if err != nil {
+		return err
+	}
 	if err := (&bootstrapWizard{root: root}).preflight(); err != nil {
 		return err
 	}
-	fmt.Println("Attestra • Teardown environment\nPermanent removal of application data, approved SES/API DNS records, deployment role, stack, and GitHub environment. Stop deployments for this repository until finished. S3 state bucket and shared OIDC provider are retained.")
-	repo, environment, token := "lambdawalker/go.attestra.aws.auth", "dev", ""
-	if err := huh.NewForm(huh.NewGroup(input("GitHub repository", &repo, false, true).Validate(func(s string) error {
+	fmt.Println("Permanent removal of application data, approved SES/API DNS records, deployment role, stack, GitHub environment, and this environment's local setup/Android export. Stop deployments until finished. State buckets, shared index infrastructure and OIDC provider are retained.")
+	repo := teardownRepository(root, environment)
+	if repo == "" {
+		repo = "lambdawalker/go.attestra.aws.auth"
+	}
+	if err := input("GitHub repository", &repo, false, true).Validate(func(s string) error {
 		if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(s) {
 			return errors.New("use owner/repository")
 		}
 		return nil
-	}), input("Environment to tear down", &environment, false, true).Validate(validateEnvironment), input("GitHub token (hidden; Administration/Environments write and Actions read)", &token, true, true))).Run(); err != nil {
+	}).Run(); err != nil {
 		return err
 	}
+	saved := &bootstrapWizard{root: root, environment: environment}
+	defer saved.cleanup()
+	if err := saved.loadCredentials(repo, false); err != nil {
+		return err
+	}
+	token := saved.secrets.GitHub
+	if token == "" {
+		if err := input("GitHub token (hidden; Administration/Environments write and Actions read)", &token, true, true).Run(); err != nil {
+			return err
+		}
+	}
+
 	g := newGitHubClient(strings.TrimSpace(token))
 	var metadata repositoryMetadata
 	found, err := g.request("GET", "/repos/"+repo, nil, &metadata)
@@ -214,10 +235,12 @@ func runTeardown(root string) error {
 	if err = huh.NewSelect[string]().Title("AWS administrator authentication").Options(huh.NewOption("SSO", "sso"), huh.NewOption("AWS browser login", "login"), huh.NewOption("Access key credentials", "keys")).Value(&mode).Run(); err != nil {
 		return err
 	}
-	c := credentials{}
+	c := credentials{Access: saved.secrets.AWSAccess, Secret: saved.secrets.AWSSecret, Token: saved.secrets.AWSToken, Passphrase: saved.secrets.Pulumi}
 	if mode == "keys" {
-		if err = huh.NewForm(huh.NewGroup(input("AWS access key ID", &c.Access, true, true), input("AWS secret key", &c.Secret, true, true), input("AWS session token", &c.Token, true, false))).Run(); err != nil {
-			return err
+		if c.Access == "" || c.Secret == "" {
+			if err = huh.NewForm(huh.NewGroup(input("AWS access key ID", &c.Access, true, true), input("AWS secret key", &c.Secret, true, true), input("AWS session token", &c.Token, true, false))).Run(); err != nil {
+				return err
+			}
 		}
 	} else {
 		if err = input("AWS profile", &o.Profile, false, true).Run(); err != nil {
@@ -229,8 +252,13 @@ func runTeardown(root string) error {
 			return err
 		}
 	}
-	if err = input("Existing Pulumi stack passphrase", &c.Passphrase, true, true).Run(); err != nil {
-		return err
+	if c.Passphrase == "" {
+		c.Passphrase = saved.secrets.Pulumi
+	}
+	if c.Passphrase == "" {
+		if err = input("Existing Pulumi stack passphrase", &c.Passphrase, true, true).Run(); err != nil {
+			return err
+		}
 	}
 	temporary, err := os.MkdirTemp("", "attestra-teardown-")
 	if err != nil {
@@ -314,9 +342,11 @@ func runTeardown(root string) error {
 		p.DNSSkipped = !cleanup
 	}
 	if !p.DNSDone && !p.DNSSkipped && len(p.Desired) > 0 {
-		cfToken := ""
-		if err = input("Cloudflare token (hidden; Zone Read + DNS Edit)", &cfToken, true, true).Run(); err != nil {
-			return err
+		cfToken := saved.secrets.Cloudflare
+		if cfToken == "" {
+			if err = input("Cloudflare token (hidden; Zone Read + DNS Edit)", &cfToken, true, true).Run(); err != nil {
+				return err
+			}
 		}
 		cf = newCloudflareClient(strings.TrimSpace(cfToken))
 		zones, e := cf.zones(p.Domain)
@@ -387,6 +417,20 @@ func runTeardown(root string) error {
 			return err
 		}
 	}
+	if !resume {
+		vaultPath, _, e := vaultLocation(repo, environment)
+		if e != nil {
+			return e
+		}
+		if _, e = os.Stat(vaultPath); e == nil {
+			if e = huh.NewConfirm().Title("Delete this environment's saved credential vault after teardown?").Description("Default: keep. It may contain the shared-index passphrase. Provider tokens and AWS CLI sessions are not revoked.").Value(&p.DeleteVault).Run(); e != nil {
+				return e
+			}
+		} else if !os.IsNotExist(e) {
+			return e
+		}
+	}
+	fmt.Printf("Local cleanup: setup completion/progress and android-config/%s.properties. Delete credential vault: %t. Shared index infrastructure is retained.\n", environment, p.DeleteVault)
 	if err = typedConfirmation("Type the environment name to permanently tear it down", environment); err != nil {
 		return err
 	}
@@ -542,6 +586,15 @@ func runTeardown(root string) error {
 					return err
 				}
 			}
+			if !p.LocalDone {
+				if err := cleanupTeardownLocal(root, &p); err != nil {
+					return err
+				}
+				p.LocalDone = true
+				if err := persist(); err != nil {
+					return err
+				}
+			}
 			if registryClient != nil && !p.IndexRemoved {
 				if _, e := registryClient.change(registry.Change{Operation: "delete", Token: p.Index.Receipt.Token, Revision: p.Index.Receipt.Revision}); e != nil {
 					return e
@@ -555,7 +608,7 @@ func runTeardown(root string) error {
 			if p.DNSSkipped {
 				fmt.Println("Cloudflare cleanup was skipped; remaining SES/API DNS records need manual cleanup. See Desired/DNS in the teardown progress file.")
 			}
-			fmt.Println("✓ Teardown complete. State bucket/history, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
+			fmt.Println("✓ Teardown complete. Local setup records and generated Android configuration removed. State bucket/history, shared index infrastructure, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
 			return nil
 		}},
 	})
