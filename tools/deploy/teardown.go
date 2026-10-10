@@ -45,7 +45,7 @@ func (p *teardownProgress) save(path string) error {
 }
 func typedConfirmation(label, expected string) error {
 	answer := ""
-	if err := input(label, &answer, false, true).Run(); err != nil {
+	if err := input(label, &answer, false, true).Description("Type exactly: " + expected).Run(); err != nil {
 		return err
 	}
 	if answer != expected {
