@@ -75,8 +75,8 @@ The wizard shows proposed changes and asks before applying them. It:
 - Creates a missing S3 bucket only after an explicit not-found response. Access denied is never treated as a missing bucket.
 - Verifies existing bucket ownership and region, then ensures versioning and all four public access blocks are enabled. Existing objects and encryption settings are preserved; new S3 buckets use default encryption.
 - Prompts for and confirms the Pulumi passphrase. For an existing stack, use its **original** passphrase. Save it in a password manager.
-- Lists stacks in the selected project/backend before initializing a missing stack. Failed reads stop setup. No stack removal, resource destruction or automatic state migration occurs.
-- For a fresh stack, offers to retain an existing local `Pulumi.<environment>.yaml` as an ignored `.bak.<timestamp>` file before creating fresh encryption metadata.
+- Lists stacks in the selected project/backend and automatically reuses an existing stack or initializes a new one, without a confirmation prompt. Failed or invalid reads stop setup. No stack removal, resource destruction or automatic state migration occurs.
+- If the stack is missing but its local YAML, YAML backups, or checkpoint indicate previous setup, stops with migration/restore guidance instead of overwriting configuration or starting with empty state. Select the original backend or migrate/restore the state. After a deliberate teardown, archive the old environment YAML, backups, and bootstrap checkpoint before starting fresh. A GitHub backend that conflicts with remembered initialized state also stops setup.
 - Fills missing region, app origin, sender domain/address and environment-specific concurrency settings. Existing values are retained; use Pulumi config explicitly to change existing settings.
 - Generates a cryptographically random 32-byte proof key **only if missing**, passing it through stdin to `pulumi config set --secret`. Existing encrypted keys are retained. Decrypted configuration is captured only in memory; secret command output is suppressed.
 

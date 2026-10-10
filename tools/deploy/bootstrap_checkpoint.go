@@ -10,16 +10,17 @@ import (
 // Only non-secret selections are persisted, so interrupted bootstrap can reuse
 // its bucket before a GitHub environment exists. Never store a token/passphrase.
 type bootstrapCheckpoint struct {
-	Completion  *setupCompletion `json:",omitempty"`
-	Repository  string
-	Environment string
-	Region      string
-	Backend     string
-	Stack       string
-	Settings    map[string]string
-	Stage       string
-	Account     string
-	RoleARN     string
+	StackInitialized bool             `json:",omitempty"`
+	Completion       *setupCompletion `json:",omitempty"`
+	Repository       string
+	Environment      string
+	Region           string
+	Backend          string
+	Stack            string
+	Settings         map[string]string
+	Stage            string
+	Account          string
+	RoleARN          string
 }
 
 func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, existing map[string]string) error {
@@ -43,6 +44,17 @@ func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, 
 	}
 	if saved.Repository != repo || (saved.Environment != "" && saved.Environment != w.environment) || saved.Stack != w.environment {
 		return nil
+	}
+	// Preserve evidence from checkpoints written before StackInitialized existed.
+	switch saved.Stage {
+	case "github-ready", "deploying", "ses-prerequisites", "ses-verified", "deployed", "complete":
+		saved.StackInitialized = true
+	}
+	if saved.Completion != nil {
+		saved.StackInitialized = true
+	}
+	if saved.StackInitialized && existing["PULUMI_BACKEND_URL"] != "" && saved.Backend != "" && existing["PULUMI_BACKEND_URL"] != saved.Backend {
+		return errors.New("GitHub backend differs from the previously initialized stack backend; migrate or verify its existing state before changing the local checkpoint")
 	}
 	w.memory = saved
 	w.resuming = true

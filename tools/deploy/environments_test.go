@@ -149,7 +149,7 @@ func TestFreshQAStackDoesNotTouchDevConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = bootstrapStack(f, o, defaults, func(string) error { return nil }, func(string) error { return nil }); err != nil {
+	if err = bootstrapStack(f, o, defaults, false, func(string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)

@@ -124,6 +124,7 @@ func (w *bootstrapWizard) checkLocalSetup(repo string, force bool, approve func(
 	return true, nil
 }
 func (w *bootstrapWizard) recordCompletion(before localRevision, configuration string) error {
+	w.memory.StackInitialized = true
 	w.memory.Stage = "complete"
 	w.memory.Completion = nil
 	after, err := readLocalRevision(w.root)

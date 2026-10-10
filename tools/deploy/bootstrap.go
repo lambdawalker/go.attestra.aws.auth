@@ -239,7 +239,11 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		reserved, worker = "-1", "2"
 	}
 	defaults := map[string]string{"attestra-auth-email:apiDomain": apiDomain, "aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
-	if err = bootstrapStack(w.r, o, defaults, confirm, w.saveProofKey); err != nil {
+	if err = bootstrapStack(w.r, o, defaults, w.memory.StackInitialized, w.saveProofKey); err != nil {
+		return err
+	}
+	w.memory.StackInitialized = true
+	if err = w.saveMemory(); err != nil {
 		return err
 	}
 	if err = checkStack(w.r, o); err != nil {

@@ -70,7 +70,7 @@ func TestBootstrapNeverInitializesOnReadFailure(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{fail: "stack ls"}
-	err := bootstrapStack(f, o, nil, func(string) error { return nil }, func(string) error { t.Fatal("secret write after failure"); return nil })
+	err := bootstrapStack(f, o, nil, false, func(string) error { t.Fatal("secret write after failure"); return nil })
 	if err == nil || len(f.calls) != 1 {
 		t.Fatal(err, f.calls)
 	}
@@ -79,7 +79,7 @@ func TestBootstrapRetainsExistingProofAndConfiguration(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{list: `[{"name":"dev"}]`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, config: `{"aws:region":{"value":"us-east-2"},"attestra-auth-email:proofKey":{"value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","secret":true},"attestra-auth-email:appOrigin":{"value":"https://existing.example"}}`}
-	err := bootstrapStack(f, o, map[string]string{"attestra-auth-email:appOrigin": "https://new.example"}, func(string) error { return nil }, func(string) error { t.Fatal("existing proof rotated"); return nil })
+	err := bootstrapStack(f, o, map[string]string{"attestra-auth-email:appOrigin": "https://new.example"}, false, func(string) error { t.Fatal("existing proof rotated"); return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestBootstrapRejectsWrongPassphraseBeforeConfigWrites(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{list: `[{"name":"dev"}]`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, fail: "config --json"}
-	if bootstrapStack(f, o, nil, func(string) error { return nil }, func(string) error { return nil }) == nil {
+	if bootstrapStack(f, o, nil, false, func(string) error { return nil }) == nil {
 		t.Fatal("accepted unreadable secrets")
 	}
 	for _, cmd := range f.calls {
@@ -107,7 +107,7 @@ func TestBootstrapRejectsUnreadableBackendSecretsBeforeWrites(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{list: `[{"name":"dev"}]`, fail: "stack export"}
-	if bootstrapStack(f, o, nil, func(string) error { return nil }, func(string) error { t.Fatal("secret changed after backend read failure"); return nil }) == nil {
+	if bootstrapStack(f, o, nil, false, func(string) error { t.Fatal("secret changed after backend read failure"); return nil }) == nil {
 		t.Fatal("accepted unreadable backend secrets")
 	}
 	if got := f.calls[len(f.calls)-1]; !strings.Contains(got, "stack export --show-secrets") {
@@ -166,16 +166,12 @@ func TestBucketWrongRegionDoesNotModify(t *testing.T) {
 		t.Fatal(f.calls)
 	}
 }
-func TestBootstrapFreshStackBacksUpConfigAndGeneratesKey(t *testing.T) {
+func TestBootstrapFreshStackAutomaticallyInitializesAndGeneratesKey(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
-	dir := filepath.Join(o.Root, "infra")
-	os.Mkdir(dir, 0700)
-	path := filepath.Join(dir, "Pulumi.dev.yaml")
-	os.WriteFile(path, []byte("old encrypted config"), 0600)
 	f := &bootstrapFake{list: `[]`, config: `{}`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`}
 	count := 0
-	err := bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, func(string) error { return nil }, func(key string) error {
+	err := bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, false, func(key string) error {
 		raw, e := base64.StdEncoding.DecodeString(key)
 		if e != nil || len(raw) != 32 {
 			t.Fatal("invalid generated proof")
@@ -186,21 +182,41 @@ func TestBootstrapFreshStackBacksUpConfigAndGeneratesKey(t *testing.T) {
 	if err != nil || count != 1 {
 		t.Fatal(err, count)
 	}
-	backups, _ := filepath.Glob(path + ".bak.*")
-	if len(backups) != 1 {
-		t.Fatal(backups)
-	}
-	b, _ := os.ReadFile(backups[0])
-	if string(b) != "old encrypted config" {
-		t.Fatal("backup changed")
+	if !strings.Contains(strings.Join(f.calls, "\n"), "stack init dev --secrets-provider passphrase --non-interactive") {
+		t.Fatal(f.calls)
 	}
 }
-func TestBootstrapDeclineLeavesConfigUntouched(t *testing.T) {
+func TestBootstrapMissingStackPreservesExistingConfigAndBackups(t *testing.T) {
+	for _, suffix := range []string{"", ".bak.old"} {
+		t.Run(suffix, func(t *testing.T) {
+			o := testOptions()
+			o.Root = t.TempDir()
+			dir := filepath.Join(o.Root, "infra")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "Pulumi.dev.yaml") + suffix
+			if err := os.WriteFile(path, []byte("old encrypted config"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			f := &bootstrapFake{list: `[]`}
+			err := bootstrapStack(f, o, nil, false, func(string) error { t.Fatal("secret write"); return nil })
+			if err == nil || !strings.Contains(err.Error(), "migrate/restore") || len(f.calls) != 1 {
+				t.Fatal(err, f.calls)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != "old encrypted config" {
+				t.Fatal("config changed", err)
+			}
+		})
+	}
+}
+func TestBootstrapKnownStackMissingStopsInitialization(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{list: `[]`}
-	if bootstrapStack(f, o, nil, func(string) error { return errors.New("cancelled") }, func(string) error { t.Fatal("secret write"); return nil }) == nil {
-		t.Fatal("ignored cancellation")
+	if bootstrapStack(f, o, nil, true, func(string) error { t.Fatal("secret write"); return nil }) == nil {
+		t.Fatal("recreated previously initialized stack")
 	}
 	if len(f.calls) != 1 {
 		t.Fatal(f.calls)
@@ -211,7 +227,7 @@ func TestBootstrapStopsAtEachStackWrite(t *testing.T) {
 		o := testOptions()
 		o.Root = t.TempDir()
 		f := &bootstrapFake{list: `[]`, config: `{}`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, fail: failure}
-		if bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, func(string) error { return nil }, func(string) error { t.Fatal("continued after failure"); return nil }) == nil {
+		if bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, false, func(string) error { t.Fatal("continued after failure"); return nil }) == nil {
 			t.Fatal("ignored failure")
 		}
 		if !strings.Contains(f.calls[len(f.calls)-1], failure) {
@@ -244,7 +260,7 @@ func TestExistingStackWithoutLocalProofNeverRotates(t *testing.T) {
 	o := testOptions()
 	o.Root = t.TempDir()
 	f := &bootstrapFake{list: `[{"name":"dev"}]`, config: `{}`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"},"resources":[{}]}}`}
-	if bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, func(string) error { return nil }, func(string) error { t.Fatal("rotated existing key"); return nil }) == nil {
+	if bootstrapStack(f, o, map[string]string{"aws:region": "us-east-2"}, false, func(string) error { t.Fatal("rotated existing key"); return nil }) == nil {
 		t.Fatal("accepted missing config")
 	}
 	for _, cmd := range f.calls {
@@ -312,5 +328,42 @@ func TestBootstrapMemoryPersistsChoicesAndRecoversBackup(t *testing.T) {
 	}
 	if v, ok := resumed.remembered("route53"); !ok || v != "" {
 		t.Fatal("blank choice forgotten")
+	}
+}
+
+func TestBootstrapInvalidListsNeverInitialize(t *testing.T) {
+	for _, list := range []string{"null", "{}", "", "[{}]", "[null]"} {
+		o := testOptions()
+		o.Root = t.TempDir()
+		f := &bootstrapFake{list: list}
+		if err := bootstrapStack(f, o, nil, false, func(string) error { t.Fatal("secret written"); return nil }); err == nil || len(f.calls) != 1 {
+			t.Fatal(list, err, f.calls)
+		}
+	}
+}
+func TestCheckpointRemembersInitializedStackAndRejectsBackendSwitch(t *testing.T) {
+	w := &bootstrapWizard{root: t.TempDir(), environment: "qa"}
+	w.memory = bootstrapCheckpoint{Repository: "o/r", Environment: "qa", Stack: "qa", Backend: "s3://original-state", Stage: "github-ready"}
+	if err := w.saveMemory(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.loadSelections("o/r", map[string]string{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !w.memory.StackInitialized {
+		t.Fatal("legacy initialized stack history lost")
+	}
+	if err := w.markStage("setup-in-progress"); err != nil {
+		t.Fatal(err)
+	}
+	resumed := &bootstrapWizard{root: w.root, environment: "qa"}
+	if err := resumed.loadSelections("o/r", map[string]string{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed.memory.StackInitialized {
+		t.Fatal("initialization history lost on rerun")
+	}
+	if err := resumed.loadSelections("o/r", map[string]string{}, map[string]string{"PULUMI_BACKEND_URL": "s3://other-state"}); err == nil {
+		t.Fatal("accepted conflicting backend")
 	}
 }

@@ -10,15 +10,17 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 )
 
 func stackListed(data []byte, name string) (bool, error) {
 	var stacks []struct{ Name string }
-	if err := json.Unmarshal(data, &stacks); err != nil {
+	if err := json.Unmarshal(data, &stacks); err != nil || stacks == nil {
 		return false, errors.New("invalid Pulumi stack list; no stack initialized")
 	}
 	for _, s := range stacks {
+		if s.Name == "" {
+			return false, errors.New("invalid Pulumi stack entry; no stack initialized")
+		}
 		if s.Name == name || strings.HasSuffix(s.Name, "/attestra-auth-email/"+name) {
 			return true, nil
 		}
@@ -28,7 +30,7 @@ func stackListed(data []byte, name string) (bool, error) {
 
 // Only an authoritative successful list can authorize initialization. Failures
 // (including permission errors) never become an empty destination stack.
-func bootstrapStack(r commandRunner, o options, defaults map[string]string, approve func(string) error, setSecret func(string) error) error {
+func bootstrapStack(r commandRunner, o options, defaults map[string]string, knownStack bool, setSecret func(string) error) error {
 	infra := filepath.Join(o.Root, "infra")
 	data, err := r.Exec(infra, true, "pulumi", "stack", "ls", "--json", "--non-interactive")
 	if err != nil {
@@ -39,22 +41,19 @@ func bootstrapStack(r commandRunner, o options, defaults map[string]string, appr
 		return err
 	}
 	if !exists {
-		if err = approve("Initialize a new " + o.Stack + " stack in " + o.Backend + "? Only continue if no existing application state needs migration."); err != nil {
-			return err
-		}
 		path := filepath.Join(infra, "Pulumi."+o.Stack+".yaml")
-		if _, e := os.Stat(path); e == nil {
-			if err = approve("Back up the existing local YAML and create fresh encryption metadata? The backup stays ignored by Git."); err != nil {
-				return err
-			}
-			backup := path + ".bak." + time.Now().UTC().Format("20060102T150405.000000000")
-			if err = os.Rename(path, backup); err != nil {
-				return err
-			}
-			fmt.Println("Retained encrypted config backup:", backup)
-		} else if !os.IsNotExist(e) {
+		backups, e := filepath.Glob(path + ".bak.*")
+		if e != nil {
 			return e
 		}
+		_, statErr := os.Stat(path)
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return statErr
+		}
+		if knownStack || statErr == nil || len(backups) > 0 {
+			return fmt.Errorf("stack %s is missing from %s, but local configuration, a backup, or setup history indicates previous setup; no stack initialized and no configuration changed. Select its original backend or migrate/restore its existing state. If that environment was deliberately destroyed, archive its old YAML, backups, and bootstrap checkpoint before starting fresh", o.Stack, o.Backend)
+		}
+		fmt.Printf("Initializing new %s stack in %s. No previous local stack configuration or setup history found.\n", o.Stack, o.Backend)
 		if _, err = r.Exec(infra, false, "pulumi", "stack", "init", o.Stack, "--secrets-provider", "passphrase", "--non-interactive"); err != nil {
 			return fmt.Errorf("stack initialization failed; keep any YAML backup and inspect backend before retrying: %w", err)
 		}
