@@ -20,6 +20,9 @@ import (
 )
 
 type bootstrapWizard struct {
+	vault                                             *credentialVault
+	secrets                                           savedCredentials
+	credentialRepo                                    string
 	cf                                                *cloudflareClient
 	memory                                            bootstrapCheckpoint
 	resuming                                          bool
@@ -30,6 +33,10 @@ type bootstrapWizard struct {
 }
 
 func (w *bootstrapWizard) cleanup() {
+	if w.vault != nil {
+		clear(w.vault.key)
+	}
+	w.secrets = savedCredentials{}
 	if w.temporary != "" {
 		os.RemoveAll(w.temporary)
 	}
@@ -132,16 +139,19 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if err := ensureStateBucket(a, o, account); err != nil {
 		return err
 	}
-	if err := input("Stack passphrase (new stack: choose and save it; existing stack: use its original passphrase)", &c.Passphrase, true, true).Run(); err != nil {
-		return err
-	}
-	if !w.resuming {
-		repeated := ""
-		if err := input("Repeat the stack passphrase", &repeated, true, true).Run(); err != nil {
+	c.Passphrase = w.secrets.Pulumi
+	if c.Passphrase == "" {
+		if err := input("Stack passphrase (new stack: choose and save it; existing stack: use its original passphrase)", &c.Passphrase, true, true).Run(); err != nil {
 			return err
 		}
-		if repeated != c.Passphrase {
-			return errors.New("passphrases do not match")
+		if !w.resuming {
+			repeated := ""
+			if err := input("Repeat the stack passphrase", &repeated, true, true).Run(); err != nil {
+				return err
+			}
+			if repeated != c.Passphrase {
+				return errors.New("passphrases do not match")
+			}
 		}
 	}
 	var err error
@@ -254,6 +264,9 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		return err
 	}
 	if err = checkStack(w.r, o); err != nil {
+		return err
+	}
+	if err = w.offerCredentialSaving(); err != nil {
 		return err
 	}
 	fmt.Println("✓ Stack ready. Keep the passphrase in your password manager. It will be saved to GitHub using encrypted secret upload.")

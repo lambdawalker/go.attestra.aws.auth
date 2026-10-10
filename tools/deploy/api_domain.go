@@ -18,12 +18,8 @@ func (w *bootstrapWizard) output(name string) (string, error) {
 
 // Uses the existing conflict checks and read-back verification for CNAMEs too.
 func (w *bootstrapWizard) publishDNS(domain string, desired []dnsRecord) error {
-	if w.cf == nil {
-		token := ""
-		if err := input("Cloudflare API token (hidden; Zone Read + DNS Edit)", &token, true, true).Run(); err != nil {
-			return err
-		}
-		w.cf = newCloudflareClient(strings.TrimSpace(token))
+	if err := w.cloudflareClient(); err != nil {
+		return err
 	}
 	zones, err := w.cf.zones(domain)
 	if err != nil {

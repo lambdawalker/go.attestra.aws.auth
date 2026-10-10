@@ -11,3 +11,7 @@ bootstrap.*.local.json*
 
 # Non-secret teardown recovery plans; keep privately until cleanup is complete.
 teardown.*.local.json*
+
+# Encrypted credential vaults (normally stored outside the checkout).
+*.vault.enc
+.vault-*.tmp

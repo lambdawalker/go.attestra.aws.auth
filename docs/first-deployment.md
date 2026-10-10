@@ -8,7 +8,7 @@ You still need an AWS account, a GitHub repository checkout, an authorized AWS i
 
 Install **Git**, **Go 1.26.6+**, **AWS CLI v2** and **Pulumi CLI** on PATH. The workflow pins Pulumi 3.264.0. Choose a current AWS CLI supporting `aws configure export-credentials`; browser login requires v2.32.0+. No Python, GitHub CLI or external ZIP utility is needed for local setup/build/deployment. CI separately uses Python for archive verification.
 
-Create a fine-grained GitHub token restricted to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and **Metadata: read**. The wizard prompts for it with hidden input. It does not save the token. An AWS administrator must authorize S3 bucket creation/configuration, state access and the [IAM bootstrap operations](github-deployment.md#guided-environment-setup). Optional local deployment also requires permissions to provision application resources.
+Create a fine-grained GitHub token restricted to this repository with **Administration: read/write**, **Environments: read/write**, **Actions: read**, and **Metadata: read**. The wizard prompts for it with hidden input. It only saves credentials if you opt into the encrypted local vault. An AWS administrator must authorize S3 bucket creation/configuration, state access and the [IAM bootstrap operations](github-deployment.md#guided-environment-setup). Optional local deployment also requires permissions to provision application resources.
 
 If you already have application resources managed in Pulumi Cloud, [migrate their state](deployment.md#one-time-migration-from-pulumi-cloud) first. Do not initialize an empty S3 stack for those existing resources. A `.bak` YAML file alone is not resource state.
 
@@ -37,6 +37,36 @@ For **IAM/GitHub maintenance only**, with an existing bucket/stack:
 ```sh
 go -C tools/deploy run . -setup-github
 ```
+
+## Optional encrypted local credentials
+
+After DNS selection, stack preparation, and collection of the required credentials, full setup asks **Save these credentials in an encrypted local vault?** The default is **No**. If accepted, it saves the GitHub token, Cloudflare token when applicable, Pulumi stack passphrase, and manually entered AWS access key/secret/session token. AWS SSO/browser-login credentials remain managed by the AWS CLI and are not copied into this vault. The application proof key remains in Pulumi's encrypted configuration.
+
+Each repository/environment has its own vault under the OS user configuration directory:
+
+- Windows: `%AppData%\attestra\credentials\<scope-hash>.vault.enc`
+- Linux: `$XDG_CONFIG_HOME/attestra/credentials/`, or `~/.config/attestra/credentials/`
+- macOS: `~/Library/Application Support/attestra/credentials/`
+
+The exact path is printed after saving. Vault files are outside the checkout by default, with an additional Git ignore rule for the encrypted files and temporary files. Unix directories/files use `0700`/`0600`; Windows uses the user profile's inherited ACLs. Do not share the vault: it contains reusable credentials protected by your passphrase.
+
+Encryption uses Go's AES-256-GCM with a fresh random nonce for every save, and Argon2id (64 MiB, 3 iterations, 1 lane) with a random 16-byte salt to derive the key. The versioned format fixes KDF parameters and limits file size. Repository/environment identity is authenticated with the ciphertext, so a vault copied to another scope cannot be unlocked there. Only encrypted bytes reach disk, including temporary files. Failed unlocks do not overwrite existing files. The encryption key is cleared on wizard cleanup; Go does not guarantee erasure of every in-memory string copy.
+
+The new vault passphrase is entered twice and must differ from the Pulumi passphrase. Validation requires 20–1024 Unicode characters, allows spaces/Unicode, normalizes Unicode to NFC, and rejects common examples and repetitive patterns. There are no uppercase/digit/symbol requirements. Choose at least five randomly selected words or a long password-manager-generated secret; validation cannot guarantee entropy or check every breached password. The [OWASP encryption guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html), [Argon2id guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), and [NIST password guidance](https://pages.nist.gov/800-63-4/sp800-63b/passwords/) inform this policy; this is not a claim of NIST/FIPS certification.
+
+On rerun, when setup is needed, choose to unlock the saved vault after repository selection. Its credentials fill the necessary steps. An unlocked vault is updated with credentials used in that run. Choosing not to unlock uses fresh input, and replacing the existing vault requires an explicit confirmation. The unchanged-completed-setup shortcut still exits before requesting a vault passphrase.
+
+For expired, revoked, or incorrect credentials, bypass both the completion shortcut and saved credentials:
+
+```text
+.\setup.bat -fresh-credentials
+```
+
+```sh
+./setup.sh -fresh-credentials
+```
+
+This offers replacement after new credentials are collected. Saving temporary AWS credentials does not extend their validity. There is no vault-passphrase recovery: re-enter the underlying credentials and replace the vault with a new passphrase. Keep both your vault and Pulumi passphrases recoverable in a password manager. Removing the vault file removes the local saved copy; it does not revoke the tokens at their providers. Standalone deploy, teardown, and IAM-only maintenance do not unlock the setup vault.
 
 ## Fast reruns without remote calls
 
@@ -137,7 +167,7 @@ The staged wizard creates SES identity/DKIM tokens first and waits for verificat
 
 Choose **Build, preview and deploy** and follow its DNS stage. You can also use **Configure Cloudflare DNS for SES** separately once the SES prerequisites exist. Create an API token in [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone → Zone → Read** and **Zone → DNS → Edit**, restricted to your authoritative zone (for example `attestrabond.com`). Enter it at the hidden prompt and select the matching active zone. Review the TXT and three DKIM CNAME records, the wizard applies the displayed changes automatically.
 
-The token stays in memory and is never saved to GitHub, Pulumi configuration, or local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after displaying the planned changes. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
+The token stays in memory unless you opt into the encrypted local vault; it is never saved to GitHub, Pulumi configuration, or plaintext local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after displaying the planned changes. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
 
 The wizard refuses Cloudflare setup when `route53ZoneId` is configured, to avoid two DNS managers for the same records. Cloudflare records are managed by the selected provider’s setup step, not by Pulumi; destroying a stack does not remove them. Keep DKIM CNAME flattening disabled in Cloudflare, including the zone-wide “flatten all CNAMEs” option. The wizard does not change zone-wide settings or DNS delegation.
 
@@ -194,7 +224,7 @@ Full setup continues automatically from configuration through IAM/GitHub setup, 
 
 The ignored `bootstrap.<environment>.local.json` now remembers non-secret configuration choices, AWS authentication mode/profile, account and deployment role, application domains, DNS choices, and the latest completed deployment phase. Writes use a temporary file and a recovery backup; `.tmp` and `.bak` files are also ignored. A backup is read if replacement was interrupted. Keep these files private and run only one setup instance for an environment at a time.
 
-On rerun, choose the repository/environment and supply credentials. Existing GitHub values take precedence over checkpoint defaults; current Pulumi application configuration takes precedence over remembered answers. Previously answered configuration prompts are skipped. No tokens, AWS keys, passphrases or proof keys are stored in this memory file. GitHub tokens, the stack passphrase and any required Cloudflare token are still requested; AWS SSO/login may need to authenticate again.
+On rerun, choose the repository/environment and supply credentials. Existing GitHub values take precedence over checkpoint defaults; current Pulumi application configuration takes precedence over remembered answers. Previously answered configuration prompts are skipped. No tokens, AWS keys, passphrases or proof keys are stored in this memory file. Without an unlocked vault, GitHub tokens, the stack passphrase and any required Cloudflare token are requested again; AWS SSO/login may need to authenticate again.
 
 Progress is a resume aid, not proof that resources still exist: AWS/Pulumi are checked again. Completed DNS publication is remembered using a fingerprint of the SES record names and values; changed tokens require DNS setup again. Pending verification resumes polling without asking for the same Cloudflare token. To intentionally change a remembered non-secret choice, edit its `Settings` entry in the ignored checkpoint while setup is stopped; change established application configuration with Pulumi config. Never remove or alter deployment state just to reset wizard prompts.
 
@@ -213,7 +243,7 @@ Setup now fills missing `attestra-auth-email:apiDomain` using your selected base
 
 Existing `apiDomain` configuration is retained. When upgrading an existing environment, rerun setup to add this setting and refresh its deployment-role permissions before using Actions.
 
-The prerequisite update requests an ACM certificate in the API's region alongside the SES resources. Before deploying the complete application, the wizard publishes the ACM validation CNAME through Cloudflare and polls until ACM reports `ISSUED`. It then creates the regional API Gateway custom domain and root API mapping, and publishes a DNS-only CNAME pointing to the **custom-domain target**, not the raw API URL. An existing Cloudflare token from SES setup is reused only in memory. Matching records are reused; conflicting records stop setup without replacement. Certificate validation records must remain for renewal. Keep CNAME flattening disabled for validation records.
+The prerequisite update requests an ACM certificate in the API's region alongside the SES resources. Before deploying the complete application, the wizard publishes the ACM validation CNAME through Cloudflare and polls until ACM reports `ISSUED`. It then creates the regional API Gateway custom domain and root API mapping, and publishes a DNS-only CNAME pointing to the **custom-domain target**, not the raw API URL. An existing Cloudflare token from SES setup is reused in memory and can also be retained in the optional encrypted vault. Matching records are reused; conflicting records stop setup without replacement. Certificate validation records must remain for renewal. Keep CNAME flattening disabled for validation records.
 
 If `route53ZoneId` is configured, Pulumi manages both the certificate-validation record and API CNAME in that zone. Cloudflare is not used for those records.
 

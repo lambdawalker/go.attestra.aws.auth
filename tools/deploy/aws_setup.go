@@ -269,9 +269,15 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 			return err
 		}
 	} else {
-		if err = huh.NewForm(huh.NewGroup(input("AWS access key ID", &c.Access, true, true), input("AWS secret access key", &c.Secret, true, true), input("AWS session token (temporary credentials)", &c.Token, true, false))).Run(); err != nil {
-			return err
+		if bootstrap != nil {
+			c.Access, c.Secret, c.Token = bootstrap.secrets.AWSAccess, bootstrap.secrets.AWSSecret, bootstrap.secrets.AWSToken
 		}
+		if c.Access == "" || c.Secret == "" {
+			if err = huh.NewForm(huh.NewGroup(input("AWS access key ID", &c.Access, true, true), input("AWS secret access key", &c.Secret, true, true), input("AWS session token (temporary credentials)", &c.Token, true, false))).Run(); err != nil {
+				return err
+			}
+		}
+
 		c.Access = strings.TrimSpace(c.Access)
 		c.Secret = strings.TrimSpace(c.Secret)
 		c.Token = strings.TrimSpace(c.Token)
@@ -301,6 +307,11 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 		return fmt.Errorf("AWS account %s differs from existing environment account %s; use the correct AWS profile", id.Account, old)
 	}
 	if bootstrap != nil {
+		if mode == "keys" {
+			bootstrap.secrets.AWSAccess, bootstrap.secrets.AWSSecret, bootstrap.secrets.AWSToken = c.Access, c.Secret, c.Token
+		} else {
+			bootstrap.secrets.AWSAccess, bootstrap.secrets.AWSSecret, bootstrap.secrets.AWSToken = "", "", ""
+		}
 		if err := bootstrap.remember("authMode", mode); err != nil {
 			return err
 		}

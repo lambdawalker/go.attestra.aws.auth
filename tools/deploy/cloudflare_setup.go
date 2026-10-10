@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -14,6 +13,7 @@ func (w *bootstrapWizard) configureCloudflare() (err error) {
 	defer func() {
 		if err != nil {
 			w.cf = nil
+			w.secrets.Cloudflare = ""
 		}
 	}()
 	// Refuse two controllers managing the same SES DNS records.
@@ -36,13 +36,8 @@ func (w *bootstrapWizard) configureCloudflare() (err error) {
 		return errors.New("SES verification TXT and all three DKIM tokens must exist; finish creating the SES identity with deployment, then retry")
 	}
 	fmt.Printf("Cloudflare DNS • environment %s • AWS account %s • region %s • identity %s\n", w.environment, w.account, w.o.Region, evidence.Domain)
-	fmt.Println("Create a Cloudflare API token with Zone:Read and DNS:Edit, limited to the authoritative zone. Token stays in memory and is never saved to GitHub, Pulumi, or a local file.")
-	if w.cf == nil {
-		token := ""
-		if err = input("Cloudflare API token (hidden)", &token, true, true).Run(); err != nil {
-			return err
-		}
-		w.cf = newCloudflareClient(strings.TrimSpace(token))
+	if err := w.cloudflareClient(); err != nil {
+		return err
 	}
 	client := w.cf
 	zones, err := client.zones(evidence.Domain)
@@ -89,6 +84,11 @@ func (w *bootstrapWizard) configureCloudflare() (err error) {
 		fmt.Println("Applying SES DNS changes to " + zone.Name + "; CNAMEs will be DNS only and unrelated records are preserved.")
 		if err = client.apply(selected, plan); err != nil {
 			return fmt.Errorf("DNS setup stopped; completed changes retained, rerun to resume: %w", err)
+		}
+	}
+	if w.vault != nil {
+		if err := w.vault.save(w.secrets); err != nil {
+			return err
 		}
 	}
 	fmt.Println("✓ Cloudflare records match SES. AWS verification may take time; choose the DNS check again, then resume deployment. Website DNS/hosting and SES sandbox access are separate.")

@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
 )
@@ -35,7 +34,7 @@ func validateSetupValues(v map[string]string) error {
 	}
 	return (options{Backend: v["PULUMI_BACKEND_URL"], Stack: v["PULUMI_STACK"], Region: v["AWS_REGION"]}).validate()
 }
-func runGitHubSetup(root string, full, force bool) error {
+func runGitHubSetup(root string, full, force, freshCredentials bool) error {
 	var bootstrap *bootstrapWizard
 	if full {
 		bootstrap = &bootstrapWizard{root: root}
@@ -82,8 +81,22 @@ func runGitHubSetup(root string, full, force bool) error {
 		}
 		return nil
 	})
-	if err := huh.NewForm(huh.NewGroup(repoField, input("GitHub personal access token (hidden)", &token, true, true))).Run(); err != nil {
+	if err := repoField.Run(); err != nil {
 		return err
+	}
+	if bootstrap != nil {
+		if err := bootstrap.loadCredentials(repo, freshCredentials); err != nil {
+			return err
+		}
+		token = bootstrap.secrets.GitHub
+	}
+	if token == "" {
+		if err := input("GitHub personal access token (hidden)", &token, true, true).Run(); err != nil {
+			return err
+		}
+	}
+	if bootstrap != nil {
+		bootstrap.secrets.GitHub = strings.TrimSpace(token)
 	}
 	client := newGitHubClient(strings.TrimSpace(token))
 	var user struct{ Login string }
@@ -203,7 +216,7 @@ func runGitHubSetup(root string, full, force bool) error {
 	}
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓ Environment configured and verified."))
 	fmt.Printf("Review protections: https://github.com/%s/settings/environments\n", repo)
-	fmt.Println("The token was not saved. AWS role configured.")
+	fmt.Println("AWS role configured. Tokens are only saved locally if you opted into the encrypted credential vault.")
 	if bootstrap != nil {
 		if err := bootstrap.saveSelections(repo, values); err != nil {
 			return err
