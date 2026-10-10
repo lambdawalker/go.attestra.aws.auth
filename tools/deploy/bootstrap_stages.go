@@ -61,6 +61,12 @@ func waitSES(ctx context.Context, interval time.Duration, read func() (sesEviden
 func (w *bootstrapWizard) deployStages() error {
 	before, _ := readLocalRevision(w.root)
 	configuration := w.configurationDigest()
+	if err := w.r.withIndex(w.o, w.deployStagesActual); err != nil {
+		return err
+	}
+	return w.recordCompletion(before, configuration)
+}
+func (w *bootstrapWizard) deployStagesActual() error {
 	if err := w.markStage("deploying"); err != nil {
 		return err
 	}
@@ -128,6 +134,7 @@ func (w *bootstrapWizard) deployStages() error {
 	}
 	full := w.o
 	full.ReuseBuild = true
+	full.SkipIndex = true
 	full.CI = "deploy"
 	if err := execute(w.r, full); err != nil {
 		return err
@@ -137,5 +144,5 @@ func (w *bootstrapWizard) deployStages() error {
 			return err
 		}
 	}
-	return w.recordCompletion(before, configuration)
+	return w.markStage("deployed")
 }

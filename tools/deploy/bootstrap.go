@@ -20,6 +20,7 @@ import (
 )
 
 type bootstrapWizard struct {
+	indexAPIArn                                       string
 	vault                                             *credentialVault
 	secrets                                           savedCredentials
 	credentialRepo                                    string
@@ -33,6 +34,9 @@ type bootstrapWizard struct {
 }
 
 func (w *bootstrapWizard) cleanup() {
+	if w.r != nil {
+		w.r.releaseSetupIndex(w.root)
+	}
 	if w.vault != nil {
 		clear(w.vault.key)
 	}
@@ -181,6 +185,15 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	} else if !os.IsNotExist(statErr) {
 		return statErr
 	}
+	if address := current["attestra-auth-email:indexApiUrl"].Value; address != "" {
+		client, e := newIndexClient(w.r.env, address, current["attestra-auth-email:indexRegion"].Value, w.environment)
+		if e != nil {
+			return e
+		}
+		if e = w.r.acquireSetupIndex(w.o, client); e != nil {
+			return e
+		}
+	}
 	base := "attestrabond.com"
 	if v, ok := w.remembered("baseDomain"); ok {
 		base = v
@@ -266,8 +279,16 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if err = checkStack(w.r, o); err != nil {
 		return err
 	}
-	if err = w.offerCredentialSaving(); err != nil {
+	if _, known := w.remembered("baseDomain"); !known && strings.HasPrefix(apiDomain, w.environment+".api.") {
+		base = strings.TrimPrefix(apiDomain, w.environment+".api.")
+	}
+	if err = w.prepareIndex(base, zone); err != nil {
 		return err
+	}
+	if w.vault != nil {
+		if err = w.vault.save(w.secrets); err != nil {
+			return err
+		}
 	}
 	fmt.Println("✓ Stack ready. Keep the passphrase in your password manager. It will be saved to GitHub using encrypted secret upload.")
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("2 / 4 • AWS deployment role and GitHub environment"))
@@ -307,6 +328,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("3 / 4 • Commit configuration and deploy"))
 	fmt.Printf("Review and commit infra/Pulumi.%s.yaml on main, then push. This wizard does not commit or push for you:\n", w.o.Stack)
 	fmt.Printf("  git diff -- infra/Pulumi.%s.yaml\n  git add infra/Pulumi.%s.yaml\n  git commit -m \"Configure %s stack\"\n  git push origin main\n", w.o.Stack, w.o.Stack, w.o.Stack)
+	fmt.Println("Also review and commit infra-index/Pulumi.shared.yaml. It configures the shared index, which is retained across environment teardowns.")
 	fmt.Printf("GitHub deployment: https://github.com/%s/actions/workflows/deploy.yml\n", repo)
 	fmt.Printf("Start a NEW run on main, select environment %s: preview, then deploy. The action builds the Lambda archives. Do not retry an old commit after changing configuration.\n", w.environment)
 	fmt.Println("Alternatively, you can deploy this local checkout below. Local deployment uses your current AWS session and Pulumi's confirmation prompt.")

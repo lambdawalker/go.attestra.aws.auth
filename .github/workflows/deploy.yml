@@ -10,13 +10,18 @@ on:
         type: environment
         default: dev
       operation:
-        description: Preview only, or preview and deploy
+        description: Preview, deploy, or retry index publication
         required: true
         type: choice
         default: preview
         options:
           - preview
           - deploy
+          - publish
+      receipt_run_id:
+        description: Failed workflow run ID (required only for publish)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -34,6 +39,7 @@ jobs:
     environment: ${{ inputs.environment }}
     permissions:
       contents: read
+      actions: read
       id-token: write
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -43,6 +49,7 @@ jobs:
       STACK_NAME: ${{ vars.PULUMI_STACK }}
       DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
       OPERATION: ${{ inputs.operation }}
+      RECEIPT_RUN_ID: ${{ inputs.receipt_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,13 +73,15 @@ jobs:
             exit 1
           fi
           [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
-          [[ "$OPERATION" == preview || "$OPERATION" == deploy ]]
+          [[ "$OPERATION" == preview || "$OPERATION" == deploy || "$OPERATION" == publish ]]
+          if [[ "$OPERATION" == publish ]]; then [[ "$RECEIPT_RUN_ID" =~ ^[0-9]+$ ]]; fi
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
           cache-dependency-path: |
             go.sum
             infra/go.sum
+            infra-index/go.sum
             tools/deploy/go.sum
       - name: Test and compile deployment tool
         shell: bash
@@ -80,6 +89,7 @@ jobs:
           set -euo pipefail
           go test ./...
           go vet ./...
+          go -C infra-index test ./...
           go -C tools/deploy test ./...
           go -C tools/deploy vet ./...
           go -C tools/deploy build -o "$RUNNER_TEMP/attestra-deploy" .
@@ -96,6 +106,14 @@ jobs:
           role-session-name: attestra-deploy-${{ github.run_id }}
           role-duration-seconds: 3600
           unset-current-credentials: true
+      - name: Restore pending index publication
+        if: inputs.operation == 'publish'
+        uses: actions/download-artifact@v4
+        with:
+          name: index-recovery-${{ inputs.environment }}
+          path: ${{ github.workspace }}
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.receipt_run_id }}
       - name: Build, preview, and optionally deploy
         env:
           PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
@@ -108,3 +126,12 @@ jobs:
             -backend "$STATE_BACKEND" \
             -region "$AWS_REGION" \
             -stack "$STACK_NAME"
+
+      - name: Retain pending index receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: index-recovery-${{ inputs.environment }}
+          path: index-publication.${{ inputs.environment }}.local.json
+          if-no-files-found: ignore
+          retention-days: 90

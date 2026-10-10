@@ -187,7 +187,7 @@ func inspectTeardownRole(a awsSetupAPI, arn, environment string, metadata reposi
 	if policies.IsTruncated {
 		return "", nil, errors.New("incomplete IAM policy listing")
 	}
-	allowed := map[string]bool{"attestra-state": true, "attestra-iam": true, "attestra-services": true, "attestra-dns": true, "attestra-state-kms": true}
+	allowed := map[string]bool{"attestra-index": true, "attestra-state": true, "attestra-iam": true, "attestra-services": true, "attestra-dns": true, "attestra-state-kms": true}
 	for _, policy := range policies.PolicyNames {
 		if !allowed[policy] {
 			return "", nil, errors.New("deployment role has unmanaged policies; inspect before teardown")

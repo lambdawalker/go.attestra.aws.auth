@@ -252,6 +252,9 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+	if indexURL := cfg.Get("indexUrl"); indexURL != "" {
+		ctx.Export("indexUrl", pulumi.String(indexURL))
+	}
 	ctx.Export("rawApiUrl", httpAPI.ApiEndpoint)
 	if err := apiDomainMapping(ctx, cfg.Get("apiDomain"), zone, certificate, httpAPI, stage); err != nil {
 		return err

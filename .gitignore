@@ -15,3 +15,7 @@ teardown.*.local.json*
 # Encrypted credential vaults (normally stored outside the checkout).
 *.vault.enc
 .vault-*.tmp
+
+# Public configuration plus private recovery receipts; never commit.
+index-publication.*.local.json*
+infra-index/Pulumi.*.yaml.bak*

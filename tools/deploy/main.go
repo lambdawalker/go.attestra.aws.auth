@@ -56,11 +56,13 @@ func run() error {
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
 	flag.StringVar(&o.Region, "region", "us-east-2", "AWS region")
 	flag.StringVar(&o.MigrateFrom, "migrate-from", "", "One-time migration from a fully qualified Pulumi Cloud stack; stops before deployment")
+	flag.BoolVar(&o.ReleaseIndex, "release-index-lock", false, "Release an interrupted deployment using its saved receipt, after inspection")
+	flag.BoolVar(&o.PublishOnly, "publish-index", false, "Retry a pending index publication without redeploying")
 	flag.BoolVar(&o.Pull, "pull", false, "Require a clean working tree and git pull --ff-only before deployment")
 	flag.BoolVar(&o.Login, "login", false, "Use aws login instead of prompting for AWS credentials")
 	flag.BoolVar(&o.Sso, "sso", false, "Use aws sso login with an existing IAM Identity Center profile")
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
-	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
+	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview, deploy, or publish; reads AWS credentials and Pulumi passphrase from environment")
 	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the selected GitHub environment interactively")
 	flag.BoolVar(&freshCredentials, "fresh-credentials", false, "Enter new credentials instead of unlocking the local vault (requires -bootstrap)")
 	flag.BoolVar(&forceSetup, "force-setup", false, "Bypass the local completed-setup check and reconcile remote services (requires -bootstrap)")
@@ -69,6 +71,9 @@ func run() error {
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
+	}
+	if (o.PublishOnly || o.ReleaseIndex) && (build || bootstrap || setupGitHub || teardown || o.MigrateFrom != "" || o.Pull || (o.PublishOnly && o.ReleaseIndex) || o.CI != "") {
+		return errors.New("index recovery flags cannot be combined with other operation flags")
 	}
 	if flag.NArg() != 0 {
 		return errors.New("unexpected positional arguments")

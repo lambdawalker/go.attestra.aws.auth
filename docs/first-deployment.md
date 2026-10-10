@@ -256,3 +256,7 @@ GitHub deployment checks the configured certificate is issued before proceeding.
 The Go packager builds independent Lambda entry points concurrently with up to four workers (reduced on smaller machines). Go package parallelism is divided among workers. All six `auth-*` archives reuse one compiled `cmd/signin` binary: 15 Lambda archives require only 10 unique builds. A compilation failure cancels running compiler processes, stops remaining work, and prevents deployment.
 
 Within one staged setup run, the full deployment reuses the archives built for the prerequisite phase and checks that all archives are still present. A new setup attempt builds again through Go's build cache, so changed sources are picked up. If you edit code while the wizard is waiting for DNS, restart setup to include those edits; the current run uses its earlier build. Both partial and full deployments wait until compilation and packaging have finished.
+
+## Shared environment index
+
+Full setup now also provisions or reuses the separate `attestra-index/shared` project before deploying the application. Keep its original Pulumi passphrase, and review/commit `infra-index/Pulumi.shared.yaml` alongside the environment YAML. The shared index and its state remain after environment teardown. Read [environment-index.md](environment-index.md) for the public configuration contract, concurrency rules, and publication recovery commands.

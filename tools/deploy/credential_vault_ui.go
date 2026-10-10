@@ -68,7 +68,7 @@ func (w *bootstrapWizard) offerCredentialSaving() error {
 		return w.vault.save(w.secrets)
 	}
 	save := false
-	if err := huh.NewConfirm().Title("Save these credentials in an encrypted local vault?").Description("Includes GitHub, Cloudflare (if used), the Pulumi passphrase, and manually entered AWS keys/session token. AWS expiry still applies. Default: do not save.").Value(&save).Run(); err != nil {
+	if err := huh.NewConfirm().Title("Save these credentials in an encrypted local vault?").Description("Includes GitHub, Cloudflare (if used), the application and shared index Pulumi passphrases, and manually entered AWS keys/session token. AWS expiry still applies. Default: do not save.").Value(&save).Run(); err != nil {
 		return err
 	}
 	if !save {
@@ -91,7 +91,7 @@ func (w *bootstrapWizard) offerCredentialSaving() error {
 		if err := validateVaultPassphrase(s); err != nil {
 			return err
 		}
-		if norm.NFC.String(s) == norm.NFC.String(w.passphrase) {
+		if norm.NFC.String(s) == norm.NFC.String(w.passphrase) || norm.NFC.String(s) == norm.NFC.String(w.secrets.IndexPulumi) {
 			return errors.New("use a different passphrase from the Pulumi stack passphrase")
 		}
 		return nil

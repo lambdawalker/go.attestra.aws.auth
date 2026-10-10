@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +14,12 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
+	"github.com/lambdawalker/go.attestra.aws.auth/registry"
 )
 
 type teardownProgress struct {
+	Index                                                            *pendingIndex
+	IndexRemoved, IndexRetired, CleanupDone                          bool
 	Repository, Environment                                          string
 	Values                                                           map[string]string
 	Domain, Bucket, Zone                                             string
@@ -386,6 +391,43 @@ func runTeardown(root string) error {
 		return err
 	}
 	persist := func() error { return p.save(path) }
+	var registryClient *indexClient
+	if p.Index != nil {
+		registryClient, err = newIndexClient(r.env, p.Index.API, p.Index.Region, environment)
+	} else if exists && !p.StackRemoved {
+		registryClient, err = indexClientFromConfig(r, infra, environment)
+	}
+	if err != nil {
+		return err
+	}
+	if registryClient != nil && !p.IndexRemoved {
+		if pending, _ := filepath.Glob(indexPendingPath(root, environment) + "*"); len(pending) > 0 {
+			return errors.New("resolve the pending deployment index receipt before teardown")
+		}
+		if p.Index == nil {
+			token := make([]byte, 24)
+			if _, err = rand.Read(token); err != nil {
+				return err
+			}
+			p.Index = &pendingIndex{API: registryClient.URL, Region: registryClient.Region, Environment: environment, Receipt: registry.Receipt{Token: hex.EncodeToString(token)}}
+			if err = persist(); err != nil {
+				return err
+			}
+		}
+		receipt := p.Index.Receipt
+		var e error
+		if receipt.Revision == 0 {
+			receipt, e = registryClient.change(registry.Change{Operation: "begin", Token: p.Index.Receipt.Token})
+		}
+		if e != nil {
+			return e
+		}
+		p.Index.Receipt = receipt
+		if err = persist(); err != nil {
+			return err
+		}
+	}
+
 	return runTeardownSteps([]teardownStep{
 		{"Pulumi destroy", func() error {
 			if p.Destroyed {
@@ -419,6 +461,17 @@ func runTeardown(root string) error {
 				return err
 			}
 			p.Destroyed = true
+			return persist()
+		}},
+		{"Environment index retirement", func() error {
+			if registryClient == nil || p.IndexRetired {
+				return nil
+			}
+			_, e := registryClient.change(registry.Change{Operation: "retire", Token: p.Index.Receipt.Token, Revision: p.Index.Receipt.Revision})
+			if e != nil {
+				return e
+			}
+			p.IndexRetired = true
 			return persist()
 		}},
 		{"Cloudflare cleanup", func() error { return cleanupTeardownDNS(&p, cf, persist) }},
@@ -456,29 +509,41 @@ func runTeardown(root string) error {
 			return persist()
 		}},
 		{"GitHub environment cleanup", func() error {
-			if err := g.ensureNoDeployments(repo); err != nil {
-				return err
-			}
-			now, err := g.inspectEnvironment(repo, environment)
-			if err != nil {
-				return err
-			}
-			if now.Exists {
-				for _, key := range environmentVariables {
-					if now.Variables[key] != p.Values[key] {
-						return errors.New("GitHub settings changed; cleanup stopped")
+			if !p.CleanupDone {
+				if err := g.ensureNoDeployments(repo); err != nil {
+					return err
+				}
+				now, err := g.inspectEnvironment(repo, environment)
+				if err != nil {
+					return err
+				}
+				if now.Exists {
+					for _, key := range environmentVariables {
+						if now.Variables[key] != p.Values[key] {
+							return errors.New("GitHub settings changed; cleanup stopped")
+						}
+					}
+					if _, err = g.request("DELETE", environmentPath(repo, environment), nil, nil); err != nil {
+						return err
 					}
 				}
-				if _, err = g.request("DELETE", environmentPath(repo, environment), nil, nil); err != nil {
+				found, err := g.request("GET", environmentPath(repo, environment), nil, nil)
+				if err != nil {
+					return err
+				}
+				if found {
+					return errors.New("GitHub environment deletion not verified")
+				}
+				p.CleanupDone = true
+				if err = persist(); err != nil {
 					return err
 				}
 			}
-			found, err := g.request("GET", environmentPath(repo, environment), nil, nil)
-			if err != nil {
-				return err
-			}
-			if found {
-				return errors.New("GitHub environment deletion not verified")
+			if registryClient != nil && !p.IndexRemoved {
+				if _, e := registryClient.change(registry.Change{Operation: "delete", Token: p.Index.Receipt.Token, Revision: p.Index.Receipt.Revision}); e != nil {
+					return e
+				}
+				p.IndexRemoved = true
 			}
 			p.Complete = true
 			if err = persist(); err != nil {

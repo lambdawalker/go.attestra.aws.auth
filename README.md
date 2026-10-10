@@ -273,3 +273,9 @@ Run `setup.bat` (Windows) or `./setup.sh` (Linux/macOS). Choose `dev`, `qa`, `pr
 ## Remove an environment
 
 Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](docs/teardown.md). The state bucket and shared OIDC provider are retained.
+
+## Shared environment discovery
+
+Setup provisions an independent `infra-index/` Pulumi project for `https://index.<base-domain>/v1/environments`. It is reused across environments and retained during teardown. Successful setup/deployment publishes public client configuration with a hash and revision; environment-scoped locks prevent concurrent writers from overwriting each other.
+
+For existing environments, pull `main` and run `setup.bat -force-setup` (or `./setup.sh -force-setup`) once per environment, then commit the generated application and shared-stack YAML. See [environment index setup, concurrency, and recovery](docs/environment-index.md). GitHub's **publish** operation retries a saved index publication after a successful deployment.

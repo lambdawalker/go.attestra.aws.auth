@@ -20,12 +20,13 @@ import (
 )
 
 type savedCredentials struct {
-	GitHub     string
-	Cloudflare string
-	Pulumi     string
-	AWSAccess  string
-	AWSSecret  string
-	AWSToken   string
+	IndexPulumi string
+	GitHub      string
+	Cloudflare  string
+	Pulumi      string
+	AWSAccess   string
+	AWSSecret   string
+	AWSToken    string
 }
 type credentialVault struct {
 	path, scope string

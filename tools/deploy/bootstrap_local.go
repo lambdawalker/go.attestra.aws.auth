@@ -85,6 +85,10 @@ func (w *bootstrapWizard) checkpointDigest() string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 func (w *bootstrapWizard) locallyComplete(repo string, revision localRevision, force bool) bool {
+	pending, e := filepath.Glob(indexPendingPath(w.root, w.environment) + "*")
+	if e != nil || len(pending) > 0 {
+		return false
+	}
 	receipt := w.memory.Completion
 	if force || revision.Dirty || revision.Commit == "" || receipt == nil || w.memory.Stage != "complete" ||
 		w.memory.Repository != repo || localRepository(w.root) != repo || w.memory.Environment != w.environment ||

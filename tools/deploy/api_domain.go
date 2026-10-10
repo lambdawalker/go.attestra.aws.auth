@@ -69,6 +69,9 @@ func (w *bootstrapWizard) prepareAPICertificate(domain string, route53 bool) err
 	if err != nil {
 		return err
 	}
+	return w.waitCertificate(domain, arn, route53)
+}
+func (w *bootstrapWizard) waitCertificate(domain, arn string, route53 bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	published := false

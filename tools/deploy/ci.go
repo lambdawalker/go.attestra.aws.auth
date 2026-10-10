@@ -9,10 +9,10 @@ import (
 )
 
 func validateCI(o options, c credentials) error {
-	if o.CI != "preview" && o.CI != "deploy" {
-		return errors.New("CI mode must be preview or deploy")
+	if o.CI != "preview" && o.CI != "deploy" && o.CI != "publish" {
+		return errors.New("CI mode must be preview, deploy, or publish")
 	}
-	if o.MigrateFrom != "" || o.Login || o.Sso || o.Pull {
+	if o.ReleaseIndex || o.MigrateFrom != "" || o.Login || o.Sso || o.Pull {
 		return errors.New("CI cannot migrate, log in interactively, or pull Git changes")
 	}
 	if c.Access == "" || c.Secret == "" || c.Token == "" || c.Passphrase == "" {
@@ -85,6 +85,9 @@ func runCI(o options) error {
 		if !sesReady(evidence) {
 			return fmt.Errorf("SES %s is not ready (verification %s, DKIM %s); run setup and choose Build, preview and deploy to configure DNS and wait for verification; no deployment attempted", evidence.Domain, evidence.Verification, evidence.DKIM)
 		}
+	}
+	if o.CI == "publish" {
+		o.PublishOnly = true
 	}
 	return execute(r, o)
 }

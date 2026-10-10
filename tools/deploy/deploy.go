@@ -14,6 +14,7 @@ import (
 )
 
 type options struct {
+	ReleaseIndex, SkipIndex, PublishOnly                   bool
 	ReuseBuild                                             bool // Internal: only after a successful build in this staged run.
 	Targets                                                []string
 	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string
@@ -23,7 +24,10 @@ type credentials struct{ Access, Secret, Token, Passphrase, CloudToken string }
 type commandRunner interface {
 	Exec(dir string, capture bool, name string, args ...string) ([]byte, error)
 }
-type processRunner struct{ env []string }
+type processRunner struct {
+	env        []string
+	indexLease *pendingIndex
+}
 
 func (p *processRunner) Exec(dir string, capture bool, name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
@@ -32,7 +36,7 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 	if (name == "aws" || name == "pulumi") && p.env != nil {
 		cmd.Env = p.env
 	}
-	if name == "pulumi" && len(args) > 0 && (args[0] == "preview" || args[0] == "up") {
+	if name == "pulumi" && len(args) > 0 && (args[0] == "preview" || args[0] == "up") && filepath.Base(dir) == "infra" {
 		stack := ""
 		for i := 1; i+1 < len(args); i++ {
 			if args[i] == "--stack" {
@@ -168,6 +172,15 @@ func pullRepository(r commandRunner, root string) error {
 	return err
 }
 func execute(r commandRunner, o options) error {
+	if p, ok := r.(*processRunner); ok && !o.SkipIndex && len(o.Targets) == 0 && o.MigrateFrom == "" && o.CI != "preview" {
+		if o.PublishOnly || o.ReleaseIndex {
+			return p.withIndex(o, nil)
+		}
+		return p.withIndex(o, func() error { return executeCore(r, o) })
+	}
+	return executeCore(r, o)
+}
+func executeCore(r commandRunner, o options) error {
 	infra := filepath.Join(o.Root, "infra")
 	if o.MigrateFrom != "" {
 		// Migration creates a destination stack only through the dedicated migrate

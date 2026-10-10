@@ -389,6 +389,9 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 		}
 	}
 	policies := deploymentPolicies(id.Account, o)
+	if bootstrap != nil && bootstrap.indexAPIArn != "" {
+		policies["attestra-index"] = indexPublicationPolicy(bootstrap.indexAPIArn, o.Stack)
+	}
 	iamDocument := policies["attestra-iam"].(map[string]any)
 	iamDocument["Statement"] = append(iamDocument["Statement"].([]map[string]any), map[string]any{
 		"Effect": "Deny", "Action": "iam:*", "Resource": []string{"arn:aws:iam::" + id.Account + ":role/" + name, "arn:aws:iam::" + id.Account + ":role/*/" + name},
