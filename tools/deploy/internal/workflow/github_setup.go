@@ -72,10 +72,6 @@ func runGitHubSetup(root string, full, force, freshCredentials bool) error {
 		if err := bootstrap.preflight(); err != nil {
 			return err
 		}
-		// Invalidate the old completion before any remote configuration can change.
-		if err := bootstrap.markStage("setup-in-progress"); err != nil {
-			return err
-		}
 	}
 	fmt.Println("Creates/configures the selected environment. Existing protections are preserved. Also configures AWS OIDC and a deployment role.")
 	fmt.Println("Token permissions: Administration write, Environments write, Actions read, and Metadata read for this repository.")
@@ -90,6 +86,15 @@ func runGitHubSetup(root string, full, force, freshCredentials bool) error {
 		return err
 	}
 	if bootstrap != nil {
+		release, err := beginSetupLifecycle(root, repo, environment)
+		if err != nil {
+			return err
+		}
+		defer release()
+		// Invalidate completion only after unfinished teardown has been ruled out.
+		if err := bootstrap.markStage("setup-in-progress"); err != nil {
+			return err
+		}
 		if err := bootstrap.loadCredentials(repo, freshCredentials); err != nil {
 			return err
 		}

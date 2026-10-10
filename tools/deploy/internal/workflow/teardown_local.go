@@ -110,7 +110,7 @@ func chooseTeardownEnvironment(root string, choose func() (string, error), anoth
 			return environment, nil
 		}
 		path := filepath.Join(root, "teardown."+environment+".local.json")
-		fmt.Printf("Teardown for %q is already complete. Saved progress: %s\nThis receipt applies only to %s. Keep it unless that same environment has been recreated; in that case archive this exact file before retrying.\n", environment, path, environment)
+		fmt.Printf("Teardown for %q is already complete. Saved progress: %s\nThis receipt applies only to %s. Full setup automatically archives completed receipts when starting a new lifecycle. If this environment was recreated with an older script, rerun full setup to reconcile it; do not delete unfinished teardown records.\n", environment, path, environment)
 		retry, err := another()
 		if err != nil {
 			return "", err

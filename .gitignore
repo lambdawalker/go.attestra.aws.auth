@@ -22,3 +22,6 @@ infra-index/Pulumi.*.yaml.bak*
 
 # Generated environment-specific Android configuration
 /android-config/
+
+# Completed teardown receipts and encrypted configuration history.
+/teardown-history/
