@@ -152,3 +152,17 @@ func TestTeardownSkipCloudflarePersistsWithoutDeleting(t *testing.T) {
 		t.Fatalf("lost skipped DNS evidence: %+v", resumed)
 	}
 }
+
+func TestTeardownCapturesAPIDNS(t *testing.T) {
+	data := []byte(`{"deployment":{"resources":[
+ {"type":"aws:acm/certificate:Certificate","urn":"urn:pulumi:dev::project::aws:acm/certificate:Certificate::api-certificate","outputs":{"domainValidationOptions":[{"resourceRecordName":"_token.dev.api.example.com.","resourceRecordType":"CNAME","resourceRecordValue":"_validation.acm-validations.aws."}]}},
+ {"type":"aws:apigatewayv2/domainName:DomainName","urn":"urn:pulumi:dev::project::aws:apigatewayv2/domainName:DomainName::api-domain","outputs":{"domainName":"dev.api.example.com","domainNameConfiguration":{"targetDomainName":"d-api.execute-api.us-east-2.amazonaws.com"}}}
+ ]}}`)
+	var p teardownProgress
+	if err := captureTeardownEvidence(data, &p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Desired) != 2 || p.Desired[0].Name != "_token.dev.api.example.com" || p.Desired[1].Name != "dev.api.example.com" {
+		t.Fatal(p.Desired)
+	}
+}

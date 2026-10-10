@@ -57,6 +57,27 @@ func runCI(o options) error {
 	}
 	if o.CI == "deploy" {
 		wizard := &bootstrapWizard{root: root, o: o, r: r, a: &setupAWSClient{env: r.env}}
+		configData, e := r.Exec(filepath.Join(root, "infra"), true, "pulumi", "config", "--json", "--stack", o.Stack)
+		if e != nil {
+			return e
+		}
+		var config map[string]struct{ Value string }
+		if json.Unmarshal(configData, &config) != nil {
+			return errors.New("invalid stack configuration")
+		}
+		if domain := config["attestra-auth-email:apiDomain"].Value; domain != "" {
+			arn, e := wizard.output("apiCertificateArn")
+			if e != nil {
+				return errors.New("API certificate prerequisites missing; run the setup wizard first")
+			}
+			cert, e := wizard.certificateStatus(arn)
+			if e != nil {
+				return e
+			}
+			if cert.Certificate.DomainName != domain || cert.Certificate.Status != "ISSUED" {
+				return errors.New("API certificate is not issued for configured apiDomain; run setup to validate DNS before deploying")
+			}
+		}
 		evidence, err := wizard.readSES()
 		if err != nil {
 			return fmt.Errorf("SES readiness check failed; run setup and choose Build, preview and deploy to complete SES/DNS prerequisites: %w", err)

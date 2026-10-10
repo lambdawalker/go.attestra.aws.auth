@@ -74,6 +74,14 @@ func (w *bootstrapWizard) deployStages() error {
 	partial := w.o
 	partial.CI = "deploy"
 	partial.Targets = sesTargets(w.o.Stack, route53)
+	apiDomain := config["attestra-auth-email:apiDomain"].Value
+	if apiDomain != "" {
+		prefix := "urn:pulumi:" + w.o.Stack + "::attestra-auth-email::"
+		partial.Targets = append(partial.Targets, prefix+"aws:acm/certificate:Certificate::api-certificate")
+		if route53 {
+			partial.Targets = append(partial.Targets, prefix+"aws:route53/record:Record::api-certificate-dns")
+		}
+	}
 	if err := execute(w.r, partial); err != nil {
 		return err
 	}
@@ -118,6 +126,12 @@ func (w *bootstrapWizard) deployStages() error {
 	} else {
 		fmt.Println("2–3 / 4 • SES and DKIM already verified; DNS setup and wait skipped")
 	}
+	if apiDomain != "" {
+		fmt.Println("Validate HTTPS certificate for " + apiDomain)
+		if err := w.prepareAPICertificate(apiDomain, route53); err != nil {
+			return err
+		}
+	}
 	fmt.Println("4 / 4 • Preview and deploy the complete application")
 	if err := w.markStage("ses-verified"); err != nil {
 		return err
@@ -126,6 +140,11 @@ func (w *bootstrapWizard) deployStages() error {
 	full.CI = "deploy"
 	if err := execute(w.r, full); err != nil {
 		return err
+	}
+	if apiDomain != "" {
+		if err := w.publishAPIDomain(apiDomain, route53); err != nil {
+			return err
+		}
 	}
 	return w.markStage("deployed")
 }

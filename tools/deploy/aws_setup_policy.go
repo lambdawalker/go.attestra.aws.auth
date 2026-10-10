@@ -45,11 +45,13 @@ func deploymentPolicies(account string, o options) map[string]any {
 	)
 	// Route53/SES cover infrastructure configured in infra/main.go. Regional SES
 	// identity management does not grant mail sending. DNS changes are optional.
-	ses := statement([]string{"ses:GetIdentity*", "ses:ListIdentities", "ses:VerifyDomainIdentity", "ses:VerifyDomainDkim", "ses:DeleteIdentity", "ses:SetIdentityDkimEnabled", "ses:GetAccount"}, []string{"*"})
+	ses := statement([]string{"ses:GetIdentity*", "ses:ListIdentities", "ses:VerifyDomainIdentity", "ses:VerifyDomainDkim", "ses:DeleteIdentity", "ses:SetIdentityDkimEnabled", "ses:GetAccount", "acm:RequestCertificate", "acm:DescribeCertificate", "acm:DeleteCertificate", "acm:AddTagsToCertificate", "acm:RemoveTagsFromCertificate", "acm:ListTagsForCertificate"}, []string{"*"})
 	ses["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": o.Region}}
+	serviceRole := statement([]string{"iam:CreateServiceLinkedRole"}, []string{"arn:aws:iam::" + account + ":role/aws-service-role/ops.apigateway.amazonaws.com/AWSServiceRoleForAPIGateway"})
+	serviceRole["Condition"] = map[string]any{"StringEquals": map[string]string{"iam:AWSServiceName": "ops.apigateway.amazonaws.com"}}
 	return map[string]any{
 		"attestra-state": state,
-		"attestra-iam":   document(iam, attach, pass),
+		"attestra-iam":   document(iam, attach, pass, serviceRole),
 		"attestra-services": document(regional,
 			statement([]string{"lambda:*"}, functions),
 			statement([]string{"dynamodb:*"}, []string{arn("dynamodb", "table/email-proofs-*"), arn("dynamodb", "table/id-captures-*")}),

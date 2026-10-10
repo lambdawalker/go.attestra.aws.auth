@@ -84,6 +84,27 @@ func captureTeardownEvidence(data []byte, p *teardownProgress) error {
 			if strings.HasSuffix(r.URN, "::ses-verify") {
 				route53 = true
 			}
+		case "aws:acm/certificate:Certificate":
+			if strings.HasSuffix(r.URN, "::api-certificate") {
+				var options []struct{ ResourceRecordName, ResourceRecordType, ResourceRecordValue string }
+				if err := json.Unmarshal(r.Outputs["domainValidationOptions"], &options); err != nil {
+					return errors.New("cannot capture API certificate DNS evidence")
+				}
+				for _, option := range options {
+					if option.ResourceRecordName != "" && option.ResourceRecordType == "CNAME" {
+						p.Desired = append(p.Desired, dnsRecord{Type: "CNAME", Name: strings.TrimSuffix(option.ResourceRecordName, "."), Content: option.ResourceRecordValue})
+					}
+				}
+			}
+		case "aws:apigatewayv2/domainName:DomainName":
+			if strings.HasSuffix(r.URN, "::api-domain") {
+				var name string
+				var configuration struct{ TargetDomainName string }
+				if json.Unmarshal(r.Outputs["domainName"], &name) != nil || json.Unmarshal(r.Outputs["domainNameConfiguration"], &configuration) != nil || name == "" || configuration.TargetDomainName == "" {
+					return errors.New("cannot capture API domain DNS evidence")
+				}
+				p.Desired = append(p.Desired, dnsRecord{Type: "CNAME", Name: name, Content: configuration.TargetDomainName})
+			}
 		case "aws:s3/bucketV2:BucketV2":
 			if strings.HasSuffix(r.URN, "::id-evidence") {
 				p.Bucket = r.ID
@@ -111,7 +132,7 @@ func runTeardown(root string) error {
 	if err := (&bootstrapWizard{root: root}).preflight(); err != nil {
 		return err
 	}
-	fmt.Println("Attestra • Teardown environment\nPermanent removal of application data, approved SES DNS records, deployment role, stack, and GitHub environment. Stop deployments for this repository until finished. S3 state bucket and shared OIDC provider are retained.")
+	fmt.Println("Attestra • Teardown environment\nPermanent removal of application data, approved SES/API DNS records, deployment role, stack, and GitHub environment. Stop deployments for this repository until finished. S3 state bucket and shared OIDC provider are retained.")
 	repo, environment, token := "lambdawalker/go.attestra.aws.auth", "dev", ""
 	if err := huh.NewForm(huh.NewGroup(input("GitHub repository", &repo, false, true).Validate(func(s string) error {
 		if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(s) {
@@ -279,7 +300,7 @@ func runTeardown(root string) error {
 	var cf *cloudflareClient
 	if !p.DNSDone && !p.DNSSkipped && len(p.Desired) > 0 {
 		cleanup := true
-		if err = huh.NewConfirm().Title("Clean up this environment's SES DNS records in Cloudflare?").Description("Choose No to skip Cloudflare, keep its DNS records, and continue removing AWS and GitHub resources.").Affirmative("Clean up DNS").Negative("Skip Cloudflare").Value(&cleanup).Run(); err != nil {
+		if err = huh.NewConfirm().Title("Clean up this environment's SES/API DNS records in Cloudflare?").Description("Choose No to skip Cloudflare, keep its DNS records, and continue removing AWS and GitHub resources.").Affirmative("Clean up DNS").Negative("Skip Cloudflare").Value(&cleanup).Run(); err != nil {
 			return err
 		}
 		p.DNSSkipped = !cleanup
@@ -294,6 +315,19 @@ func runTeardown(root string) error {
 		if e != nil {
 			return e
 		}
+		eligible := zones[:0]
+		for _, z := range zones {
+			coversAll := true
+			for _, record := range p.Desired {
+				if !withinZone(record.Name, z.Name) {
+					coversAll = false
+				}
+			}
+			if coversAll {
+				eligible = append(eligible, z)
+			}
+		}
+		zones = eligible
 		if p.Zone == "" {
 			if len(zones) == 0 {
 				return errors.New("no matching active Cloudflare zone; no removals performed")
@@ -330,7 +364,7 @@ func runTeardown(root string) error {
 	}
 	fmt.Printf("\nRepository: %s\nEnvironment/stack: %s\nAWS account: %s\nRegion: %s\nState backend (retained): %s\nRole: %s\nEvidence bucket: %s\n", repo, environment, identity.Account, o.Region, o.Backend, p.Values["AWS_ROLE_ARN"], p.Bucket)
 	if p.DNSSkipped {
-		fmt.Println("SKIP Cloudflare: remaining SES DNS records will be retained. Their expected values are saved in the teardown progress file for manual cleanup.")
+		fmt.Println("SKIP Cloudflare: remaining SES/API DNS records will be retained. Their expected values are saved in the teardown progress file for manual cleanup.")
 		for _, record := range p.Desired {
 			fmt.Printf("RETAIN DNS %s %s = %s\n", record.Type, record.Name, record.Content)
 		}
@@ -451,7 +485,7 @@ func runTeardown(root string) error {
 				return err
 			}
 			if p.DNSSkipped {
-				fmt.Println("Cloudflare cleanup was skipped; remaining SES DNS records need manual cleanup. See Desired/DNS in the teardown progress file.")
+				fmt.Println("Cloudflare cleanup was skipped; remaining SES/API DNS records need manual cleanup. See Desired/DNS in the teardown progress file.")
 			}
 			fmt.Println("✓ Teardown complete. State bucket/history, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
 			return nil

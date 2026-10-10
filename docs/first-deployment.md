@@ -170,3 +170,24 @@ On rerun, choose the repository/environment and supply credentials. Existing Git
 Progress is a resume aid, not proof that resources still exist: AWS/Pulumi are checked again. Completed DNS publication is remembered using a fingerprint of the SES record names and values; changed tokens require DNS setup again. Pending verification resumes polling without asking for the same Cloudflare token. To intentionally change a remembered non-secret choice, edit its `Settings` entry in the ignored checkpoint while setup is stopped; change established application configuration with Pulumi config. Never remove or alter deployment state just to reset wizard prompts.
 
 A deployed backend still requires SES sandbox recipient verification or production access for general email delivery, plus configuring the Android app and any separately hosted website. The wizard does not claim those external steps are complete.
+
+## API custom domains
+
+Setup now fills missing `attestra-auth-email:apiDomain` using your selected base domain:
+
+| Environment | Default API hostname |
+| --- | --- |
+| dev | `dev.api.attestrabond.com` |
+| qa | `qa.api.attestrabond.com` |
+| prod | `api.attestrabond.com` |
+| custom | `<environment>.api.attestrabond.com` |
+
+Existing `apiDomain` configuration is retained. When upgrading an existing environment, rerun setup to add this setting and refresh its deployment-role permissions before using Actions.
+
+The prerequisite update requests an ACM certificate in the API's region alongside the SES resources. Before deploying the complete application, the wizard publishes the ACM validation CNAME through Cloudflare and polls until ACM reports `ISSUED`. It then creates the regional API Gateway custom domain and root API mapping, and publishes a DNS-only CNAME pointing to the **custom-domain target**, not the raw API URL. An existing Cloudflare token from SES setup is reused only in memory. Matching records are reused; conflicting records stop setup without replacement. Certificate validation records must remain for renewal. Keep CNAME flattening disabled for validation records.
+
+If `route53ZoneId` is configured, Pulumi manages both the certificate-validation record and API CNAME in that zone. Cloudflare is not used for those records.
+
+The `apiUrl` output becomes `https://<apiDomain>`, retaining existing API route paths. `rawApiUrl` retains the AWS-generated endpoint for diagnostics and compatibility. The raw endpoint remains enabled; both use the same API authentication. `apiCertificateArn`, `apiDomain`, and `apiDomainTarget` are also exported. Without an `apiDomain` setting, direct Pulumi deployment retains the original raw URL behavior.
+
+GitHub deployment checks the configured certificate is issued before proceeding. First-time certificate validation and Cloudflare publication run through local setup; if DNS publication fails after AWS deployment, rerun setup to finish it. DNS propagation can delay client access after successful publication. This does not create website hosting or change Cognito IDs, and Android still needs its base URL configured from `apiUrl`.

@@ -28,6 +28,10 @@ func deploy(ctx *pulumi.Context) error {
 	senderDomain := cfg.Require("senderDomain")
 	senderAddress := cfg.Require("senderAddress")
 	zone := cfg.Get("route53ZoneId")
+	certificate, err := apiCertificate(ctx, cfg.Get("apiDomain"), zone)
+	if err != nil {
+		return err
+	}
 	diagnosticMode := cfg.Get("diagnosticMode") == "true"
 	proofKey := cfg.RequireSecret("proofKey")
 	if err := validate(origin, senderDomain, senderAddress); err != nil {
@@ -244,11 +248,14 @@ func deploy(ctx *pulumi.Context) error {
 	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region); err != nil {
 		return err
 	}
-	_, err = apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
+	stage, err := apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
 	if err != nil {
 		return err
 	}
-	ctx.Export("apiUrl", httpAPI.ApiEndpoint)
+	ctx.Export("rawApiUrl", httpAPI.ApiEndpoint)
+	if err := apiDomainMapping(ctx, cfg.Get("apiDomain"), zone, certificate, httpAPI, stage); err != nil {
+		return err
+	}
 	ctx.Export("userPoolId", pool.ID())
 	ctx.Export("clientId", client.ID())
 	ctx.Export("sesVerificationRecord", pulumi.Sprintf("_amazonses.%s TXT %s", senderDomain, sender.VerificationToken))

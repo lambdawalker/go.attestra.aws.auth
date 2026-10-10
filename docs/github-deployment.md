@@ -185,3 +185,5 @@ Cloudflare DNS token permissions, record handling, and the first-deployment sequ
 Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.
 
 First deployments require SES/DNS bootstrapping. Run the setup wizard's **Build, preview and deploy** option to create SES prerequisites, publish verification DNS and wait for AWS before completing the application. The GitHub deploy operation checks identity and DKIM verification before deploying; an unready identity stops with setup instructions. Preview-only does not require verified SES.
+
+For API custom domains, rerun setup to add `apiDomain`, update ACM/API Gateway deployment permissions, validate the certificate and publish Cloudflare DNS. The deploy action refuses a missing, mismatched or unissued API certificate and directs you to setup. `apiUrl` is then the stable HTTPS custom hostname; the AWS-generated endpoint remains available as `rawApiUrl`.

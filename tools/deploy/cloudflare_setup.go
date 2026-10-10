@@ -37,6 +37,7 @@ func (w *bootstrapWizard) configureCloudflare() error {
 		return err
 	}
 	client := newCloudflareClient(strings.TrimSpace(token))
+	w.cf = client
 	zones, err := client.zones(evidence.Domain)
 	if err != nil {
 		return err

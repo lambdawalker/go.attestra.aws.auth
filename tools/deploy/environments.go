@@ -35,7 +35,12 @@ func applicationDefaults(environment, base string) (map[string]string, error) {
 		return nil, errors.New("base domain must have a DNS top-level domain")
 	}
 	sender := environment + ".info." + base
+	api := environment + ".api." + base
+	if environment == "prod" {
+		api = "api." + base
+	}
 	return map[string]string{
+		"attestra-auth-email:apiDomain":     api,
 		"attestra-auth-email:appOrigin":     "https://" + environment + "." + base,
 		"attestra-auth-email:senderDomain":  sender,
 		"attestra-auth-email:senderAddress": "verify@" + sender,

@@ -18,6 +18,13 @@ func TestEnvironmentNamesAndDomains(t *testing.T) {
 			t.Fatal(err)
 		}
 		v, err := applicationDefaults(name, "example.com")
+		api := name + ".api.example.com"
+		if name == "prod" {
+			api = "api.example.com"
+		}
+		if v["attestra-auth-email:apiDomain"] != api {
+			t.Fatal(v)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

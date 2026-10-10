@@ -20,6 +20,7 @@ import (
 )
 
 type bootstrapWizard struct {
+	cf                                                *cloudflareClient
 	memory                                            bootstrapCheckpoint
 	resuming                                          bool
 	root, temporary, passphrase, account, environment string
@@ -216,11 +217,28 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		return err
 	}
 	fmt.Printf("Using app origin %s and sender %s\n", origin, sender)
+	apiDomain := current["attestra-auth-email:apiDomain"].Value
+	if apiDomain == "" {
+		if _, ok := w.remembered("baseDomain"); !ok {
+			if err := input("Base domain for API hostname", &base, false, true).Validate(func(s string) error { _, e := applicationDefaults(w.environment, s); return e }).Run(); err != nil {
+				return err
+			}
+			if err := w.remember("baseDomain", base); err != nil {
+				return err
+			}
+		}
+		app, err := applicationDefaults(w.environment, base)
+		if err != nil {
+			return err
+		}
+		apiDomain = app["attestra-auth-email:apiDomain"]
+	}
+	fmt.Println("API hostname: " + apiDomain)
 	reserved, worker := "5", "5"
 	if w.environment == "dev" {
 		reserved, worker = "-1", "2"
 	}
-	defaults := map[string]string{"aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
+	defaults := map[string]string{"attestra-auth-email:apiDomain": apiDomain, "aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
 	if err = bootstrapStack(w.r, o, defaults, confirm, w.saveProofKey); err != nil {
 		return err
 	}
