@@ -10,6 +10,7 @@ import (
 // Only non-secret selections are persisted, so interrupted bootstrap can reuse
 // its bucket before a GitHub environment exists. Never store a token/passphrase.
 type bootstrapCheckpoint struct {
+	Completion  *setupCompletion `json:",omitempty"`
 	Repository  string
 	Environment string
 	Region      string

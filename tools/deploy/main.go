@@ -50,7 +50,7 @@ func main() {
 }
 func run() error {
 	var o options
-	var setupGitHub, bootstrap, build, teardown bool
+	var setupGitHub, bootstrap, build, teardown, forceSetup bool
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
@@ -62,6 +62,7 @@ func run() error {
 	flag.StringVar(&o.Profile, "profile", "default", "AWS CLI profile used with -login or -sso")
 	flag.StringVar(&o.CI, "ci", "", "Noninteractive mode: preview or deploy; reads AWS credentials and Pulumi passphrase from environment")
 	flag.BoolVar(&setupGitHub, "setup-github", false, "Create or configure the selected GitHub environment interactively")
+	flag.BoolVar(&forceSetup, "force-setup", false, "Bypass the local completed-setup check and reconcile remote services (requires -bootstrap)")
 	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh environment deployment, or resume setup")
 	flag.BoolVar(&teardown, "teardown", false, "Interactively tear down an environment and its GitHub/Cloudflare configuration")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
@@ -74,6 +75,9 @@ func run() error {
 	root, err := filepath.Abs(o.Root)
 	if err != nil {
 		return err
+	}
+	if forceSetup && !bootstrap {
+		return errors.New("-force-setup requires -bootstrap")
 	}
 	if teardown {
 		var unsupported string
@@ -100,7 +104,7 @@ func run() error {
 		if o.CI != "" {
 			return errors.New("GitHub setup cannot run in CI mode")
 		}
-		return runGitHubSetup(root, bootstrap)
+		return runGitHubSetup(root, bootstrap, forceSetup)
 	}
 	if o.CI != "" {
 		return runCI(o)

@@ -80,19 +80,19 @@ func chooseEnvironment(existing []string) (string, error) {
 	for _, name := range names {
 		label := name
 		if slices.Contains(existing, name) {
-			label += " (existing)"
+			label += " (local configuration)"
 		} else {
-			label += " (new)"
+			label += ""
 		}
 		choices = append(choices, huh.NewOption(label, name))
 	}
-	choices = append(choices, huh.NewOption("Create another environment…", ""))
+	choices = append(choices, huh.NewOption("Use another environment…", ""))
 	selected := "dev"
-	if err := huh.NewSelect[string]().Title("Environment to set up").Description(fmt.Sprintf("%d choices • ↑/↓ to browse/scroll • Enter to select. Choose Create another environment for a custom name.", len(choices))).Options(choices...).Value(&selected).Run(); err != nil {
+	if err := huh.NewSelect[string]().Title("Environment to set up").Description(fmt.Sprintf("%d choices • ↑/↓ to browse/scroll • Enter to select. Local choices only; use another environment to enter any name.", len(choices))).Options(choices...).Value(&selected).Run(); err != nil {
 		return "", err
 	}
 	if selected == "" {
-		if err := input("New environment name (for example staging or demo-2)", &selected, false, true).Validate(validateEnvironment).Run(); err != nil {
+		if err := input("Environment name (existing or new, for example staging or demo-2)", &selected, false, true).Validate(validateEnvironment).Run(); err != nil {
 			return "", err
 		}
 	}

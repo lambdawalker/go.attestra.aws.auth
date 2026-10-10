@@ -38,11 +38,31 @@ For **IAM/GitHub maintenance only**, with an existing bucket/stack:
 go -C tools/deploy run . -setup-github
 ```
 
+## Fast reruns without remote calls
+
+After you select an environment, setup checks its local completion record before asking for tokens, checking AWS/Pulumi prerequisites, or contacting AWS, GitHub, or Cloudflare. If the last full wizard deployment succeeded at the current Git commit, the working tree is clean, the repository/environment match, and the Pulumi YAML and saved settings are unchanged, it reports **all set according to the local setup record** and exits.
+
+This is a local shortcut, not a health or drift check. It cannot detect manual cloud changes, expired credentials, a deployment or teardown from another machine, or GitHub Actions changes. GitHub Actions does not update this local record. To bypass it and run the normal setup/reconciliation:
+
+```text
+.\setup.bat -force-setup
+```
+
+```sh
+./setup.sh -force-setup
+```
+
+A different commit resumes the normal setup/deploy flow, including for documentation-only commits. Staged, unstaged, and untracked changes trigger: **Your working tree has uncommitted changes (staged, unstaged, or untracked). Setup will build and deploy these local changes. Continue?** Cancel stops before requesting credentials or contacting services. Ignored build artifacts and local checkpoints do not trigger this prompt.
+
+A deployment from a dirty checkout, or one whose commit/configuration changes during deployment, does not get a clean-commit completion receipt. Commit the changes and rerun setup to establish it. This also applies when first setup creates or changes `infra/Pulumi.<environment>.yaml`. Older checkpoints without a receipt require one normal successful run. Missing local records require normal setup as well. Keep checkpoints locally; no credentials or passphrases are stored in the receipt.
+
+Local teardown checkpoint files also disable the shortcut. Follow the teardown recovery instructions and archive a completed teardown checkpoint before reusing that environment. The `-setup-github` maintenance mode always contacts services and does not use the completed-setup shortcut.
+
 ## What the wizard does
 
-### 1. Choose the repository and AWS identity
+### 1. Choose the environment, then the repository and AWS identity
 
-Enter the GitHub token and repository. Select **dev**, **qa**, **prod**, an existing environment, or **Create another environment** and enter your own name. Names use 1–32 lowercase letters/digits with single internal hyphens and start with a letter (for example `demo-2`). The GitHub environment and Pulumi stack use the same name. The wizard reads only that environment’s settings and asks for its deployment region and S3 backend URL.
+The first question selects **dev**, **qa**, **prod**, an environment found in local checkpoints/Pulumi YAML files, or **Use another environment** to enter an existing or new name. This menu makes no remote calls; an environment that only exists on GitHub can be entered by name. If setup is needed, enter the GitHub token and repository next. Names use 1–32 lowercase letters/digits with single internal hyphens and start with a letter (for example `demo-2`). The GitHub environment and Pulumi stack use the same name. The wizard reads only that environment’s settings and asks for its deployment region and S3 backend URL.
 
 For a fresh deployment it proposes a random `attestra-state-...` bucket name, avoiding the existing project's bucket name. S3 names must be globally unique. Existing environment values take precedence. Non-secret selections (repository/region/backend/stack) are saved to ignored `bootstrap.<environment>.local.json`, so an interrupted first setup can reuse its bucket before the GitHub environment exists. Keep this file locally when resuming. Legacy `bootstrap.local.json` is read only for `dev`. A checkpoint from another environment is never reused.
 

@@ -61,6 +61,11 @@ func waitSES(ctx context.Context, interval time.Duration, read func() (sesEviden
 }
 
 func (w *bootstrapWizard) deployStages() error {
+	before, _ := readLocalRevision(w.root)
+	configuration := w.configurationDigest()
+	if err := w.markStage("deploying"); err != nil {
+		return err
+	}
 	data, err := w.r.Exec(filepath.Join(w.root, "infra"), true, "pulumi", "config", "--json", "--stack", w.o.Stack)
 	if err != nil {
 		return err
@@ -147,5 +152,5 @@ func (w *bootstrapWizard) deployStages() error {
 			return err
 		}
 	}
-	return w.markStage("deployed")
+	return w.recordCompletion(before, configuration)
 }

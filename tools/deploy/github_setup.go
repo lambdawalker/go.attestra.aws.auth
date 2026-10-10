@@ -35,14 +35,11 @@ func validateSetupValues(v map[string]string) error {
 	}
 	return (options{Backend: v["PULUMI_BACKEND_URL"], Stack: v["PULUMI_STACK"], Region: v["AWS_REGION"]}).validate()
 }
-func runGitHubSetup(root string, full bool) error {
+func runGitHubSetup(root string, full, force bool) error {
 	var bootstrap *bootstrapWizard
 	if full {
 		bootstrap = &bootstrapWizard{root: root}
 		defer bootstrap.cleanup()
-		if err := bootstrap.preflight(); err != nil {
-			return err
-		}
 	}
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("run GitHub setup in an interactive terminal")
@@ -51,9 +48,34 @@ func runGitHubSetup(root string, full bool) error {
 	if full {
 		fmt.Println("Full bootstrap: state bucket → stack and secrets → IAM/GitHub → deploy and SES DNS guidance. Existing resources are preserved.")
 	}
-	fmt.Println("Creates/configures the selected environment. Existing protections are preserved. Also configures AWS OIDC and a deployment role. Application deployment is a separate explicit step.")
+	environment, err := chooseEnvironment(localEnvironments(root))
+	if err != nil {
+		return err
+	}
+	repo := localRepository(root)
+	if repo == "" {
+		repo = "lambdawalker/go.attestra.aws.auth"
+	}
+	if bootstrap != nil {
+		bootstrap.environment = environment
+		if err := bootstrap.loadSelections(repo, map[string]string{}, nil); err != nil {
+			return err
+		}
+		skip, err := bootstrap.checkLocalSetup(repo, force, confirm)
+		if err != nil || skip {
+			return err
+		}
+		if err := bootstrap.preflight(); err != nil {
+			return err
+		}
+		// Invalidate the old completion before any remote configuration can change.
+		if err := bootstrap.markStage("setup-in-progress"); err != nil {
+			return err
+		}
+	}
+	fmt.Println("Creates/configures the selected environment. Existing protections are preserved. Also configures AWS OIDC and a deployment role.")
 	fmt.Println("Token permissions: Administration write, Environments write, Actions read, and Metadata read for this repository.")
-	repo, token := "lambdawalker/go.attestra.aws.auth", ""
+	token := ""
 	repoField := input("GitHub repository", &repo, false, true).Validate(func(v string) error {
 		if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(v) {
 			return errors.New("use OWNER/REPOSITORY")
@@ -80,12 +102,14 @@ func runGitHubSetup(root string, full bool) error {
 	if err != nil {
 		return err
 	}
-	environment, err := chooseEnvironment(names)
-	if err != nil {
-		return err
+	for _, name := range names {
+		if strings.EqualFold(name, environment) && name != environment {
+			return fmt.Errorf("existing environment %q differs in casing; rename it deliberately before setup", name)
+		}
 	}
-	if bootstrap != nil {
-		bootstrap.environment = environment
+	if bootstrap != nil && bootstrap.memory.Repository != repo {
+		bootstrap.memory = bootstrapCheckpoint{}
+		bootstrap.resuming = false
 	}
 	fmt.Printf("Signed in as %s. Configuring %s / %s.\n", user.Login, repo, environment)
 	previous, err := client.inspectEnvironment(repo, environment)
