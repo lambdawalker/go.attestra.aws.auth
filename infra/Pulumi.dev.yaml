@@ -1,10 +1,11 @@
-encryptionsalt: v1:SPwlE5x5ETg=:v1:wCZxF6TyEhyKLkUp:5s1PBCz0SVYBVxUcnCKQVh0aTxVDYA==
+encryptionsalt: v1:dCeIGr75Kek=:v1:cGOsV8HgaSH/SlvY:VUkvI948Ti+2/hYXjOH3mmowxP6Yzg==
 config:
-  attestra-auth-email:captureReservedConcurrency: -1
-  attestra-auth-email:captureWorkerMaxConcurrency: 2
+  attestra-auth-email:appOrigin: https://dev.attestrabond.com
+  attestra-auth-email:captureReservedConcurrency: "-1"
+  attestra-auth-email:captureWorkerMaxConcurrency: "2"
+  attestra-auth-email:senderAddress: verify@dev.info.attestrabond.com
+  attestra-auth-email:senderDomain: dev.info.attestrabond.com
   aws:region: us-east-2
-  attestra-auth-email:appOrigin: https://attestrabond.com
-  attestra-auth-email:senderDomain: info.attestrabond.com
-  attestra-auth-email:senderAddress: verify@info.attestrabond.com
   attestra-auth-email:proofKey:
-    secure: v1:tWDxMngCcgPbuLK6:6HKBar40PMgoDqED55/KrOjEmGg04ckpf+Kk37h2QDYeadTfxT4UdiJNsqS0cPv5UyzfxmvRPclf46jY
+    secure: v1:49WIe5Zya35+v+MI:S847sq7+jjnPtGBseRuPbeZhIGMevTFAf2vCoCYVYDiMwptjk6m9o1sCAAgF+WnjTpDMqcR30CmVDW4f
+  attestra-auth-email:apiDomain: dev.api.attestrabond.com
