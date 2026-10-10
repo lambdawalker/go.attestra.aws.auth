@@ -208,12 +208,12 @@ func (w *bootstrapWizard) finish(repo string) error {
 	fmt.Println("Alternatively, you can deploy this local checkout below. Local deployment uses your current AWS session and Pulumi's confirmation prompt.")
 	for {
 		choice := "finish"
-		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy locally", "deploy"), huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {
+		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy", "deploy"), huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {
 			return err
 		}
 		switch choice {
 		case "finish":
-			fmt.Println("Setup complete. After the first deployment, rerun setup and choose the DNS check if Cognito is blocked by SES verification. See docs/first-deployment.md.")
+			fmt.Println("Configuration saved. Before the first GitHub deployment, run Build, preview and deploy here to prepare SES, configure DNS, and wait for verification. GitHub deploy refuses an unverified identity. See docs/first-deployment.md.")
 			return nil
 		case "preview", "deploy":
 			o := w.o
@@ -223,9 +223,13 @@ func (w *bootstrapWizard) finish(repo string) error {
 			if err := checkBucket(w.r, o, w.account); err != nil {
 				return err
 			}
-			if err := execute(w.r, o); err != nil {
+			runDeployment := func() error { return execute(w.r, o) }
+			if choice == "deploy" {
+				runDeployment = w.deployStages
+			}
+			if err := runDeployment(); err != nil {
 				fmt.Println("Deployment stopped:", err)
-				fmt.Println("Existing resources/state retained. If SES was unverified, choose the DNS check; otherwise inspect the error before retrying.")
+				fmt.Println("Existing resources/state retained. Resolve the reported issue, then choose Build, preview and deploy to resume the staged setup.")
 			}
 		case "cloudflare":
 			if err := w.configureCloudflare(); err != nil {

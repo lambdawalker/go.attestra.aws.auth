@@ -55,5 +55,15 @@ func runCI(o options) error {
 	if err := checkBucket(r, o, identity.Account); err != nil {
 		return err
 	}
+	if o.CI == "deploy" {
+		wizard := &bootstrapWizard{root: root, o: o, r: r, a: &setupAWSClient{env: r.env}}
+		evidence, err := wizard.readSES()
+		if err != nil {
+			return fmt.Errorf("SES readiness check failed; run setup and choose Build, preview and deploy to complete SES/DNS prerequisites: %w", err)
+		}
+		if !sesReady(evidence) {
+			return fmt.Errorf("SES %s is not ready (verification %s, DKIM %s); run setup and choose Build, preview and deploy to configure DNS and wait for verification; no deployment attempted", evidence.Domain, evidence.Verification, evidence.DKIM)
+		}
+	}
 	return execute(r, o)
 }

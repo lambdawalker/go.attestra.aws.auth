@@ -14,6 +14,7 @@ import (
 )
 
 type options struct {
+	Targets                                                []string
 	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string
 	Pull, Login, Sso                                       bool
 }
@@ -183,6 +184,9 @@ func execute(r commandRunner, o options) error {
 		return err
 	}
 	previewArgs := []string{"preview", "--stack", o.Stack}
+	for _, target := range o.Targets {
+		previewArgs = append(previewArgs, "--target", target)
+	}
 	if o.CI != "" {
 		previewArgs = append(previewArgs, "--non-interactive")
 	}
@@ -194,6 +198,9 @@ func execute(r commandRunner, o options) error {
 	}
 	// Interactive runs retain confirmation. CI requires explicit deploy mode.
 	upArgs := []string{"up", "--stack", o.Stack}
+	for _, target := range o.Targets {
+		upArgs = append(upArgs, "--target", target)
+	}
 	if o.CI == "deploy" {
 		upArgs = append(upArgs, "--yes", "--non-interactive")
 	}
