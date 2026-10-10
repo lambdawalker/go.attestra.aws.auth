@@ -52,7 +52,7 @@ func (a *setupAWSClient) call(result any, args ...string) (bool, error) {
 		if renewal := credentialRenewalFailure(a.env, stderr.String()); renewal != nil {
 			return false, renewal
 		}
-		code := regexp.MustCompile(`\(([A-Za-z0-9]+)\) when calling`).FindStringSubmatch(stderr.String())
+		code := regexp.MustCompile(`\(([A-Za-z0-9.]+)\) when calling`).FindStringSubmatch(stderr.String())
 		if len(code) == 2 {
 			if code[1] == "NoSuchEntity" {
 				return false, nil

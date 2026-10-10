@@ -18,6 +18,10 @@ import (
 )
 
 type teardownProgress struct {
+	InventoryCaptured                                                bool
+	Inventory                                                        []teardownProbe
+	Validation                                                       teardownReport
+	ValidatedAt                                                      string
 	LocalDone, DeleteVault                                           bool
 	Index                                                            *pendingIndex
 	IndexRemoved, IndexRetired, CleanupDone                          bool
@@ -60,6 +64,10 @@ func typedConfirmation(label, expected string) error {
 	return nil
 }
 func captureTeardownEvidence(data []byte, p *teardownProgress) error {
+	if err := captureTeardownInventory(data, p); err != nil {
+		return err
+	}
+	p.InventoryCaptured = true
 	var state struct {
 		Deployment *struct {
 			Resources []struct {
@@ -318,6 +326,11 @@ func runTeardown(root string) error {
 		if err != nil {
 			return err
 		}
+		if !p.Destroyed {
+			if err = captureTeardownInventory(data, &p); err != nil {
+				return err
+			}
+		}
 		if p.Destroyed {
 			if err = ensureDestroyed(data); err != nil {
 				return err
@@ -341,7 +354,7 @@ func runTeardown(root string) error {
 		}
 		p.DNSSkipped = !cleanup
 	}
-	if !p.DNSDone && !p.DNSSkipped && len(p.Desired) > 0 {
+	if !p.DNSSkipped && len(p.Desired) > 0 && (!p.DNSDone || p.Zone != "") {
 		cfToken := saved.secrets.Cloudflare
 		if cfToken == "" {
 			if err = input("Cloudflare token (hidden; Zone Read + DNS Edit)", &cfToken, true, true).Run(); err != nil {
@@ -595,6 +608,11 @@ func runTeardown(root string) error {
 					return err
 				}
 			}
+			if err := finalizeTeardownValidation(&p, persist, func() teardownReport {
+				return verifyTeardown(root, &p, a, r, g, cf, registryClient)
+			}, time.Sleep); err != nil {
+				return err
+			}
 			if registryClient != nil && !p.IndexRemoved {
 				if _, e := registryClient.change(registry.Change{Operation: "delete", Token: p.Index.Receipt.Token, Revision: p.Index.Receipt.Revision}); e != nil {
 					return e
@@ -608,7 +626,7 @@ func runTeardown(root string) error {
 			if p.DNSSkipped {
 				fmt.Println("Cloudflare cleanup was skipped; remaining SES/API DNS records need manual cleanup. See Desired/DNS in the teardown progress file.")
 			}
-			fmt.Println("✓ Teardown complete. Local setup records and generated Android configuration removed. State bucket/history, shared index infrastructure, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
+			fmt.Println("✓ Teardown validation passed for the captured removal scope. Review RETAINED and SKIPPED entries above. State bucket/history, shared index infrastructure, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
 			return nil
 		}},
 	})

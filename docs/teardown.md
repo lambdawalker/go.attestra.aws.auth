@@ -58,3 +58,21 @@ After cloud and GitHub cleanup succeeds, teardown removes the selected environme
 Before final authorization, the wizard separately asks whether to delete the selected credential vault; the default is **keep**, because it can contain the shared-index passphrase. This decision is checkpointed for retries. Vault deletion does not revoke provider tokens or clear AWS CLI login caches. The teardown checkpoint and encrypted Pulumi YAML backup remain available for recovery/audit.
 
 The environment is removed from the shared index, but the shared index Pulumi project, service, DNS, state bucket, and shared OIDC provider remain. Production capacity settings do not trigger reservation allocation during teardown; the normal destruction preview and typed confirmations still apply.
+
+## Final deletion validation
+
+Before declaring success, the wizard runs a separate read-only validation phase. It captures a minimal resource inventory before destruction and saves it in the private teardown checkpoint. Only identifiers needed for verification are stored, not Lambda environment variables or full stack exports. Partial retries retain earlier inventory entries.
+
+The final report checks:
+
+- AWS Lambda functions/event mappings, Cognito pools, DynamoDB tables, S3 buckets, SQS queues, SES identities, API Gateway APIs/domains, ACM certificates, EventBridge rules, alarms, and IAM roles. Child settings such as routes, permissions, and bucket policies are verified through absence of their containing resource.
+- Route53 record names/types and matching Cloudflare SES/API record values. Recreating a matching Cloudflare record under a different ID does not pass verification. Checks use provider APIs, not potentially cached public DNS responses.
+- The Pulumi stack and GitHub environment, the public index entry, setup checkpoint files, stack YAML, default Android export, and the credential vault when its deletion was requested.
+
+Each row reports **DELETED**, **REMAINS**, **FAILED**, **RETAINED**, or **SKIPPED**. Resource absence requires an authoritative provider response: access denial, expired sessions, network failures, malformed responses, and unsupported resource types never count as deletion. Resources still visible are checked up to three times, with five seconds between passes. Other failures stop verification without marking teardown complete. The latest report and its UTC timestamp remain in the checkpoint; rerun `teardown.bat` / `teardown.sh` after resolving the reported issue. Validation does not automatically delete newly discovered or recreated resources.
+
+Validation runs while the index teardown lock is still held. Once the public entry is confirmed absent and all required checks pass, the wizard releases the lock and marks teardown complete. A failure to release the lock also prevents completion.
+
+**Scope:** this verifies resources captured from this environment's stack, not every resource in the AWS account. Shared infrastructure, state history, recovery backups, and intentionally retained resources are listed separately. Service-created Lambda log groups and AWS-managed backup history outside Pulumi may remain; these are explicitly reported as retained, not silently certified deleted. Skipped Cloudflare cleanup stays visible as **SKIPPED** and requires manual DNS cleanup.
+
+An older teardown checkpoint that predates inventory capture cannot establish the complete original resource set, especially after a partial destroy. It fails final inventory validation rather than guessing from an empty or partially destroyed stack. Keep the checkpoint and pre-destroy state history for manual reconciliation; do not discard the checkpoint or set its verification fields merely to bypass the report. Previously completed checkpoints still protect against accidentally tearing down a recreated environment.
