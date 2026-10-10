@@ -14,6 +14,7 @@ import (
 )
 
 type options struct {
+	ReuseBuild                                             bool // Internal: only after a successful build in this staged run.
 	Targets                                                []string
 	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string
 	Pull, Login, Sso                                       bool
@@ -178,10 +179,16 @@ func execute(r commandRunner, o options) error {
 	if err := checkStack(r, o); err != nil {
 		return err
 	}
-	// Invoke the repository build scripts so new Lambda handlers remain included.
-	name, args := buildCommand("")
-	if _, err := r.Exec(o.Root, false, name, args...); err != nil {
-		return err
+	if o.ReuseBuild {
+		if err := checkLambdaArchives(o.Root); err != nil {
+			return err
+		}
+		fmt.Println("Reusing Lambda archives built earlier in this setup run.")
+	} else {
+		name, args := buildCommand("")
+		if _, err := r.Exec(o.Root, false, name, args...); err != nil {
+			return err
+		}
 	}
 	previewArgs := []string{"preview", "--stack", o.Stack}
 	for _, target := range o.Targets {

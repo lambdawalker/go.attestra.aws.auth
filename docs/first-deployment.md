@@ -191,3 +191,9 @@ If `route53ZoneId` is configured, Pulumi manages both the certificate-validation
 The `apiUrl` output becomes `https://<apiDomain>`, retaining existing API route paths. `rawApiUrl` retains the AWS-generated endpoint for diagnostics and compatibility. The raw endpoint remains enabled; both use the same API authentication. `apiCertificateArn`, `apiDomain`, and `apiDomainTarget` are also exported. Without an `apiDomain` setting, direct Pulumi deployment retains the original raw URL behavior.
 
 GitHub deployment checks the configured certificate is issued before proceeding. First-time certificate validation and Cloudflare publication run through local setup; if DNS publication fails after AWS deployment, rerun setup to finish it. DNS propagation can delay client access after successful publication. This does not create website hosting or change Cognito IDs, and Android still needs its base URL configured from `apiUrl`.
+
+## Lambda build performance
+
+The Go packager builds independent Lambda entry points concurrently with up to four workers (reduced on smaller machines). Go package parallelism is divided among workers. All six `auth-*` archives reuse one compiled `cmd/signin` binary: 15 Lambda archives require only 10 unique builds. A compilation failure cancels running compiler processes, stops remaining work, and prevents deployment.
+
+Within one staged setup run, the full deployment reuses the archives built for the prerequisite phase and checks that all archives are still present. A new setup attempt builds again through Go's build cache, so changed sources are picked up. If you edit code while the wizard is waiting for DNS, restart setup to include those edits; the current run uses its earlier build. Both partial and full deployments wait until compilation and packaging have finished.

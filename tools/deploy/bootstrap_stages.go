@@ -137,6 +137,7 @@ func (w *bootstrapWizard) deployStages() error {
 		return err
 	}
 	full := w.o
+	full.ReuseBuild = true
 	full.CI = "deploy"
 	if err := execute(w.r, full); err != nil {
 		return err
