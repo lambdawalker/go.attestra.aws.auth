@@ -133,3 +133,24 @@ Run setup once for each target. Use its backend and stack explicitly for routine
 ```
 
 On Linux/macOS use `./deploy.sh -stack qa -backend s3://YOUR-QA-STATE-BUCKET -region us-east-2 -sso -profile attestra`. Local deployment defaults to `dev`; it does not choose a GitHub environment. For GitHub deployment, choose the matching environment from the workflow dropdown.
+
+
+### Final environment health check
+
+After a full local deployment or GitHub Actions deploy/publish, the tool runs a read-only health check. The setup wizard runs it after API DNS and index publication, before saving its completed-setup receipt. Partial prerequisite deployments, previews, migrations, and teardown do not run it.
+
+Checks include required Pulumi outputs, the configured API hostname, SES identity and DKIM verification, the Cognito app client, API DNS/TLS and the auth-status Lambda response, CORS for the app origin, and the public index entry's configuration/hash. The Lambda probe sends an unauthenticated POST to `/auth/status` and requires its exact `401 sign_in_required` response; it does not create users or send mail. Requests have a 15-second timeout and do not follow redirects.
+
+Each result is shown as PASS, FAIL, WARN, or INFO. A required failure stops successful completion and causes the deployment action to fail, but retains all deployed resources and published index data. DNS propagation can cause a temporary failure: correct the reported issue or wait, then rerun only the checks:
+
+```powershell
+.\deploy.bat -health-check -Backend s3://YOUR-STATE-BUCKET -Stack qa -Region us-east-2 -Sso -Profile attestra
+```
+
+```sh
+./deploy.sh -health-check -backend s3://YOUR-STATE-BUCKET -stack qa -region us-east-2 -sso -profile attestra
+```
+
+This authenticates and reads the selected stack without building or deploying. The recovery menu also offers **Run environment health check**. A standalone successful check does not mark an interrupted setup complete; rerun setup to finish its remaining steps.
+
+Disabled ID capture and an unconfigured optional index are warnings. These checks are not a full sign-in/email/upload test, do not establish SES production access, and do not validate website hosting or every Lambda/queue. The existing unchanged-commit shortcut remains an explicitly local receipt, not a live health check; use `-health-check` when you want current remote evidence.

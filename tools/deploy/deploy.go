@@ -15,6 +15,7 @@ import (
 
 type options struct {
 	ReleaseIndex, SkipIndex, PublishOnly                   bool
+	HealthCheck                                            bool
 	ReuseBuild                                             bool // Internal: only after a successful build in this staged run.
 	Targets                                                []string
 	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string

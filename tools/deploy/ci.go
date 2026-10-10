@@ -93,5 +93,11 @@ func runCI(o options) error {
 	if o.CI == "publish" {
 		o.PublishOnly = true
 	}
-	return execute(r, o)
+	if err := execute(r, o); err != nil {
+		return err
+	}
+	if o.CI != "preview" {
+		return runEnvironmentHealth(r, o)
+	}
+	return nil
 }

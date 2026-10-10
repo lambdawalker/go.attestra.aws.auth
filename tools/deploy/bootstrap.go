@@ -350,7 +350,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 		if w.memory.Settings["dnsProvider"] != "route53" {
 			choices = append(choices, huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"))
 		}
-		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"))
+		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"), huh.NewOption("Run environment health check", "health"))
 		if err := huh.NewSelect[string]().Title("Next step").Options(choices...).Value(&choice).Run(); err != nil {
 			return err
 		}
@@ -381,6 +381,10 @@ func (w *bootstrapWizard) finish(repo string) error {
 		case "dns":
 			if err := w.showDNS(); err != nil {
 				fmt.Println("DNS check:", err)
+			}
+		case "health":
+			if err := runEnvironmentHealth(w.r, w.o); err != nil {
+				fmt.Println(err)
 			}
 		case "outputs":
 			for _, name := range []string{"apiUrl", "userPoolId", "clientId"} {

@@ -260,3 +260,6 @@ Within one staged setup run, the full deployment reuses the archives built for t
 ## Shared environment index
 
 Full setup now also provisions or reuses the separate `attestra-index/shared` project before deploying the application. Keep its original Pulumi passphrase, and review/commit `infra-index/Pulumi.shared.yaml` alongside the environment YAML. The shared index and its state remain after environment teardown. Read [environment-index.md](environment-index.md) for the public configuration contract, concurrency rules, and publication recovery commands.
+
+
+The wizard finishes deployment with an environment health check before recording setup as complete. Review all FAIL and WARN entries. Failed checks retain existing resources and can be rerun without deployment using `deploy.bat -health-check` (supply the same backend, stack, region, and AWS login options). See [Final environment health check](deployment.md#final-environment-health-check).

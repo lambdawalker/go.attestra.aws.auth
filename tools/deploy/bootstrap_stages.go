@@ -64,6 +64,9 @@ func (w *bootstrapWizard) deployStages() error {
 	if err := w.r.withIndex(w.o, w.deployStagesActual); err != nil {
 		return err
 	}
+	if err := runEnvironmentHealth(w.r, w.o); err != nil {
+		return err
+	}
 	return w.recordCompletion(before, configuration)
 }
 func (w *bootstrapWizard) deployStagesActual() error {

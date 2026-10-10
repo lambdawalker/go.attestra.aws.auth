@@ -54,6 +54,7 @@ func run() error {
 	}
 	var o options
 	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials bool
+	flag.BoolVar(&o.HealthCheck, "health-check", false, "Check the deployed environment without building or deploying")
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
 	flag.StringVar(&o.Stack, "stack", "dev", "Existing stack name")
 	flag.StringVar(&o.Backend, "backend", "", "S3 state URL, e.g. s3://my-state-bucket")
@@ -74,6 +75,9 @@ func run() error {
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
+	}
+	if o.HealthCheck && (build || bootstrap || setupGitHub || teardown || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex) {
+		return errors.New("-health-check cannot be combined with deployment, setup, build, migration, index recovery, or CI operation flags")
 	}
 	if (o.PublishOnly || o.ReleaseIndex) && (build || bootstrap || setupGitHub || teardown || o.MigrateFrom != "" || o.Pull || (o.PublishOnly && o.ReleaseIndex) || o.CI != "") {
 		return errors.New("index recovery flags cannot be combined with other operation flags")
@@ -230,7 +234,16 @@ func run() error {
 			return err
 		}
 	}
-	return execute(runner, o)
+	if o.HealthCheck {
+		return runEnvironmentHealth(runner, o)
+	}
+	if err := execute(runner, o); err != nil {
+		return err
+	}
+	if o.MigrateFrom == "" && !o.ReleaseIndex {
+		return runEnvironmentHealth(runner, o)
+	}
+	return nil
 }
 
 // Retain the old Windows launcher spellings while all launchers now invoke Go.
