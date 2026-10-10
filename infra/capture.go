@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/apigatewayv2"
@@ -21,6 +22,15 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	if err != nil {
 		return err
 	}
+	requested := reserved
+	reserved, err = effectiveCaptureReservation(reserved, os.Getenv("ATTESTRA_CAPTURE_RESERVED_CONCURRENCY"))
+	if err != nil {
+		return err
+	}
+	if reserved != requested {
+		ctx.Log.Warn(fmt.Sprintf("Capture reserved concurrency %d per function exceeds available capacity; deploying with shared concurrency. Stack configuration is unchanged.", requested), nil)
+	}
+	ctx.Export("captureEffectiveReservedConcurrency", pulumi.Int(reserved))
 	enabled := cfg.GetBool("captureEnabled")
 	kind := cfg.Get("captureDocumentType")
 	if kind == "" {

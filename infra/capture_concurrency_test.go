@@ -36,3 +36,16 @@ func TestCaptureConcurrency(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveCaptureReservation(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  int
+		bad   bool
+	}{{"", 5, false}, {"5", 5, false}, {"-1", -1, false}, {"0", 0, true}, {"10", 0, true}, {"invalid", 0, true}} {
+		got, err := effectiveCaptureReservation(5, tc.value)
+		if (err != nil) != tc.bad || (!tc.bad && got != tc.want) {
+			t.Fatal(tc, got, err)
+		}
+	}
+}

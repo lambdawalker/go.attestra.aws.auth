@@ -61,7 +61,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 			statement([]string{"s3:*"}, []string{"arn:aws:s3:::id-evidence-*", "arn:aws:s3:::id-evidence-*/*"}), ses,
 			// Cognito creation and Lambda mapping creation do not support preexisting resource IDs.
 			func() map[string]any {
-				s := statement([]string{"cognito-idp:CreateUserPool", "lambda:CreateEventSourceMapping", "lambda:ListEventSourceMappings"}, []string{"*"})
+				s := statement([]string{"cognito-idp:CreateUserPool", "lambda:GetAccountSettings", "lambda:CreateEventSourceMapping", "lambda:ListEventSourceMappings"}, []string{"*"})
 				s["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": o.Region}}
 				return s
 			}(),

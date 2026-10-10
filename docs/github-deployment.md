@@ -174,6 +174,18 @@ The committed dev configuration uses the shared pool, allowing deployment with a
 
 For QA/prod, set explicit values appropriate to their traffic and account quotas. For example, reservation `5` and worker maximum `5` reserve **15 total** across the three functions. Ensure the regional quota also accommodates other reservations and AWS's required unreserved capacity. A reservation of `0` is rejected because it disables invocations. The worker maximum cannot exceed a positive reservation.
 
+### Automatic reservation capacity check
+
+Setup, the Go deploy command, and GitHub Actions check Lambda capacity before each Pulumi preview and update. They read `GetAccountSettings` and the current reservations of this stack's three capture functions. Only positive increases count as new reservations; pending decreases are not credited because functions can update concurrently.
+
+The check conservatively leaves 100 executions unreserved, or the entire account quota when it is below 100. If the requested increases do not fit, it logs the requested per-function reservation, additional capacity needed, available capacity, quota, and unreserved total. All three capture functions use shared concurrency (`-1`) for that run, including removing their existing reservations if necessary. The SQS worker maximum is unchanged. Other functions and stacks are not modified.
+
+The requested YAML configuration is preserved. A process-local override supplies the effective value to Pulumi, which exports `captureEffectiveReservedConcurrency`. The next actual deployment reevaluates capacity and can restore the requested reservations. To reevaluate without a code change when using setup's local completion shortcut, run `setup.bat -force-setup` (or `./setup.sh -force-setup`).
+
+Failed or invalid quota reads stop before the Pulumi operation instead of being interpreted as no capacity. Rerun setup after pulling this change to grant the deployment role the new regional `lambda:GetAccountSettings` permission. Existing function permissions cover `GetFunctionConcurrency`.
+
+This preflight applies when using the repository's deployment tools; a direct `pulumi up` invocation does not run the check. It is a snapshot, not an AWS capacity lock: concurrent deployments or a function replacement can still change the capacity needed after the check. Shared functions compete with the rest of the account and can be throttled.
+
 These settings are independent of `captureEnabled`, which remains unchanged. Run setup separately for each environment to create its stack and GitHub environment. The workflow selects the environment’s own variables, role, secret and stack YAML. No new cloud environments are created merely by pulling this code.
 
 After pulling a concurrency configuration change, start a **new** deployment run on `main`. Preserve the existing S3 state so Pulumi can resume a partial deployment; do not recreate the stack.

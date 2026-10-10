@@ -34,3 +34,15 @@ func parseCaptureConcurrency(reservedValue, workerValue string) (int, int, error
 	}
 	return reserved, worker, nil
 }
+
+// Deployment tools provide a quota-checked override without rewriting stack YAML.
+func effectiveCaptureReservation(requested int, override string) (int, error) {
+	if override == "" {
+		return requested, nil
+	}
+	value, err := strconv.Atoi(override)
+	if err != nil || (value != -1 && value != requested) {
+		return 0, fmt.Errorf("invalid quota-checked capture reservation override")
+	}
+	return value, nil
+}

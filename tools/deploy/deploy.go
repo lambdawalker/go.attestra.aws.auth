@@ -32,6 +32,23 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 	if (name == "aws" || name == "pulumi") && p.env != nil {
 		cmd.Env = p.env
 	}
+	if name == "pulumi" && len(args) > 0 && (args[0] == "preview" || args[0] == "up") {
+		stack := ""
+		for i := 1; i+1 < len(args); i++ {
+			if args[i] == "--stack" {
+				stack = args[i+1]
+				break
+			}
+		}
+		if stack == "" {
+			return nil, errors.New("explicit stack required for Lambda quota check")
+		}
+		effective, err := captureConcurrencyPreflight(p, dir, stack)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Env = captureEnvironment(cmd.Env, effective)
+	}
 	cmd.Stdin = os.Stdin
 	var out bytes.Buffer
 	if capture {

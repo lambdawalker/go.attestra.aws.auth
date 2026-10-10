@@ -195,7 +195,7 @@ Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json`
 | Existing YAML or passphrase cannot decrypt secrets | Use matching YAML and the original passphrase; migrate Cloud state instead of copying ciphertext into a new stack. |
 | Profile override rejected | Remove `aws:profile` from stack config; use local profile selection only for AWS login. |
 | Cognito says SES identity is unverified | Check the exact identity/account/region and complete DNS verification, then resume. |
-| Lambda reserved concurrency exceeds available quota | Use dev's shared-pool values or request sufficient regional quota for reservations. Existing config is retained by setup, so update it deliberately if needed. |
+| Lambda reserved concurrency exceeds available quota | Pull the latest scripts and rerun setup. The quota preflight logs insufficient capacity and deploys capture functions using the shared pool while retaining requested YAML settings. |
 | Local preview cannot find Lambda ZIPs | Use `build.bat` / `build.sh`, or the wizard/deploy tool which builds automatically. |
 | Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
