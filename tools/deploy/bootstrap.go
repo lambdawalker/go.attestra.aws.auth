@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -19,6 +20,8 @@ import (
 )
 
 type bootstrapWizard struct {
+	memory                                            bootstrapCheckpoint
+	resuming                                          bool
 	root, temporary, passphrase, account, environment string
 	o                                                 options
 	r                                                 *processRunner
@@ -131,29 +134,16 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if err := input("Stack passphrase (new stack: choose and save it; existing stack: use its original passphrase)", &c.Passphrase, true, true).Run(); err != nil {
 		return err
 	}
-	repeated := ""
-	if err := input("Repeat the stack passphrase", &repeated, true, true).Run(); err != nil {
-		return err
+	if !w.resuming {
+		repeated := ""
+		if err := input("Repeat the stack passphrase", &repeated, true, true).Run(); err != nil {
+			return err
+		}
+		if repeated != c.Passphrase {
+			return errors.New("passphrases do not match")
+		}
 	}
-	if repeated != c.Passphrase {
-		return errors.New("passphrases do not match")
-	}
-	base := "attestrabond.com"
-	if err := input("Base domain (without https:// or an environment prefix)", &base, false, true).Validate(func(s string) error { _, e := applicationDefaults(w.environment, s); return e }).Run(); err != nil {
-		return err
-	}
-	app, err := applicationDefaults(w.environment, base)
-	if err != nil {
-		return err
-	}
-	origin, domain, sender := app["attestra-auth-email:appOrigin"], app["attestra-auth-email:senderDomain"], app["attestra-auth-email:senderAddress"]
-	fmt.Println("These application defaults fill missing configuration only. Existing configuration and proof keys are retained.")
-	if err := huh.NewForm(huh.NewGroup(input("HTTPS app origin", &origin, false, true), input("SES sender domain", &domain, false, true), input("SES sender email", &sender, false, true))).Run(); err != nil {
-		return err
-	}
-	if err := validateBootstrapApp(origin, domain, sender); err != nil {
-		return err
-	}
+	var err error
 	w.temporary, err = os.MkdirTemp("", "attestra-bootstrap-")
 	if err != nil {
 		return err
@@ -166,6 +156,66 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	env := cloudEnvironment(os.Environ(), c, o, empty)
 	w.r = &processRunner{env: env}
 	w.a = &setupAWSClient{env: env}
+	// Prefer actual stack configuration; memory covers interruption before config writes.
+	current := map[string]struct{ Value string }{}
+	configPath := filepath.Join(w.root, "infra", "Pulumi."+o.Stack+".yaml")
+	if _, statErr := os.Stat(configPath); statErr == nil {
+		data, e := w.r.Exec(filepath.Join(w.root, "infra"), true, "pulumi", "config", "--json", "--stack", o.Stack)
+		if e != nil {
+			return e
+		}
+		if json.Unmarshal(data, &current) != nil {
+			return errors.New("cannot read existing stack configuration")
+		}
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	base := "attestrabond.com"
+	if v, ok := w.remembered("baseDomain"); ok {
+		base = v
+	}
+	origin, domain, sender := current["attestra-auth-email:appOrigin"].Value, current["attestra-auth-email:senderDomain"].Value, current["attestra-auth-email:senderAddress"].Value
+	if origin == "" || domain == "" || sender == "" {
+		if _, ok := w.remembered("baseDomain"); !ok {
+			if err := input("Base domain", &base, false, true).Validate(func(s string) error { _, e := applicationDefaults(w.environment, s); return e }).Run(); err != nil {
+				return err
+			}
+			if err := w.remember("baseDomain", base); err != nil {
+				return err
+			}
+		}
+		app, err := applicationDefaults(w.environment, base)
+		if err != nil {
+			return err
+		}
+		for _, field := range []struct {
+			key, title, def string
+			value           *string
+		}{
+			{"origin", "HTTPS app origin", app["attestra-auth-email:appOrigin"], &origin},
+			{"senderDomain", "SES sender domain", app["attestra-auth-email:senderDomain"], &domain},
+			{"sender", "SES sender email", app["attestra-auth-email:senderAddress"], &sender},
+		} {
+			if *field.value != "" {
+				continue
+			}
+			if v, ok := w.remembered(field.key); ok {
+				*field.value = v
+				continue
+			}
+			*field.value = field.def
+			if err := input(field.title, field.value, false, true).Run(); err != nil {
+				return err
+			}
+			if err := w.remember(field.key, *field.value); err != nil {
+				return err
+			}
+		}
+	}
+	if err := validateBootstrapApp(origin, domain, sender); err != nil {
+		return err
+	}
+	fmt.Printf("Using app origin %s and sender %s\n", origin, sender)
 	reserved, worker := "5", "5"
 	if w.environment == "dev" {
 		reserved, worker = "-1", "2"
@@ -196,12 +246,37 @@ func (w *bootstrapWizard) saveProofKey(value string) error {
 	return nil
 }
 func (w *bootstrapWizard) finish(repo string) error {
+	complete := false
+	fmt.Println("Continuing automatically through SES, DNS verification, and application deployment.")
+	if err := checkBucket(w.r, w.o, w.account); err != nil {
+		return err
+	}
+	if err := w.deployStages(); err != nil {
+		fmt.Println("Setup paused:", err)
+		fmt.Println("Progress retained. Resolve the issue and retry below or rerun setup.")
+	} else {
+		if err := w.markStage("complete"); err != nil {
+			return err
+		}
+		complete = true
+		fmt.Println("✓ AWS application deployment complete.")
+	}
+
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("3 / 4 • Commit configuration and deploy"))
 	fmt.Printf("Review and commit infra/Pulumi.%s.yaml on main, then push. This wizard does not commit or push for you:\n", w.o.Stack)
 	fmt.Printf("  git diff -- infra/Pulumi.%s.yaml\n  git add infra/Pulumi.%s.yaml\n  git commit -m \"Configure %s stack\"\n  git push origin main\n", w.o.Stack, w.o.Stack, w.o.Stack)
 	fmt.Printf("GitHub deployment: https://github.com/%s/actions/workflows/deploy.yml\n", repo)
 	fmt.Printf("Start a NEW run on main, select environment %s: preview, then deploy. The action builds the Lambda archives. Do not retry an old commit after changing configuration.\n", w.environment)
 	fmt.Println("Alternatively, you can deploy this local checkout below. Local deployment uses your current AWS session and Pulumi's confirmation prompt.")
+	if complete {
+		for _, name := range []string{"apiUrl", "userPoolId", "clientId"} {
+			if _, err := w.r.Exec(filepath.Join(w.root, "infra"), false, "pulumi", "stack", "output", name, "--stack", w.o.Stack); err != nil {
+				return err
+			}
+		}
+		fmt.Println("Environment deployed. Apply these outputs to Android. SES sandbox recipient restrictions and website hosting remain separate prerequisites; see docs/first-deployment.md.")
+		return nil
+	}
 	for {
 		choice := "finish"
 		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy", "deploy"), huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {

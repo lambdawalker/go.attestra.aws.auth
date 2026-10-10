@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/charmbracelet/huh"
 )
+
+func dnsFingerprint(e sesEvidence) string {
+	data, _ := json.Marshal(e.Records)
+	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
 
 func sesReady(e sesEvidence) bool { return e.Verification == "Success" && e.DKIM == "Success" }
 
@@ -66,8 +72,12 @@ func (w *bootstrapWizard) deployStages() error {
 	route53 := config["attestra-auth-email:route53ZoneId"].Value != ""
 	fmt.Println("1 / 4 • Build and deploy SES prerequisites only")
 	partial := w.o
+	partial.CI = "deploy"
 	partial.Targets = sesTargets(w.o.Stack, route53)
 	if err := execute(w.r, partial); err != nil {
+		return err
+	}
+	if err := w.markStage("ses-prerequisites"); err != nil {
 		return err
 	}
 	evidence, err := w.readSES()
@@ -76,7 +86,8 @@ func (w *bootstrapWizard) deployStages() error {
 	}
 	if !sesReady(evidence) {
 		fmt.Println("2 / 4 • Configure verification DNS")
-		if !route53 {
+		fingerprint, _ := w.remembered("dnsFingerprint")
+		if !route53 && fingerprint != dnsFingerprint(evidence) {
 			choice := "cloudflare"
 			if err := huh.NewSelect[string]().Title("Publish SES verification records").Options(huh.NewOption("Configure Cloudflare DNS", "cloudflare"), huh.NewOption("DNS already configured / configure manually", "manual"), huh.NewOption("Pause setup; resume later", "pause")).Value(&choice).Run(); err != nil {
 				return err
@@ -93,6 +104,9 @@ func (w *bootstrapWizard) deployStages() error {
 					return err
 				}
 			}
+			if err := w.remember("dnsFingerprint", dnsFingerprint(evidence)); err != nil {
+				return err
+			}
 		}
 		fmt.Println("3 / 4 • Waiting for Amazon SES verification; checking every 15 seconds. Ctrl+C stops this wait safely. Rerun setup to resume; existing resources are retained.")
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -105,5 +119,13 @@ func (w *bootstrapWizard) deployStages() error {
 		fmt.Println("2–3 / 4 • SES and DKIM already verified; DNS setup and wait skipped")
 	}
 	fmt.Println("4 / 4 • Preview and deploy the complete application")
-	return execute(w.r, w.o)
+	if err := w.markStage("ses-verified"); err != nil {
+		return err
+	}
+	full := w.o
+	full.CI = "deploy"
+	if err := execute(w.r, full); err != nil {
+		return err
+	}
+	return w.markStage("deployed")
 }

@@ -103,6 +103,10 @@ func runGitHubSetup(root string, full bool) error {
 	}
 	for _, name := range []string{"AWS_REGION", "PULUMI_BACKEND_URL"} {
 		value := values[name]
+		if full && (previous.Variables[name] != "" || bootstrap.resuming) {
+			fmt.Printf("Using %s: %s\n", name, value)
+			continue
+		}
 		if err := input(name, &value, false, true).Run(); err != nil {
 			return err
 		}
@@ -161,8 +165,10 @@ func runGitHubSetup(root string, full bool) error {
 	} else {
 		fmt.Println("Passphrase: store encrypted secret.")
 	}
-	if err := confirm("Save this GitHub environment configuration?"); err != nil {
-		return err
+	if !full {
+		if err := confirm("Save this GitHub environment configuration?"); err != nil {
+			return err
+		}
 	}
 	saved, err := client.saveEnvironment(repo, environment, previous, values, passphrase)
 	if err != nil {
@@ -175,6 +181,12 @@ func runGitHubSetup(root string, full bool) error {
 	fmt.Printf("Review protections: https://github.com/%s/settings/environments\n", repo)
 	fmt.Println("The token was not saved. AWS role configured.")
 	if bootstrap != nil {
+		if err := bootstrap.saveSelections(repo, values); err != nil {
+			return err
+		}
+		if err := bootstrap.markStage("github-ready"); err != nil {
+			return err
+		}
 		return bootstrap.finish(repo)
 	}
 	fmt.Println("Ensure the S3 stack is initialized or migrated before running Deploy AWS [Pulumi S3].")

@@ -278,3 +278,39 @@ func TestCheckpointRetainsBucketWithoutStoringSecrets(t *testing.T) {
 		t.Fatal("checkpoint overrode GitHub settings")
 	}
 }
+
+func TestBootstrapMemoryPersistsChoicesAndRecoversBackup(t *testing.T) {
+	w := &bootstrapWizard{root: t.TempDir(), environment: "qa"}
+	values := map[string]string{"AWS_REGION": "us-east-2", "PULUMI_BACKEND_URL": "s3://state-qa", "PULUMI_STACK": "qa", "AWS_ACCOUNT_ID": "123456789012"}
+	if err := w.saveSelections("o/r", values); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.remember("profile", "qa-admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.remember("route53", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.remember("token", "secret"); err == nil {
+		t.Fatal("secret setting accepted")
+	}
+	if err := w.markStage("ses-verified"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(w.checkpointPath(), w.checkpointPath()+".bak"); err != nil {
+		t.Fatal(err)
+	}
+	resumed := &bootstrapWizard{root: w.root, environment: "qa"}
+	if err := resumed.loadSelections("o/r", map[string]string{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed.resuming || resumed.memory.Stage != "ses-verified" {
+		t.Fatal(resumed.memory)
+	}
+	if v, ok := resumed.remembered("profile"); !ok || v != "qa-admin" {
+		t.Fatal(v, ok)
+	}
+	if v, ok := resumed.remembered("route53"); !ok || v != "" {
+		t.Fatal("blank choice forgotten")
+	}
+}

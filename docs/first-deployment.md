@@ -95,7 +95,7 @@ Then choose:
 
 - **Finish here; deploy using GitHub Actions**: follow the printed workflow URL. Select the new environment in the **environment dropdown**, then start a new `main` run with operation `preview`, review it, then run `deploy`.
 - **Build and preview locally**: uses the selected backend/account and does not deploy resources.
-- **Build, preview and deploy**: builds archives, deploys SES prerequisites, configures DNS, waits for verification, then previews and deploys the full application with Pulumi's confirmation prompts. It deploys your current checkout, so review local changes first.
+- **Build, preview and deploy**: builds archives, deploys SES prerequisites, configures DNS, waits for verification, then previews and deploys the full application without additional deployment prompts. It deploys your current checkout, so review local changes first.
 - **Configure Cloudflare DNS for SES**: prompts for a zone-scoped token, shows the exact proposed changes, creates missing SES records, and verifies them.
 - **Show SES DNS records and check verification**: reads the created SES identity and displays the exact TXT/CNAME records and verification status.
 - **Show deployed Android configuration**: prints `apiUrl`, `userPoolId` and `clientId` after a successful deployment.
@@ -106,9 +106,9 @@ The deployment menu stays open after a local failure so you can inspect SES or r
 
 The staged wizard creates SES identity/DKIM tokens first and waits for verification before deploying Cognito. Direct `pulumi up` bypasses the wizard and can still fail if SES is unverified. Preview alone cannot expose every AWS service prerequisite or quota limitation.
 
-Choose **Build, preview and deploy** and follow its DNS stage. You can also use **Configure Cloudflare DNS for SES** separately once the SES prerequisites exist. Create an API token in [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone → Zone → Read** and **Zone → DNS → Edit**, restricted to your authoritative zone (for example `attestrabond.com`). Enter it at the hidden prompt and select the matching active zone. Review the TXT and three DKIM CNAME records, then confirm the changes.
+Choose **Build, preview and deploy** and follow its DNS stage. You can also use **Configure Cloudflare DNS for SES** separately once the SES prerequisites exist. Create an API token in [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone → Zone → Read** and **Zone → DNS → Edit**, restricted to your authoritative zone (for example `attestrabond.com`). Enter it at the hidden prompt and select the matching active zone. Review the TXT and three DKIM CNAME records, the wizard applies the displayed changes automatically.
 
-The token stays in memory and is never saved to GitHub, Pulumi configuration, or local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after review. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
+The token stays in memory and is never saved to GitHub, Pulumi configuration, or local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after displaying the planned changes. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
 
 The wizard refuses Cloudflare setup when `route53ZoneId` is configured, to avoid two DNS managers for the same records. Cloudflare records are managed by this optional setup step, not by Pulumi; destroying a stack does not remove them. Keep DKIM CNAME flattening disabled in Cloudflare, including the zone-wide “flatten all CNAMEs” option. The wizard does not change zone-wide settings or DNS delegation.
 
@@ -140,7 +140,7 @@ Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json`
 | Local preview cannot find Lambda ZIPs | Use `build.bat` / `build.sh`, or the wizard/deploy tool which builds automatically. |
 | Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
-The wizard does not request Lambda quota increases, leave the SES sandbox, provision website hosting or rotate existing proof keys automatically. Cloudflare DNS changes require confirmation through the DNS stage or dedicated menu option; manual DNS setup remains available.
+The wizard does not request Lambda quota increases, leave the SES sandbox, provision website hosting or rotate existing proof keys automatically. Cloudflare DNS changes are applied through the DNS stage or dedicated menu option; manual DNS setup remains available.
 
 ## Remove an environment
 
@@ -148,13 +148,25 @@ Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the 
 
 ## Ordered first deployment and DNS verification
 
-Choose **Build, preview and deploy** in the setup wizard. It now performs these stages in order:
+After configuration, the setup wizard automatically performs these stages in order. The recovery menu also offers **Build, preview and deploy**:
 
 1. Build Lambda archives, then preview and apply a targeted Pulumi update for the SES identity and DKIM configuration only. If `route53ZoneId` is configured, its SES verification records are included. Other application resources are retained, not removed or deployed by this stage.
 2. If SES is not already verified, configure Cloudflare DNS through the wizard, or display the records for manual publication. You can also pause and resume later. Route53-managed records do not prompt for a Cloudflare token.
 3. Poll AWS every 15 seconds until both identity verification and DKIM report `Success`. Pending verification blocks the full deployment. Ctrl+C interrupts this wait and returns to the menu; resources are retained. Failed verification or an AWS read error stops the sequence with an explanation.
-4. Preview and apply the full application deployment. Both Pulumi updates retain their normal interactive confirmation.
+4. Preview and apply the full application deployment. Both Pulumi updates run automatically after preview, without another deployment confirmation.
 
 Rerun the same option to resume. The wizard reads actual Pulumi/AWS state; an already verified identity skips DNS configuration and waiting. DNS propagation can take time, so pausing does not require teardown or a new stack. Builds still run before targeted updates because Pulumi evaluates the entire program, including local Lambda archive references.
 
 GitHub Actions deploy checks SES readiness first and gives instructions to complete setup if the identity is missing or unverified. Preview-only remains available. Complete this initial staged setup locally before deploying subsequent changes through Actions. The state backend and stack are shared by both paths.
+
+## Automatic setup and resume memory
+
+Full setup continues automatically from configuration through IAM/GitHub setup, SES prerequisites, DNS publication, verification polling and complete application deployment. It displays plans before applying them without repeated deployment approvals. On success it prints the API/Cognito values needed by Android and exits. If a phase fails, successful work is retained and the recovery menu remains available. The standalone GitHub-only setup keeps its existing confirmations. Stack migration and replacing local encryption metadata still require explicit decisions.
+
+The ignored `bootstrap.<environment>.local.json` now remembers non-secret configuration choices, AWS authentication mode/profile, account and deployment role, application domains, DNS choices, and the latest completed deployment phase. Writes use a temporary file and a recovery backup; `.tmp` and `.bak` files are also ignored. A backup is read if replacement was interrupted. Keep these files private and run only one setup instance for an environment at a time.
+
+On rerun, choose the repository/environment and supply credentials. Existing GitHub values take precedence over checkpoint defaults; current Pulumi application configuration takes precedence over remembered answers. Previously answered configuration prompts are skipped. No tokens, AWS keys, passphrases or proof keys are stored in this memory file. GitHub tokens, the stack passphrase and any required Cloudflare token are still requested; AWS SSO/login may need to authenticate again.
+
+Progress is a resume aid, not proof that resources still exist: AWS/Pulumi are checked again. Completed DNS publication is remembered using a fingerprint of the SES record names and values; changed tokens require DNS setup again. Pending verification resumes polling without asking for the same Cloudflare token. To intentionally change a remembered non-secret choice, edit its `Settings` entry in the ignored checkpoint while setup is stopped; change established application configuration with Pulumi config. Never remove or alter deployment state just to reset wizard prompts.
+
+A deployed backend still requires SES sandbox recipient verification or production access for general email delivery, plus configuring the Android app and any separately hosted website. The wizard does not claim those external steps are complete.

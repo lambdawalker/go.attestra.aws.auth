@@ -15,11 +15,18 @@ type bootstrapCheckpoint struct {
 	Region      string
 	Backend     string
 	Stack       string
+	Settings    map[string]string
+	Stage       string
+	Account     string
+	RoleARN     string
 }
 
 func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, existing map[string]string) error {
 	path := w.checkpointPath()
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		data, err = os.ReadFile(path + ".bak")
+	}
 	if os.IsNotExist(err) && w.environment == "dev" {
 		data, err = os.ReadFile(filepath.Join(w.root, "bootstrap.local.json"))
 	}
@@ -36,7 +43,9 @@ func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, 
 	if saved.Repository != repo || (saved.Environment != "" && saved.Environment != w.environment) || saved.Stack != w.environment {
 		return nil
 	}
-	for key, value := range map[string]string{"AWS_REGION": saved.Region, "PULUMI_BACKEND_URL": saved.Backend, "PULUMI_STACK": saved.Stack} {
+	w.memory = saved
+	w.resuming = true
+	for key, value := range map[string]string{"AWS_REGION": saved.Region, "PULUMI_BACKEND_URL": saved.Backend, "PULUMI_STACK": saved.Stack, "AWS_ACCOUNT_ID": saved.Account, "AWS_ROLE_ARN": saved.RoleARN} {
 		if existing[key] == "" && value != "" {
 			values[key] = value
 		}
@@ -44,13 +53,59 @@ func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, 
 	return nil
 }
 func (w *bootstrapWizard) saveSelections(repo string, values map[string]string) error {
-	data, err := json.MarshalIndent(bootstrapCheckpoint{Environment: w.environment, Repository: repo, Region: values["AWS_REGION"], Backend: values["PULUMI_BACKEND_URL"], Stack: values["PULUMI_STACK"]}, "", "  ")
+	w.memory.Repository, w.memory.Environment = repo, w.environment
+	w.memory.Region, w.memory.Backend, w.memory.Stack = values["AWS_REGION"], values["PULUMI_BACKEND_URL"], values["PULUMI_STACK"]
+	w.memory.Account, w.memory.RoleARN = values["AWS_ACCOUNT_ID"], values["AWS_ROLE_ARN"]
+	return w.saveMemory()
+}
+func (w *bootstrapWizard) saveMemory() error {
+	data, err := json.MarshalIndent(w.memory, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(w.checkpointPath(), append(data, '\n'), 0600)
+	path := w.checkpointPath()
+	if err := os.WriteFile(path+".tmp", append(data, '\n'), 0600); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		if err := os.Rename(path, path+".bak"); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(path+".tmp", path); err != nil {
+		return err
+	}
+	_ = os.Remove(path + ".bak")
+	return nil
 }
 
 func (w *bootstrapWizard) checkpointPath() string {
 	return filepath.Join(w.root, "bootstrap."+w.environment+".local.json")
+}
+
+// Only explicitly allowlisted non-secret UI settings enter the checkpoint.
+func (w *bootstrapWizard) remember(key, value string) error {
+	switch key {
+	case "authMode", "profile", "baseDomain", "origin", "senderDomain", "sender", "roleName", "route53", "immutable", "dnsFingerprint":
+	default:
+		return errors.New("setting is not allowed in bootstrap memory")
+	}
+	if w.memory.Settings == nil {
+		w.memory.Settings = map[string]string{}
+	}
+	w.memory.Settings[key] = value
+	return w.saveMemory()
+}
+func (w *bootstrapWizard) remembered(key string) (string, bool) {
+	if w == nil {
+		return "", false
+	}
+	v, ok := w.memory.Settings[key]
+	return v, ok
+}
+func (w *bootstrapWizard) markStage(stage string) error {
+	w.memory.Stage = stage
+	return w.saveMemory()
 }

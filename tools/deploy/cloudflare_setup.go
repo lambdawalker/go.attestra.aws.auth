@@ -76,9 +76,7 @@ func (w *bootstrapWizard) configureCloudflare() error {
 		mutations = mutations || change.Action != "keep"
 	}
 	if mutations {
-		if err = confirm("Apply these SES DNS changes to " + zone.Name + "? CNAMEs will be DNS only; unrelated records are preserved."); err != nil {
-			return err
-		}
+		fmt.Println("Applying SES DNS changes to " + zone.Name + "; CNAMEs will be DNS only and unrelated records are preserved.")
 		if err = client.apply(selected, plan); err != nil {
 			return fmt.Errorf("DNS setup stopped; completed changes retained, rerun to resume: %w", err)
 		}

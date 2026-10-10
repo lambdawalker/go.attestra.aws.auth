@@ -225,8 +225,13 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 		return errors.New("install AWS CLI v2 and add it to PATH")
 	}
 	mode, profile := "sso", "attestra"
-	if err := huh.NewSelect[string]().Title("AWS authentication for one-time IAM setup").Options(huh.NewOption("IAM Identity Center (SSO)", "sso"), huh.NewOption("AWS browser login", "login"), huh.NewOption("Enter access key credentials", "keys")).Value(&mode).Run(); err != nil {
-		return err
+	savedMode, authKnown := bootstrap.remembered("authMode")
+	if authKnown {
+		mode = savedMode
+	} else {
+		if err := huh.NewSelect[string]().Title("AWS authentication for one-time IAM setup").Options(huh.NewOption("IAM Identity Center (SSO)", "sso"), huh.NewOption("AWS browser login", "login"), huh.NewOption("Enter access key credentials", "keys")).Value(&mode).Run(); err != nil {
+			return err
+		}
 	}
 	o := options{Region: values["AWS_REGION"], Backend: values["PULUMI_BACKEND_URL"], Stack: values["PULUMI_STACK"]}
 	if bootstrap != nil {
@@ -235,14 +240,20 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	var c credentials
 	var err error
 	if mode != "keys" {
-		if err = input("AWS profile", &profile, false, true).Run(); err != nil {
-			return err
+		if v, ok := bootstrap.remembered("profile"); ok {
+			profile = v
+		} else {
+			if err = input("AWS profile", &profile, false, true).Run(); err != nil {
+				return err
+			}
 		}
 		o.Profile = profile
 		o.Sso = mode == "sso"
 		configure := false
-		if err = huh.NewConfirm().Title("Configure this AWS profile first? Choose yes for a new SSO profile.").Value(&configure).Run(); err != nil {
-			return err
+		if !authKnown {
+			if err = huh.NewConfirm().Title("Configure this AWS profile first? Choose yes for a new SSO profile.").Value(&configure).Run(); err != nil {
+				return err
+			}
 		}
 		if configure {
 			args := []string{"configure", "--profile", profile}
@@ -289,6 +300,18 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	if old := values["AWS_ACCOUNT_ID"]; old != "" && old != id.Account {
 		return fmt.Errorf("AWS account %s differs from existing environment account %s; use the correct AWS profile", id.Account, old)
 	}
+	if bootstrap != nil {
+		if err := bootstrap.remember("authMode", mode); err != nil {
+			return err
+		}
+		if err := bootstrap.remember("profile", profile); err != nil {
+			return err
+		}
+		bootstrap.memory.Account = id.Account
+		if err := bootstrap.saveMemory(); err != nil {
+			return err
+		}
+	}
 	fmt.Printf("AWS account: %s\nIdentity: %s\n", id.Account, id.Arn)
 	if bootstrap != nil {
 		if err = bootstrap.prepare(a, c, o, id.Account); err != nil {
@@ -315,8 +338,17 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	// Older repositories may have opted into immutable subjects or been renamed.
 	if metadata.CreatedAt.Before(time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)) {
 		immutable := true
-		if err = huh.NewConfirm().Title("Does this repository use immutable OIDC subjects (owner/repository IDs)?").Value(&immutable).Run(); err != nil {
-			return err
+		if saved, ok := bootstrap.remembered("immutable"); ok {
+			immutable = saved == "true"
+		} else {
+			if err = huh.NewConfirm().Title("Does this repository use immutable OIDC subjects (owner/repository IDs)?").Value(&immutable).Run(); err != nil {
+				return err
+			}
+		}
+		if bootstrap != nil {
+			if err := bootstrap.remember("immutable", fmt.Sprint(immutable)); err != nil {
+				return err
+			}
 		}
 		if immutable {
 			subject = fmt.Sprintf("repo:%s@%d/%s@%d:environment:%s", metadata.Owner.Login, metadata.Owner.ID, metadata.Name, metadata.ID, environment)
@@ -327,27 +359,44 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 		parts := strings.Split(old, "/")
 		name = parts[len(parts)-1]
 	}
-	if err = input("Deployment role name (create or reuse setup-managed role)", &name, false, true).Validate(func(s string) error {
-		if !regexp.MustCompile(`^[A-Za-z0-9_+=,.@-]{1,64}$`).MatchString(s) {
-			return errors.New("invalid IAM role name")
+	if v, ok := bootstrap.remembered("roleName"); ok {
+		name = v
+	}
+	if bootstrap == nil || (values["AWS_ROLE_ARN"] == "" && bootstrap.memory.Settings["roleName"] == "") {
+		if err = input("Deployment role name (create or reuse setup-managed role)", &name, false, true).Validate(func(s string) error {
+			if !regexp.MustCompile(`^[A-Za-z0-9_+=,.@-]{1,64}$`).MatchString(s) {
+				return errors.New("invalid IAM role name")
+			}
+			return nil
+		}).Run(); err != nil {
+			return err
 		}
-		return nil
-	}).Run(); err != nil {
-		return err
+	}
+	if bootstrap != nil {
+		if err := bootstrap.remember("roleName", name); err != nil {
+			return err
+		}
 	}
 	policies := deploymentPolicies(id.Account, o)
 	iamDocument := policies["attestra-iam"].(map[string]any)
 	iamDocument["Statement"] = append(iamDocument["Statement"].([]map[string]any), map[string]any{
 		"Effect": "Deny", "Action": "iam:*", "Resource": []string{"arn:aws:iam::" + id.Account + ":role/" + name, "arn:aws:iam::" + id.Account + ":role/*/" + name},
 	})
-	zone := ""
-	if err = input("Route53 hosted zone ID (blank when DNS is managed outside Pulumi)", &zone, false, false).Validate(func(v string) error {
-		if v != "" && !regexp.MustCompile(`^Z[A-Z0-9]+$`).MatchString(v) {
-			return errors.New("enter a hosted zone ID beginning with Z, or leave blank")
+	zone, zoneKnown := bootstrap.remembered("route53")
+	if !zoneKnown {
+		if err = input("Route53 hosted zone ID (blank when DNS is managed outside Pulumi)", &zone, false, false).Validate(func(v string) error {
+			if v != "" && !regexp.MustCompile(`^Z[A-Z0-9]+$`).MatchString(v) {
+				return errors.New("enter a hosted zone ID beginning with Z, or leave blank")
+			}
+			return nil
+		}).Run(); err != nil {
+			return err
 		}
-		return nil
-	}).Run(); err != nil {
-		return err
+	}
+	if bootstrap != nil {
+		if err := bootstrap.remember("route53", zone); err != nil {
+			return err
+		}
 	}
 	if zone != "" {
 		policies["attestra-dns"] = map[string]any{"Version": "2012-10-17", "Statement": []any{
@@ -397,8 +446,10 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	for _, n := range sortedPolicyNames(policies) {
 		fmt.Printf("\n%s:\n%s\n", n, policyJSON(policies[n]))
 	}
-	if err = confirm("Apply these AWS IAM changes in account " + id.Account + "?"); err != nil {
-		return err
+	if bootstrap == nil {
+		if err = confirm("Apply these AWS IAM changes in account " + id.Account + "?"); err != nil {
+			return err
+		}
 	}
 	arn, err := applyAWSSetup(a, plan)
 	if err != nil {

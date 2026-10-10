@@ -20,9 +20,12 @@ func TestSESPrerequisiteTargets(t *testing.T) {
 		}
 		r := goodRunner()
 		o := testOptions()
-		o.Stack, o.Targets = "qa", targets
+		o.Stack, o.Targets, o.CI = "qa", targets, "deploy"
 		if err := execute(r, o); err != nil {
 			t.Fatal(err)
+		}
+		if !strings.Contains(r.calls[len(r.calls)-1], "--yes --non-interactive") {
+			t.Fatal("deployment still prompts", r.calls)
 		}
 		for _, call := range r.calls[4:] {
 			if strings.Contains(call, "--target-dependents") {
@@ -71,5 +74,18 @@ func TestWaitSESStopsOnFailureAndCancellation(t *testing.T) {
 		if err == nil || calls != 1 {
 			t.Fatalf("%s: %v calls %d", mode, err, calls)
 		}
+	}
+}
+
+func TestDNSMemoryInvalidatesWhenTokensChange(t *testing.T) {
+	e := sesEvidence{Records: []dnsRecord{{Type: "TXT", Name: "_amazonses.dev.example.com", Content: "old"}}}
+	original := dnsFingerprint(e)
+	e.Verification = "Success"
+	if dnsFingerprint(e) != original {
+		t.Fatal("status changed DNS fingerprint")
+	}
+	e.Records[0].Content = "new"
+	if dnsFingerprint(e) == original {
+		t.Fatal("replacement identity reused old DNS completion")
 	}
 }
