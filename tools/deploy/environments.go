@@ -88,7 +88,7 @@ func chooseEnvironment(existing []string) (string, error) {
 	}
 	choices = append(choices, huh.NewOption("Create another environment…", ""))
 	selected := "dev"
-	if err := huh.NewSelect[string]().Title("Environment to set up").Description("Choose dev, qa, prod, or an existing environment. Select Create another environment to enter a custom name.").Height(len(choices)).Options(choices...).Value(&selected).Run(); err != nil {
+	if err := huh.NewSelect[string]().Title("Environment to set up").Description(fmt.Sprintf("%d choices • ↑/↓ to browse/scroll • Enter to select. Choose Create another environment for a custom name.", len(choices))).Options(choices...).Value(&selected).Run(); err != nil {
 		return "", err
 	}
 	if selected == "" {
