@@ -38,7 +38,9 @@ Do not delete or edit this progress file midway: once the SES identity is destro
 
 The skip choice is saved as `DNSSkipped`, separately from completed DNS deletion, and is preserved when resuming. Remaining DNS records need manual cleanup; their expected names/values and any previously approved IDs remain in the checkpoint. Skipping after an earlier partial cleanup does not restore deleted records. The final summary explicitly reports the skip.
 
-A completed checkpoint blocks another teardown. If you later recreate the environment, archive the completed checkpoint first so the next teardown reads fresh DNS/resource identities. Existing stack configuration and GitHub settings must match the saved target; changed targets stop the script for review.
+Before credentials are unlocked or providers are contacted, the wizard checks the selected environment's local teardown receipt. A completed receipt shows the environment and exact file path, then offers to choose another environment or cancel. A completed QA receipt does not block dev; receipts are read by the selected environment name. The selected environment is also printed before authentication.
+
+A completed checkpoint blocks another teardown of that same environment. If you later recreate the environment, archive the completed checkpoint first so the next teardown reads fresh DNS/resource identities. Existing stack configuration and GitHub settings must match the saved target; changed targets stop the script for review.
 
 ## Cloudflare request errors
 

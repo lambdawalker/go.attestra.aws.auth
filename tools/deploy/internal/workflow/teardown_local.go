@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -71,4 +72,51 @@ func teardownRepository(root, environment string) string {
 		return saved.Repository
 	}
 	return credentialRepository(root, environment, localRepository(root))
+}
+
+// Inspect only the selected environment's local receipt before unlocking a
+// vault or contacting providers. Keep completed receipts as recreation guards.
+func completedTeardown(root, environment string) (bool, error) {
+	if err := ui.ValidateEnvironment(environment); err != nil {
+		return false, err
+	}
+	path := filepath.Join(root, "teardown."+environment+".local.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var p teardownProgress
+	if json.Unmarshal(data, &p) != nil || p.Environment != environment {
+		return false, fmt.Errorf("invalid or mismatched teardown checkpoint for environment %q: %s", environment, path)
+	}
+	return p.Complete, nil
+}
+
+func chooseTeardownEnvironment(root string, choose func() (string, error), another func() (bool, error)) (string, error) {
+	for {
+		environment, err := choose()
+		if err != nil {
+			return "", err
+		}
+		complete, err := completedTeardown(root, environment)
+		if err != nil {
+			return "", err
+		}
+		if !complete {
+			fmt.Printf("Selected environment: %s\n", environment)
+			return environment, nil
+		}
+		path := filepath.Join(root, "teardown."+environment+".local.json")
+		fmt.Printf("Teardown for %q is already complete. Saved progress: %s\nThis receipt applies only to %s. Keep it unless that same environment has been recreated; in that case archive this exact file before retrying.\n", environment, path, environment)
+		retry, err := another()
+		if err != nil {
+			return "", err
+		}
+		if !retry {
+			return "", errors.New("teardown cancelled; no resources changed")
+		}
+	}
 }

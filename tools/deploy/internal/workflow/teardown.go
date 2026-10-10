@@ -153,7 +153,13 @@ func runTeardown(root string) error {
 		return errors.New("teardown requires an interactive terminal; there is no unattended destroy mode")
 	}
 	fmt.Println("Attestra • Teardown environment")
-	environment, err := ui.ChooseEnvironmentFor(teardownEnvironments(root), "Environment to tear down")
+	environment, err := chooseTeardownEnvironment(root, func() (string, error) {
+		return ui.ChooseEnvironmentFor(teardownEnvironments(root), "Environment to tear down")
+	}, func() (bool, error) {
+		another := true
+		err := huh.NewConfirm().Title("Choose another environment?").Affirmative("Choose environment").Negative("Cancel teardown").Value(&another).Run()
+		return another, err
+	})
 	if err != nil {
 		return err
 	}
@@ -217,7 +223,7 @@ func runTeardown(root string) error {
 			return errors.New("teardown checkpoint does not match repository/environment")
 		}
 		if p.Complete {
-			return errors.New("this teardown is already complete; archive its local progress file before tearing down a recreated environment")
+			return fmt.Errorf("teardown for environment %q is already complete in %s; only archive that file if this same environment was recreated", environment, path)
 		}
 	} else if _, e := os.Stat(path + ".bak"); e == nil {
 		return errors.New("interrupted checkpoint replacement; restore the .bak checkpoint before continuing")

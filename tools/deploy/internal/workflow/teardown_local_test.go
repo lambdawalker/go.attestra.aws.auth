@@ -87,3 +87,62 @@ func TestTeardownRemovesLegacyDevCheckpoint(t *testing.T) {
 		t.Fatal("legacy completion can resurrect deleted environment")
 	}
 }
+
+func TestCompletedTeardownIsScopedToSelectedEnvironment(t *testing.T) {
+	root := t.TempDir()
+	p := teardownProgress{Repository: "owner/repo", Environment: "qa", Complete: true}
+	if err := p.save(filepath.Join(root, "teardown.qa.local.json")); err != nil {
+		t.Fatal(err)
+	}
+	for _, env := range []string{"dev", "qa"} {
+		complete, err := completedTeardown(root, env)
+		if err != nil || complete != (env == "qa") {
+			t.Fatalf("%s: complete=%t err=%v", env, complete, err)
+		}
+	}
+}
+
+func TestCompletedTeardownRejectsMismatchedOrInvalidCheckpoint(t *testing.T) {
+	for _, data := range []string{`{"Environment":"qa","Complete":true}`, `broken`} {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "teardown.dev.local.json"), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := completedTeardown(root, "dev"); err == nil {
+			t.Fatal("accepted invalid/mismatched checkpoint")
+		}
+	}
+}
+
+func TestTeardownCanReselectAfterCompletedEnvironment(t *testing.T) {
+	root := t.TempDir()
+	p := teardownProgress{Environment: "qa", Complete: true}
+	path := filepath.Join(root, "teardown.qa.local.json")
+	if err := p.save(path); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	choices := []string{"qa", "dev"}
+	prompts := 0
+	selected, err := chooseTeardownEnvironment(root, func() (string, error) {
+		next := choices[0]
+		choices = choices[1:]
+		return next, nil
+	}, func() (bool, error) { prompts++; return true, nil })
+	after, _ := os.ReadFile(path)
+	if err != nil || selected != "dev" || prompts != 1 || string(before) != string(after) {
+		t.Fatalf("selected=%s prompts=%d err=%v", selected, prompts, err)
+	}
+}
+
+func TestCompletedTeardownCanCancel(t *testing.T) {
+	root := t.TempDir()
+	p := teardownProgress{Environment: "dev", Complete: true}
+	if err := p.save(filepath.Join(root, "teardown.dev.local.json")); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := chooseTeardownEnvironment(root, func() (string, error) { return "dev", nil }, func() (bool, error) { return false, nil })
+	if err == nil || selected != "" {
+		t.Fatal("completed teardown continued")
+	}
+}
