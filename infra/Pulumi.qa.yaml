@@ -2,8 +2,8 @@ encryptionsalt: v1:4XmH4c3MoHk=:v1:5rFFHaKqjlGcXXHJ:LGkZHsFcukp2QJehSrnFl3GfaOoL
 config:
   attestra-auth-email:apiDomain: qa.api.attestrabond.com
   attestra-auth-email:appOrigin: https://qa.attestrabond.com
-  attestra-auth-email:captureReservedConcurrency: "5"
-  attestra-auth-email:captureWorkerMaxConcurrency: "5"
+  attestra-auth-email:captureReservedConcurrency: "-1"
+  attestra-auth-email:captureWorkerMaxConcurrency: "2"
   attestra-auth-email:senderAddress: verify@qa.info.attestrabond.com
   attestra-auth-email:senderDomain: qa.info.attestrabond.com
   aws:region: us-east-2
