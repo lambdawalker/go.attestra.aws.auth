@@ -1,0 +1,98 @@
+package workflow
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
+
+	"github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/dns"
+
+	"github.com/charmbracelet/huh"
+)
+
+func (w *bootstrapWizard) configureCloudflare() (err error) {
+	defer func() {
+		if err != nil {
+			w.cf = nil
+			w.secrets.Cloudflare = ""
+		}
+	}()
+	// Refuse two controllers managing the same SES DNS records.
+	data, err := w.r.Exec(filepath.Join(w.root, "infra"), true, "pulumi", "config", "--json", "--stack", w.o.Stack)
+	if err != nil {
+		return err
+	}
+	var config map[string]struct{ Value string }
+	if json.Unmarshal(data, &config) != nil {
+		return errors.New("cannot read stack configuration")
+	}
+	if config["attestra-auth-email:route53ZoneId"].Value != "" {
+		return errors.New("this stack configures DNS through Route53; review that configuration before using Cloudflare")
+	}
+	evidence, err := w.readSES()
+	if err != nil {
+		return err
+	}
+	if len(evidence.Records) != 4 {
+		return errors.New("SES verification TXT and all three DKIM tokens must exist; finish creating the SES identity with deployment, then retry")
+	}
+	fmt.Printf("Cloudflare DNS • environment %s • AWS account %s • region %s • identity %s\n", w.environment, w.account, w.o.Region, evidence.Domain)
+	if err := w.ensureCloudflare(); err != nil {
+		return err
+	}
+	client := w.cf
+	zones, err := client.Zones(evidence.Domain)
+	if err != nil {
+		return err
+	}
+	if len(zones) == 0 {
+		return errors.New("no active matching zone accessible to this token; check zone scope and DNS delegation")
+	}
+	choices := make([]huh.Option[string], 0, len(zones))
+	for _, zone := range zones {
+		choices = append(choices, huh.NewOption(zone.Name+" ("+zone.ID+")", zone.ID))
+	}
+	selected := zones[0].ID
+	if len(zones) > 1 {
+		if err = huh.NewSelect[string]().Title("Authoritative Cloudflare zone").Options(choices...).Value(&selected).Run(); err != nil {
+			return err
+		}
+	}
+	var zone dns.Zone
+	for _, candidate := range zones {
+		if candidate.ID == selected {
+			zone = candidate
+		}
+	}
+	if zone.ID == "" {
+		return errors.New("invalid zone selection")
+	}
+	for _, record := range evidence.Records {
+		if !dns.WithinZone(record.Name, zone.Name) {
+			return errors.New("SES record is outside the selected zone")
+		}
+	}
+	plan, err := client.Plan(selected, evidence.Records)
+	if err != nil {
+		return err
+	}
+	mutations := false
+	for _, change := range plan {
+		fmt.Printf("%-8s %-5s %s → %s\n", change.Action, change.Record.Type, change.Record.Name, change.Record.Content)
+		mutations = mutations || change.Action != "keep"
+	}
+	if mutations {
+		fmt.Println("Applying SES DNS changes to " + zone.Name + "; CNAMEs will be DNS only and unrelated records are preserved.")
+		if err = client.Apply(selected, plan); err != nil {
+			return fmt.Errorf("DNS setup stopped; completed changes retained, rerun to resume: %w", err)
+		}
+	}
+	if w.vault != nil {
+		if err := w.vault.Save(w.secrets); err != nil {
+			return err
+		}
+	}
+	fmt.Println("✓ Cloudflare records match SES. AWS verification may take time; choose the DNS check again, then resume deployment. Website DNS/hosting and SES sandbox access are separate.")
+	return w.showDNS()
+}

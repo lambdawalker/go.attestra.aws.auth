@@ -1,6 +1,6 @@
 # Local deployment with Go and S3 state
 
-The Go tool in `tools/deploy` provides terminal forms using [Charm Huh](https://github.com/charmbracelet/huh). It runs on Windows, Linux and macOS. The UI dependencies live in a separate Go module and do not enter Lambda binaries.
+The Go tool in `tools/deploy` provides terminal forms using [Charm Huh](https://github.com/charmbracelet/huh). It runs on Windows, Linux and macOS. The UI dependencies live in a separate Go module and do not enter Lambda binaries. The [tool package map](../tools/deploy/README.md) describes the internal code organization and where to add tests.
 
 For a deployment from scratch, start with the [first-deployment guide](first-deployment.md). The routine deploy tool expects an existing bucket and stack; the `setup.bat` / `setup.sh` wizard can create them. migration below is only for existing Pulumi Cloud stacks.
 
