@@ -138,3 +138,5 @@ error while waiting. On timeout or cancellation it retains the last failure and
 all infrastructure; rerun setup to resume. Lambda START/END/REPORT lines alone
 do not establish HTTP success. A healthy index returns HTTP 200 with
 `schemaVersion: 1`; an empty environments list is valid before publication.
+
+For permanent removal of the shared infrastructure after retiring every environment, see [shared index teardown](teardown-index.md).

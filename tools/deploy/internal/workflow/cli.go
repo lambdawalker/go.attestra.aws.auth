@@ -25,7 +25,7 @@ func Run() error {
 		return runCredentialProcess(os.Args[2])
 	}
 	var o options
-	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault bool
+	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex bool
 	flag.StringVar(&o.ExportAndroid, "export-android", "", "Export deployed public Android settings to a properties file without deployment")
 	flag.BoolVar(&manageVault, "manage-credentials", false, "Manage the local credential vault without running setup")
 	flag.BoolVar(&o.HealthCheck, "health-check", false, "Check the deployed environment without building or deploying")
@@ -45,6 +45,7 @@ func Run() error {
 	flag.BoolVar(&freshCredentials, "fresh-credentials", false, "Enter new credentials instead of unlocking the local vault (requires -bootstrap)")
 	flag.BoolVar(&forceSetup, "force-setup", false, "Bypass the local completed-setup check and reconcile remote services (requires -bootstrap)")
 	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh environment deployment, or resume setup")
+	flag.BoolVar(&teardownIndex, "teardown-index", false, "Interactively remove the shared index after all environments are torn down")
 	flag.BoolVar(&teardown, "teardown", false, "Interactively tear down an environment and its GitHub/Cloudflare configuration")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
@@ -86,6 +87,18 @@ func Run() error {
 
 	if (forceSetup || freshCredentials) && !bootstrap {
 		return errors.New("-force-setup and -fresh-credentials require -bootstrap")
+	}
+	if teardownIndex {
+		var unsupported string
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "teardown-index" && f.Name != "repo-root" {
+				unsupported = f.Name
+			}
+		})
+		if unsupported != "" {
+			return fmt.Errorf("-%s cannot be combined with -teardown-index", unsupported)
+		}
+		return runIndexTeardown(root)
 	}
 	if teardown {
 		var unsupported string

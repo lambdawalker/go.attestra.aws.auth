@@ -128,6 +128,12 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 			fmt.Println("Could not remove shared index bootstrap.lock; inspect it before the next setup.")
 		}
 	}()
+	if e = checkIndexTeardownPending(w.a, bucket, w.account); e != nil {
+		return e
+	}
+	if e = archiveCompletedIndexTeardown(w.root, w.account, o.Region); e != nil {
+		return e
+	}
 	if w.secrets.IndexPulumi == "" {
 		if e = ui.Input("Shared index Pulumi passphrase (use the original on reruns; save it in your password manager)", &w.secrets.IndexPulumi, true, true).Run(); e != nil {
 			return e

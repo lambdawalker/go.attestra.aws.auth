@@ -13,6 +13,10 @@ import (
 )
 
 func stackListed(data []byte, name string) (bool, error) {
+	return stackListedInProject(data, name, "attestra-auth-email")
+}
+
+func stackListedInProject(data []byte, name, project string) (bool, error) {
 	var stacks []struct{ Name string }
 	if err := json.Unmarshal(data, &stacks); err != nil || stacks == nil {
 		return false, errors.New("invalid Pulumi stack list; no stack initialized")
@@ -21,7 +25,7 @@ func stackListed(data []byte, name string) (bool, error) {
 		if s.Name == "" {
 			return false, errors.New("invalid Pulumi stack entry; no stack initialized")
 		}
-		if s.Name == name || strings.HasSuffix(s.Name, "/attestra-auth-email/"+name) {
+		if s.Name == name || strings.HasSuffix(s.Name, "/"+project+"/"+name) {
 			return true, nil
 		}
 	}

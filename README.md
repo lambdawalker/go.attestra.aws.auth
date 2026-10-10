@@ -279,3 +279,5 @@ Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the 
 Setup provisions an independent `infra-index/` Pulumi project for `https://index.<base-domain>/v1/environments`. It is reused across environments and retained during teardown. Successful setup/deployment publishes public client configuration with a hash and revision; environment-scoped locks prevent concurrent writers from overwriting each other.
 
 For existing environments, pull `main` and run `setup.bat -force-setup` (or `./setup.sh -force-setup`) once per environment, then commit the generated application and shared-stack YAML. See [environment index setup, concurrency, and recovery](docs/environment-index.md). GitHub's **publish** operation retries a saved index publication after a successful deployment.
+
+To remove the shared index itself after all environments are torn down, use `teardown-index.bat` or `./teardown-index.sh`. This is separate from environment teardown and includes registry, DNS, and deletion checks. See [shared index teardown](docs/teardown-index.md).
