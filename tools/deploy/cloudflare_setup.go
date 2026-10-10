@@ -10,7 +10,12 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-func (w *bootstrapWizard) configureCloudflare() error {
+func (w *bootstrapWizard) configureCloudflare() (err error) {
+	defer func() {
+		if err != nil {
+			w.cf = nil
+		}
+	}()
 	// Refuse two controllers managing the same SES DNS records.
 	data, err := w.r.Exec(filepath.Join(w.root, "infra"), true, "pulumi", "config", "--json", "--stack", w.o.Stack)
 	if err != nil {
@@ -32,12 +37,14 @@ func (w *bootstrapWizard) configureCloudflare() error {
 	}
 	fmt.Printf("Cloudflare DNS • environment %s • AWS account %s • region %s • identity %s\n", w.environment, w.account, w.o.Region, evidence.Domain)
 	fmt.Println("Create a Cloudflare API token with Zone:Read and DNS:Edit, limited to the authoritative zone. Token stays in memory and is never saved to GitHub, Pulumi, or a local file.")
-	token := ""
-	if err = input("Cloudflare API token (hidden)", &token, true, true).Run(); err != nil {
-		return err
+	if w.cf == nil {
+		token := ""
+		if err = input("Cloudflare API token (hidden)", &token, true, true).Run(); err != nil {
+			return err
+		}
+		w.cf = newCloudflareClient(strings.TrimSpace(token))
 	}
-	client := newCloudflareClient(strings.TrimSpace(token))
-	w.cf = client
+	client := w.cf
 	zones, err := client.zones(evidence.Domain)
 	if err != nil {
 		return err
@@ -50,8 +57,10 @@ func (w *bootstrapWizard) configureCloudflare() error {
 		choices = append(choices, huh.NewOption(zone.Name+" ("+zone.ID+")", zone.ID))
 	}
 	selected := zones[0].ID
-	if err = huh.NewSelect[string]().Title("Authoritative Cloudflare zone").Options(choices...).Value(&selected).Run(); err != nil {
-		return err
+	if len(zones) > 1 {
+		if err = huh.NewSelect[string]().Title("Authoritative Cloudflare zone").Options(choices...).Value(&selected).Run(); err != nil {
+			return err
+		}
 	}
 	var zone cloudflareZone
 	for _, candidate := range zones {

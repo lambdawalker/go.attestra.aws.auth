@@ -10,8 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"time"
-
-	"github.com/charmbracelet/huh"
 )
 
 func dnsFingerprint(e sesEvidence) string {
@@ -101,21 +99,8 @@ func (w *bootstrapWizard) deployStages() error {
 		fmt.Println("2 / 4 • Configure verification DNS")
 		fingerprint, _ := w.remembered("dnsFingerprint")
 		if !route53 && fingerprint != dnsFingerprint(evidence) {
-			choice := "cloudflare"
-			if err := huh.NewSelect[string]().Title("Publish SES verification records").Options(huh.NewOption("Configure Cloudflare DNS", "cloudflare"), huh.NewOption("DNS already configured / configure manually", "manual"), huh.NewOption("Pause setup; resume later", "pause")).Value(&choice).Run(); err != nil {
+			if err := w.configureCloudflare(); err != nil {
 				return err
-			}
-			switch choice {
-			case "pause":
-				return errors.New("setup paused; SES prerequisites retained; rerun Build, preview and deploy to resume")
-			case "cloudflare":
-				if err := w.configureCloudflare(); err != nil {
-					return err
-				}
-			case "manual":
-				if err := w.showDNS(); err != nil {
-					return err
-				}
 			}
 			if err := w.remember("dnsFingerprint", dnsFingerprint(evidence)); err != nil {
 				return err

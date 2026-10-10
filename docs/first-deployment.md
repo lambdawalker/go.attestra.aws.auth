@@ -84,6 +84,15 @@ The passphrase is supplied to Pulumi subprocesses through their environment, inc
 
 The state bucket is separate from the application/ID-evidence bucket. Keep state versioning and do not add evidence expiry rules to it. S3 state avoids the Pulumi Cloud API, but AWS storage/requests can incur charges.
 
+### Choose the DNS provider once
+
+Setup asks **Which service manages DNS for your domain?** with **Amazon Route 53** and **Cloudflare** options. Choose the service hosting the authoritative DNS records; this does not transfer your domain or change nameservers.
+
+- **Amazon Route 53:** enter the existing public hosted zone ID. Setup saves `attestra-auth-email:route53ZoneId`, grants the deployment role access to that zone, and uses Pulumi to publish SES verification/DKIM, ACM certificate validation, and the API hostname records. No Cloudflare prompts appear.
+- **Cloudflare:** setup leaves Route 53 management disabled. When the AWS verification records exist, it asks for a zone-scoped API token and publishes the records, reusing that token in memory for certificate validation and the API hostname. It does not ask you to choose a DNS provider again during deployment. If there is only one matching Cloudflare zone, it is selected automatically.
+
+The choice is remembered per environment. Existing Pulumi Route 53 configuration takes precedence; older remembered hosted zone IDs are reused, and an older blank Route 53 answer maps to Cloudflare. Changing providers for an established environment requires a deliberate DNS migration; editing a remembered choice does not move DNS delegation or remove existing records.
+
 ### Domain defaults for each environment
 
 Enter a base domain such as `example.com`. Setup offers editable defaults:
@@ -130,7 +139,7 @@ Choose **Build, preview and deploy** and follow its DNS stage. You can also use 
 
 The token stays in memory and is never saved to GitHub, Pulumi configuration, or local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after displaying the planned changes. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
 
-The wizard refuses Cloudflare setup when `route53ZoneId` is configured, to avoid two DNS managers for the same records. Cloudflare records are managed by this optional setup step, not by Pulumi; destroying a stack does not remove them. Keep DKIM CNAME flattening disabled in Cloudflare, including the zone-wide “flatten all CNAMEs” option. The wizard does not change zone-wide settings or DNS delegation.
+The wizard refuses Cloudflare setup when `route53ZoneId` is configured, to avoid two DNS managers for the same records. Cloudflare records are managed by the selected provider’s setup step, not by Pulumi; destroying a stack does not remove them. Keep DKIM CNAME flattening disabled in Cloudflare, including the zone-wide “flatten all CNAMEs” option. The wizard does not change zone-wide settings or DNS delegation.
 
 Alternatively, use **Show SES DNS records and check verification** and copy the displayed records manually. [Detailed DNS instructions and manual verification commands](../README.md#configure-sender-dns-in-cloudflare) are available if needed.
 
@@ -171,7 +180,7 @@ Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the 
 After configuration, the setup wizard automatically performs these stages in order. The recovery menu also offers **Build, preview and deploy**:
 
 1. Build Lambda archives, then preview and apply a targeted Pulumi update for the SES identity and DKIM configuration only. If `route53ZoneId` is configured, its SES verification records are included. Other application resources are retained, not removed or deployed by this stage.
-2. If SES is not already verified, configure Cloudflare DNS through the wizard, or display the records for manual publication. You can also pause and resume later. Route53-managed records do not prompt for a Cloudflare token.
+2. If SES is not already verified, publish DNS using the provider already selected. Cloudflare setup runs automatically at this point; Route 53 records are managed by the targeted Pulumi update and do not prompt for a Cloudflare token.
 3. Poll AWS every 15 seconds until both identity verification and DKIM report `Success`. Pending verification blocks the full deployment. Ctrl+C interrupts this wait and returns to the menu; resources are retained. Failed verification or an AWS read error stops the sequence with an explanation.
 4. Preview and apply the full application deployment. Both Pulumi updates run automatically after preview, without another deployment confirmation.
 
@@ -181,7 +190,7 @@ GitHub Actions deploy checks SES readiness first and gives instructions to compl
 
 ## Automatic setup and resume memory
 
-Full setup continues automatically from configuration through IAM/GitHub setup, SES prerequisites, DNS publication, verification polling and complete application deployment. It displays plans before applying them without repeated deployment approvals. On success it prints the API/Cognito values needed by Android and exits. If a phase fails, successful work is retained and the recovery menu remains available. The standalone GitHub-only setup keeps its existing confirmations. Stack migration and replacing local encryption metadata still require explicit decisions.
+Full setup continues automatically from configuration through IAM/GitHub setup, SES prerequisites, DNS publication, verification polling and complete application deployment. It displays plans before applying them without repeated deployment approvals. On success it prints the API/Cognito values needed by Android and exits. If a phase fails, successful work is retained and the recovery menu remains available. The standalone GitHub-only setup keeps its existing confirmations. Evidence of missing previous stack state stops setup for migration/restoration; existing encryption metadata is preserved.
 
 The ignored `bootstrap.<environment>.local.json` now remembers non-secret configuration choices, AWS authentication mode/profile, account and deployment role, application domains, DNS choices, and the latest completed deployment phase. Writes use a temporary file and a recovery backup; `.tmp` and `.bak` files are also ignored. A backup is read if replacement was interrupted. Keep these files private and run only one setup instance for an environment at a time.
 

@@ -382,21 +382,14 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	iamDocument["Statement"] = append(iamDocument["Statement"].([]map[string]any), map[string]any{
 		"Effect": "Deny", "Action": "iam:*", "Resource": []string{"arn:aws:iam::" + id.Account + ":role/" + name, "arn:aws:iam::" + id.Account + ":role/*/" + name},
 	})
-	zone, zoneKnown := bootstrap.remembered("route53")
-	if !zoneKnown {
-		if err = input("Route53 hosted zone ID (blank when DNS is managed outside Pulumi)", &zone, false, false).Validate(func(v string) error {
-			if v != "" && !regexp.MustCompile(`^Z[A-Z0-9]+$`).MatchString(v) {
-				return errors.New("enter a hosted zone ID beginning with Z, or leave blank")
-			}
-			return nil
-		}).Run(); err != nil {
-			return err
+	zone, _ := bootstrap.remembered("route53")
+	if bootstrap == nil {
+		_, selectedZone, e := askDNSProvider("", "")
+		if e != nil {
+			return e
 		}
-	}
-	if bootstrap != nil {
-		if err := bootstrap.remember("route53", zone); err != nil {
-			return err
-		}
+		zone = selectedZone
+		fmt.Println("IAM-only maintenance: DNS records are configured by the full setup wizard.")
 	}
 	if zone != "" {
 		policies["attestra-dns"] = map[string]any{"Version": "2012-10-17", "Statement": []any{

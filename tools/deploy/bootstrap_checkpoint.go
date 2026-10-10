@@ -101,7 +101,7 @@ func (w *bootstrapWizard) checkpointPath() string {
 // Only explicitly allowlisted non-secret UI settings enter the checkpoint.
 func (w *bootstrapWizard) remember(key, value string) error {
 	switch key {
-	case "authMode", "profile", "baseDomain", "origin", "senderDomain", "sender", "roleName", "route53", "immutable", "dnsFingerprint":
+	case "authMode", "profile", "baseDomain", "origin", "senderDomain", "sender", "roleName", "route53", "dnsProvider", "immutable", "dnsFingerprint":
 	default:
 		return errors.New("setting is not allowed in bootstrap memory")
 	}

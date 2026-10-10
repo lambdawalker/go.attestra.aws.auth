@@ -239,6 +239,13 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		reserved, worker = "-1", "2"
 	}
 	defaults := map[string]string{"attestra-auth-email:apiDomain": apiDomain, "aws:region": o.Region, "attestra-auth-email:appOrigin": origin, "attestra-auth-email:senderDomain": domain, "attestra-auth-email:senderAddress": sender, "attestra-auth-email:captureReservedConcurrency": reserved, "attestra-auth-email:captureWorkerMaxConcurrency": worker}
+	zone, err := w.selectDNSProvider(current["attestra-auth-email:route53ZoneId"].Value)
+	if err != nil {
+		return err
+	}
+	if zone != "" {
+		defaults["attestra-auth-email:route53ZoneId"] = zone
+	}
 	if err = bootstrapStack(w.r, o, defaults, w.memory.StackInitialized, w.saveProofKey); err != nil {
 		return err
 	}
@@ -301,7 +308,12 @@ func (w *bootstrapWizard) finish(repo string) error {
 	}
 	for {
 		choice := "finish"
-		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy", "deploy"), huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {
+		choices := []huh.Option[string]{huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy", "deploy")}
+		if w.memory.Settings["dnsProvider"] != "route53" {
+			choices = append(choices, huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"))
+		}
+		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"))
+		if err := huh.NewSelect[string]().Title("Next step").Options(choices...).Value(&choice).Run(); err != nil {
 			return err
 		}
 		switch choice {
