@@ -105,9 +105,7 @@ func ensureStateBucket(a awsSetupAPI, o options, account string, approve func(st
 		return fmt.Errorf("state bucket is in %s; expected %s; no bucket settings changed", region, o.Region)
 	}
 	if !missing {
-		if err = approve("Reuse owned bucket " + u.Host + " and ensure versioning plus all public-access blocks are enabled? Existing objects and encryption are preserved."); err != nil {
-			return err
-		}
+		fmt.Println("Reusing owned state bucket " + u.Host + "; ensuring versioning and public-access blocking. Existing objects and encryption are preserved.")
 	}
 	for _, args := range [][]string{
 		{"s3api", "put-public-access-block", "--bucket", u.Host, "--expected-bucket-owner", account, "--public-access-block-configuration", "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"},
