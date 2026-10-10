@@ -81,14 +81,12 @@ func chooseEnvironment(existing []string) (string, error) {
 		label := name
 		if slices.Contains(existing, name) {
 			label += " (local configuration)"
-		} else {
-			label += ""
 		}
 		choices = append(choices, huh.NewOption(label, name))
 	}
 	choices = append(choices, huh.NewOption("Use another environment…", ""))
 	selected := "dev"
-	if err := huh.NewSelect[string]().Title("Environment to set up").Description(fmt.Sprintf("%d choices • ↑/↓ to browse/scroll • Enter to select. Local choices only; use another environment to enter any name.", len(choices))).Options(choices...).Value(&selected).Run(); err != nil {
+	if err := environmentSelect(choices, &selected).Run(); err != nil {
 		return "", err
 	}
 	if selected == "" {
@@ -104,4 +102,10 @@ func chooseEnvironment(existing []string) (string, error) {
 		}
 	}
 	return selected, validateEnvironment(selected)
+}
+
+// Bind the default before Options: Huh otherwise selects the empty-valued
+// custom option and keeps its viewport at the bottom even after Value changes.
+func environmentSelect(choices []huh.Option[string], selected *string) *huh.Select[string] {
+	return huh.NewSelect[string]().Title("Environment to set up").Description(fmt.Sprintf("%d choices • ↑/↓ to browse/scroll • Enter to select. Local choices only; use another environment to enter any name.", len(choices))).Value(selected).Options(choices...)
 }
