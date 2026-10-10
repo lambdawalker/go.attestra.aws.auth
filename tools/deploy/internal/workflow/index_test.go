@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	envregistry "github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/registry"
 
@@ -176,5 +179,44 @@ func TestSetupLeaseCoversConfigurationAndPassesToDeployment(t *testing.T) {
 	e := runner.withIndexClient(o, client, func() error { return fmt.Errorf("deployment failed") })
 	if e == nil || runner.indexLease != nil || strings.Join(operations, ",") != "begin,abandon" {
 		t.Fatalf("%v %v", e, operations)
+	}
+}
+
+func TestIndexReadinessReportsLastHTTPFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
+		fmt.Fprint(w, `{"error":"registry unavailable"}`)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	var output bytes.Buffer
+	err := waitIndexHTTPContext(ctx, server.URL, server.Client(), time.Millisecond, &output)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 503") || !strings.Contains(err.Error(), server.URL) {
+		t.Fatalf("missing failure details: %v", err)
+	}
+	if !strings.Contains(output.String(), "HTTP 503") {
+		t.Fatal(output.String())
+	}
+}
+func TestIndexReadinessRecoversAndValidatesSchema(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			fmt.Fprint(w, `{"schemaVersion":2}`)
+			return
+		}
+		fmt.Fprint(w, `{"schemaVersion":1,"environments":[]}`)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	if err := waitIndexHTTPContext(ctx, server.URL, server.Client(), time.Millisecond, &output); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !strings.Contains(output.String(), "schemaVersion 2") {
+		t.Fatalf("calls=%d output=%s", calls, &output)
 	}
 }

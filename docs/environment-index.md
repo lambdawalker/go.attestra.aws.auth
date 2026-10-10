@@ -129,3 +129,12 @@ Shared-infrastructure setup has a separate conditional S3 lock, `.attestra/boots
 `go test ./...` covers registry conditional-write semantics, concurrent acquisition, idempotent retries, stale publication rejection, deletion, and unchanged configuration. `go -C tools/deploy test ./...` covers signed requests, endpoint validation, recovery receipt retention/retry, deployment-failure release, and source fingerprints. `go -C infra-index test ./...` uses Pulumi mocks to check IAM-protected writes, public reads, both DNS branches, unreserved Lambda concurrency, and shared table protection.
 
 These checks do not substitute for a first deployment in your AWS account; no live infrastructure is created by the tests.
+
+### Readiness troubleshooting
+
+Setup checks the direct API endpoint and then the public index hostname. Each
+check prints its URL and reports HTTP status, invalid JSON/schema, or the network
+error while waiting. On timeout or cancellation it retains the last failure and
+all infrastructure; rerun setup to resume. Lambda START/END/REPORT lines alone
+do not establish HTTP success. A healthy index returns HTTP 200 with
+`schemaVersion: 1`; an empty environments list is valid before publication.

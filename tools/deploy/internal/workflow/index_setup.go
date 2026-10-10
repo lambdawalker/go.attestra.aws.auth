@@ -326,28 +326,51 @@ func waitIndexHTTP(address string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return waitIndexHTTPContext(ctx, address, client, 5*time.Second, os.Stdout)
+}
+
+func waitIndexHTTPContext(ctx context.Context, address string, client *http.Client, interval time.Duration, output io.Writer) error {
+	fmt.Fprintf(output, "Checking shared index endpoint: %s\n", address)
+	lastFailure := "no response received"
 	for {
 		req, err := http.NewRequestWithContext(ctx, "GET", address, nil)
 		if err != nil {
 			return err
 		}
 		res, err := client.Do(req)
-		if err == nil {
+		if err != nil {
+			if ctx.Err() == nil {
+				lastFailure = err.Error()
+			}
+		} else {
 			var body struct {
 				SchemaVersion int `json:"schemaVersion"`
 			}
-			err = json.NewDecoder(io.LimitReader(res.Body, 1024*1024)).Decode(&body)
+			decodeErr := json.NewDecoder(io.LimitReader(res.Body, 1024*1024)).Decode(&body)
 			res.Body.Close()
-			if res.StatusCode == 200 && err == nil && body.SchemaVersion == 1 {
-				return nil
+			switch {
+			case res.StatusCode != http.StatusOK:
+				lastFailure = fmt.Sprintf("HTTP %d", res.StatusCode)
+			case decodeErr != nil:
+				lastFailure = "HTTP 200 with invalid index JSON"
+			case body.SchemaVersion != 1:
+				lastFailure = fmt.Sprintf("HTTP 200 with unsupported schemaVersion %d", body.SchemaVersion)
+			default:
+				if ctx.Err() == nil {
+					fmt.Fprintf(output, "✓ Shared index endpoint ready: %s\n", address)
+					return nil
+				}
 			}
 		}
-		fmt.Println("Waiting for the shared index endpoint to respond; checking again in 5 seconds.")
-		timer := time.NewTimer(5 * time.Second)
+		if ctx.Err() != nil {
+			return fmt.Errorf("shared index readiness wait stopped for %s: %w; last failure: %s; infrastructure retained, rerun setup to resume", address, ctx.Err(), lastFailure)
+		}
+		fmt.Fprintf(output, "Waiting for shared index %s: %s; checking again in %s.\n", address, lastFailure, interval)
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return errors.New("shared index readiness wait stopped; infrastructure retained, rerun setup to resume")
+			return fmt.Errorf("shared index readiness wait stopped for %s: %w; last failure: %s; infrastructure retained, rerun setup to resume", address, ctx.Err(), lastFailure)
 		case <-timer.C:
 		}
 	}
