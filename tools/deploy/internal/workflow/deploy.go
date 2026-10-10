@@ -96,6 +96,9 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 		if renewal := credentialRenewalFailure(cmd.Env, stderr.String()); renewal != nil {
 			return nil, renewal
 		}
+		if capture && name == "pulumi" {
+			return nil, pulumiCommandError(args, stderr.String(), cmd.Env, err)
+		}
 		return nil, fmt.Errorf("%s failed: %w", name, err)
 	}
 	return out.Bytes(), nil

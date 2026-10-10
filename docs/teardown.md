@@ -76,3 +76,9 @@ Validation runs while the index teardown lock is still held. Once the public ent
 **Scope:** this verifies resources captured from this environment's stack, not every resource in the AWS account. Shared infrastructure, state history, recovery backups, and intentionally retained resources are listed separately. Service-created Lambda log groups and AWS-managed backup history outside Pulumi may remain; these are explicitly reported as retained, not silently certified deleted. Skipped Cloudflare cleanup stays visible as **SKIPPED** and requires manual DNS cleanup.
 
 An older teardown checkpoint that predates inventory capture cannot establish the complete original resource set, especially after a partial destroy. It fails final inventory validation rather than guessing from an empty or partially destroyed stack. Keep the checkpoint and pre-destroy state history for manual reconciliation; do not discard the checkpoint or set its verification fields merely to bypass the report. Previously completed checkpoints still protect against accidentally tearing down a recreated environment.
+
+### A Pulumi command fails immediately after AWS login
+
+A successful SSO/browser login confirms authentication, but does not establish access to the Pulumi state objects or prove that the stack passphrase is correct. Captured Pulumi failures now identify the operation (for example, `pulumi stack ls`) and include redacted stderr. Stack-export/configuration stdout is never included in an error, and configuration-write stderr is suppressed because it can echo secret values.
+
+If you see only `pulumi failed: exit status 1`, pull the latest script and retry. Preserve the teardown checkpoint. Share the operation and redacted error lines, not credentials or stack exports. A failure before the destruction preview/typed confirmation has not started resource deletion in that invocation; removals from earlier attempts are not rolled back.
