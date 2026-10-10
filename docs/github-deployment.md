@@ -54,7 +54,7 @@ The IAM-only command configures **AWS IAM and GitHub**. Full bootstrap additiona
 
 Setup proposes a separate state bucket, stack, proof key/passphrase, and IAM role for each new environment. Choose the appropriate AWS account/profile during each setup; production can use a separate account. Environments in one account still share service quotas, and the current application deployment policies can manage matching resources across stacks. Separate accounts provide a stronger boundary.
 
-Domain defaults follow `<environment>.info.<base-domain>` for SES and `https://<environment>.<base-domain>` for the app. See [domain defaults and existing-dev compatibility](first-deployment.md#domain-defaults-for-each-environment). Configure SES DNS and host the app/association files for every new environment.
+Domain defaults follow `<environment>.info.<base-domain>` for SES and `https://<environment>.<base-domain>` for the app. See [domain defaults and existing-dev compatibility](first-deployment.md#domain-defaults-for-each-environment). Configure SES DNS through the wizard’s **Configure Cloudflare DNS for SES** option or manually, and host the app/association files for every new environment. The Cloudflare token is entered locally and is not required by the deployment action.
 
 The action loads the selected GitHub environment’s variables and secrets, requires `PULUMI_STACK` to match its name, and requires `infra/Pulumi.<environment>.yaml` to be committed. Each environment has a separate workflow concurrency group. Configure production reviewers/protection rules in GitHub as needed; setup preserves existing rules and restricts new environments to `main`.
 
@@ -177,3 +177,5 @@ For QA/prod, set explicit values appropriate to their traffic and account quotas
 These settings are independent of `captureEnabled`, which remains unchanged. Run setup separately for each environment to create its stack and GitHub environment. The workflow selects the environment’s own variables, role, secret and stack YAML. No new cloud environments are created merely by pulling this code.
 
 After pulling a concurrency configuration change, start a **new** deployment run on `main`. Preserve the existing S3 state so Pulumi can resume a partial deployment; do not recreate the stack.
+
+Cloudflare DNS token permissions, record handling, and the first-deployment sequence are documented in [SES and Cloudflare DNS setup](first-deployment.md#ses-and-cloudflare-dns-setup).

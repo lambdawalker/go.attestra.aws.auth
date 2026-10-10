@@ -107,6 +107,8 @@ pulumi up
 
 ### Configure sender DNS in Cloudflare
 
+For guided automation, run `setup.bat` or `./setup.sh`, select the environment, and choose **Configure Cloudflare DNS for SES** after the first deployment attempt has created its SES identity. The wizard asks for a hidden, zone-scoped Cloudflare API token and reviews changes before writing them. See [token permissions and automated setup](docs/first-deployment.md#ses-and-cloudflare-dns-setup). The following instructions remain available for manual configuration.
+
 This stack creates an Amazon SES identity for `senderDomain` and Easy DKIM in the configured AWS region. For example, with `senderDomain: info.attestrabond.com` and `senderAddress: verify@info.attestrabond.com`, add the records below to the **attestrabond.com** zone in Cloudflare. DNS for this domain stays in Cloudflare: leave `route53ZoneId` unset (or run `pulumi config rm route53ZoneId` in `infra` if it was previously set). A Route 53 zone ID is only for a domain whose authoritative DNS zone is managed by Route 53.
 
 1. Get the values from the **deployed stack**, in PowerShell from the `infra` directory:
@@ -152,7 +154,7 @@ The stack does **not** configure a custom MAIL FROM domain or email receiving. I
 
 ### Enable SES sending for test recipients
 
-SES configuration is required before signup emails can arrive. First, verify the **sender** domain using the DNS records above in the same AWS account and region as this stack. Pulumi creates the SES identity, but DNS hosted by Cloudflare must be configured there manually. After a destroy and redeploy, compare Cloudflare records with the new `sesVerificationRecord` and `sesDkimTokens` outputs; update records if they changed, and confirm the new SES identity is verified.
+SES configuration is required before signup emails can arrive. First, verify the **sender** domain using the DNS records above in the same AWS account and region as this stack. Pulumi creates the SES identity; publish its records using the wizard’s Cloudflare option or manually. After a destroy and redeploy, compare Cloudflare records with the new `sesVerificationRecord` and `sesDkimTokens` outputs; update records if they changed, and confirm the new SES identity is verified.
 
 New SES accounts start in a **regional sandbox**. In the sandbox, SES can send only to verified recipients (or the SES mailbox simulator). Choose one of these paths:
 

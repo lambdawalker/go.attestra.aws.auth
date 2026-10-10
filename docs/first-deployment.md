@@ -96,16 +96,23 @@ Then choose:
 - **Finish here; deploy using GitHub Actions**: follow the printed workflow URL. Select the new environment in the **environment dropdown**, then start a new `main` run with operation `preview`, review it, then run `deploy`.
 - **Build and preview locally**: uses the selected backend/account and does not deploy resources.
 - **Build, preview and deploy locally**: invokes the Go packager, previews and runs `pulumi up` with Pulumi's confirmation prompt. It deploys your current checkout, so review local changes first.
+- **Configure Cloudflare DNS for SES**: prompts for a zone-scoped token, shows the exact proposed changes, creates missing SES records, and verifies them.
 - **Show SES DNS records and check verification**: reads the created SES identity and displays the exact TXT/CNAME records and verification status.
 - **Show deployed Android configuration**: prints `apiUrl`, `userPoolId` and `clientId` after a successful deployment.
 
 The deployment menu stays open after a local failure so you can inspect SES or retry after addressing the reported error. Credentials are a snapshot of the AWS session; if they expire, rerun setup and authenticate again. Neither the wizard nor the action rolls back successful resources on failure.
 
-## SES and Cloudflare: the manual step
+## SES and Cloudflare DNS setup
 
 Pulumi creates the SES identity/DKIM tokens, but it does **not wait for verification** before creating Cognito. A first deployment can therefore fail at Cognito while SES is still pending. Preview alone cannot expose every AWS service prerequisite or quota limitation.
 
-Choose the wizard's DNS check after the first deployment attempt. Copy its TXT value and three CNAME names/targets into the authoritative Cloudflare DNS zone. Keep CNAMEs **DNS only**, preserve unrelated R2/website/mailbox records, and compare current values before replacing old records. [Detailed DNS instructions and manual verification commands](../README.md#configure-sender-dns-in-cloudflare) are available if needed.
+After the first deployment attempt, choose **Configure Cloudflare DNS for SES**. Create an API token in [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone → Zone → Read** and **Zone → DNS → Edit**, restricted to your authoritative zone (for example `attestrabond.com`). Enter it at the hidden prompt and select the matching active zone. Review the TXT and three DKIM CNAME records, then confirm the changes.
+
+The token stays in memory and is never saved to GitHub, Pulumi configuration, or local checkpoints. Matching records are reused; missing records are created with TTL 300. A matching proxied CNAME can be changed to **DNS only** after review. Different CNAME targets or incompatible record types stop setup for manual review, before applying the plan. Additional TXT values and unrelated R2/website/mailbox records are preserved. The wizard does not delete records or retry failed writes automatically. Rerun after a partial failure to reuse completed records.
+
+The wizard refuses Cloudflare setup when `route53ZoneId` is configured, to avoid two DNS managers for the same records. Cloudflare records are managed by this optional setup step, not by Pulumi; destroying a stack does not remove them. Keep DKIM CNAME flattening disabled in Cloudflare, including the zone-wide “flatten all CNAMEs” option. The wizard does not change zone-wide settings or DNS delegation.
+
+Alternatively, use **Show SES DNS records and check verification** and copy the displayed records manually. [Detailed DNS instructions and manual verification commands](../README.md#configure-sender-dns-in-cloudflare) are available if needed.
 
 Wait for verification and DKIM success; choose the check again to reread status. Then resume deployment using the existing stack. Do not tear down resources or delete state. A verified `info.attestrabond.com` covers `verify@info.attestrabond.com`; an unverified separate root identity `attestrabond.com` is not a blocker. Verify in the correct AWS account and region (`us-east-2` for the current deployment). SES sandbox restrictions on recipients are [a separate step](../README.md#enable-ses-sending-for-test-recipients).
 
@@ -133,4 +140,4 @@ Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json`
 | Local preview cannot find Lambda ZIPs | Use `build.bat` / `build.sh`, or the wizard/deploy tool which builds automatically. |
 | Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
-The wizard does not request Lambda quota increases, leave the SES sandbox, provision QA/prod environments, alter external DNS or rotate existing proof keys automatically.
+The wizard does not request Lambda quota increases, leave the SES sandbox, provision website hosting or rotate existing proof keys automatically. Cloudflare DNS changes require the dedicated menu option and confirmation; manual DNS setup remains available.

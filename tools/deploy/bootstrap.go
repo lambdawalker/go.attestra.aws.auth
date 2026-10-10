@@ -208,7 +208,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 	fmt.Println("Alternatively, you can deploy this local checkout below. Local deployment uses your current AWS session and Pulumi's confirmation prompt.")
 	for {
 		choice := "finish"
-		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy locally", "deploy"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {
+		if err := huh.NewSelect[string]().Title("Next step").Options(huh.NewOption("Finish here; deploy using GitHub Actions", "finish"), huh.NewOption("Build and preview locally", "preview"), huh.NewOption("Build, preview and deploy locally", "deploy"), huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"), huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs")).Value(&choice).Run(); err != nil {
 			return err
 		}
 		switch choice {
@@ -227,6 +227,10 @@ func (w *bootstrapWizard) finish(repo string) error {
 				fmt.Println("Deployment stopped:", err)
 				fmt.Println("Existing resources/state retained. If SES was unverified, choose the DNS check; otherwise inspect the error before retrying.")
 			}
+		case "cloudflare":
+			if err := w.configureCloudflare(); err != nil {
+				fmt.Println("Cloudflare setup:", err)
+			}
 		case "dns":
 			if err := w.showDNS(); err != nil {
 				fmt.Println("DNS check:", err)
@@ -242,11 +246,17 @@ func (w *bootstrapWizard) finish(repo string) error {
 		}
 	}
 }
-func (w *bootstrapWizard) showDNS() error {
-	fmt.Println(lipgloss.NewStyle().Bold(true).Render("4 / 4 • SES verification (Cloudflare DNS is manual)"))
+
+type sesEvidence struct {
+	Domain, Verification, DKIM string
+	Records                    []dnsRecord
+}
+
+func (w *bootstrapWizard) readSES() (sesEvidence, error) {
+	result := sesEvidence{}
 	data, err := w.r.Exec(filepath.Join(w.root, "infra"), true, "pulumi", "config", "get", "attestra-auth-email:senderDomain", "--stack", w.o.Stack)
 	if err != nil {
-		return err
+		return result, err
 	}
 	domain := strings.TrimSpace(string(data))
 	var verification struct {
@@ -259,28 +269,40 @@ func (w *bootstrapWizard) showDNS() error {
 		}
 	}
 	if _, err = w.a.call(&verification, "ses", "get-identity-verification-attributes", "--identities", domain); err != nil {
-		return err
+		return result, err
 	}
 	if _, err = w.a.call(&dkim, "ses", "get-identity-dkim-attributes", "--identities", domain); err != nil {
-		return err
+		return result, err
 	}
 	v, exists := verification.VerificationAttributes[domain]
 	if !exists {
-		return errors.New("SES identity does not exist in this account/region yet; deploy first, then check again")
+		return result, errors.New("SES identity does not exist in this account/region yet; deploy first, then check again")
 	}
 	d := dkim.DkimAttributes[domain]
-	fmt.Printf("Account %s • Region %s • Identity %s\nVerification: %s • DKIM: %s\n", w.account, w.o.Region, domain, v.VerificationStatus, d.DkimVerificationStatus)
+	result.Domain, result.Verification, result.DKIM = domain, v.VerificationStatus, d.DkimVerificationStatus
 	if v.VerificationToken != "" {
-		fmt.Printf("TXT    _amazonses.%s    %s\n", domain, v.VerificationToken)
+		result.Records = append(result.Records, dnsRecord{Type: "TXT", Name: "_amazonses." + domain, Content: v.VerificationToken})
 	}
 	for _, token := range d.DkimTokens {
-		fmt.Printf("CNAME  %s._domainkey.%s    %s.dkim.amazonses.com\n", token, domain, token)
+		result.Records = append(result.Records, dnsRecord{Type: "CNAME", Name: token + "._domainkey." + domain, Content: token + ".dkim.amazonses.com"})
+	}
+	return result, nil
+}
+func (w *bootstrapWizard) showDNS() error {
+	fmt.Println(lipgloss.NewStyle().Bold(true).Render("4 / 4 • SES verification"))
+	evidence, err := w.readSES()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Account %s • Region %s • Identity %s\nVerification: %s • DKIM: %s\n", w.account, w.o.Region, evidence.Domain, evidence.Verification, evidence.DKIM)
+	for _, record := range evidence.Records {
+		fmt.Printf("%-5s %s    %s\n", record.Type, record.Name, record.Content)
 	}
 	fmt.Println("Copy these full names/values into the authoritative DNS zone. Use DNS only for CNAMEs; preserve unrelated website/R2/mail records. Compare old values before replacing them.")
-	if v.VerificationStatus == "Success" && d.DkimVerificationStatus == "Success" {
+	if evidence.Verification == "Success" && evidence.DKIM == "Success" {
 		fmt.Println("✓ SES verified. Resume deployment if Cognito previously failed.")
 	} else {
-		fmt.Println("Verification pending. Publish the records, allow DNS propagation, then select this check again. Do not delete the stack.")
+		fmt.Println("Verification pending. Choose Configure Cloudflare DNS or publish the records manually, allow DNS propagation, then select this check again. Do not delete the stack.")
 	}
 	fmt.Println("A verified sender subdomain is sufficient; a separate unverified root identity is not a blocker. SES sandbox recipient restrictions still apply.")
 	return nil
