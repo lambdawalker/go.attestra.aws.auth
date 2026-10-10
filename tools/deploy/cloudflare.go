@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type dnsRecord struct {
@@ -21,6 +22,59 @@ type dnsRecord struct {
 	TTL     int    `json:"ttl,omitempty"`
 	Proxied bool   `json:"proxied"`
 }
+type cloudflareAPIError struct {
+	Code    int                  `json:"code"`
+	Message string               `json:"message"`
+	Chain   []cloudflareAPIError `json:"error_chain"`
+}
+
+// Only provider error fields are displayed, never raw bodies, headers or queries.
+func (c *cloudflareClient) responseError(status int, method, path string, details []cloudflareAPIError) error {
+	clean := func(s string) string {
+		if c.token != "" {
+			s = strings.ReplaceAll(s, c.token, "[redacted]")
+		}
+		s = strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+				return ' '
+			}
+			return r
+		}, s)
+		r := []rune(s)
+		if len(r) > 240 {
+			s = string(r[:240]) + "…"
+		}
+		return s
+	}
+	message := fmt.Sprintf("Cloudflare HTTP %d during %s %s", status, method, clean(strings.SplitN(path, "?", 2)[0]))
+	count := 0
+	var appendErrors func([]cloudflareAPIError)
+	appendErrors = func(items []cloudflareAPIError) {
+		for _, item := range items {
+			if count >= 3 {
+				return
+			}
+			count++
+			message += fmt.Sprintf("; code %d: %s", item.Code, clean(item.Message))
+			appendErrors(item.Chain)
+		}
+	}
+	appendErrors(details)
+	switch status {
+	case 400:
+		message += "; request rejected; check the error above and enter only the API token value (no Bearer prefix)"
+	case 401, 403:
+		message += "; check API token validity and zone-scoped Zone Read / DNS Edit permissions"
+	case 429:
+		message += "; rate limit reached; retry later"
+	default:
+		if count == 0 {
+			message += "; invalid or unsuccessful response (body suppressed)"
+		}
+	}
+	return errors.New(message + "; completed changes are retained")
+}
+
 type cloudflareZone struct{ ID, Name, Status string }
 type dnsChange struct {
 	Record     dnsRecord
@@ -54,18 +108,20 @@ func (c *cloudflareClient) request(method, path string, body any, result any) (i
 		return 0, errors.New("Cloudflare request failed; check connectivity and token (details suppressed)")
 	}
 	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return 0, fmt.Errorf("Cloudflare HTTP %d; check zone-scoped Zone Read and DNS Edit permissions; completed changes are retained", res.StatusCode)
-	}
 	var envelope struct {
 		Success    bool
+		Errors     []cloudflareAPIError `json:"errors"`
 		Result     json.RawMessage
 		ResultInfo struct {
 			TotalPages int `json:"total_pages"`
 		} `json:"result_info"`
 	}
-	if json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&envelope) != nil || !envelope.Success {
-		return 0, errors.New("Cloudflare returned an unsuccessful or invalid response; details suppressed")
+	decodeErr := json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&envelope)
+	if decodeErr != nil || res.StatusCode < 200 || res.StatusCode >= 300 || !envelope.Success {
+		if decodeErr != nil {
+			envelope.Errors = nil
+		}
+		return 0, c.responseError(res.StatusCode, method, path, envelope.Errors)
 	}
 	if result != nil && json.Unmarshal(envelope.Result, result) != nil {
 		return 0, errors.New("invalid Cloudflare result")

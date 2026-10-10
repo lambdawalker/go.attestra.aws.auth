@@ -232,3 +232,45 @@ func TestCloudflareUnproxyPatchesOnlyProxySetting(t *testing.T) {
 		t.Fatal(err, patches)
 	}
 }
+
+func TestCloudflareErrorDiagnostics(t *testing.T) {
+	for _, status := range []int{400, 200} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":6003,"message":"Invalid request headers","error_chain":[{"code":6111,"message":"Invalid format for Authorization header hidden-token\n\u001b[31m"}]}]}`)
+			}))
+			defer server.Close()
+			client := newCloudflareClient("hidden-token")
+			client.base = server.URL
+			_, err := client.request("GET", "/zones?private=query", nil, nil)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			for _, want := range []string{"GET /zones", "6003", "6111", "Invalid request headers", "Invalid format for Authorization header"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("missing %q in %q", want, err)
+				}
+			}
+			for _, unwanted := range []string{"hidden-token", "private=query", "\n", "\x1b", "check zone-scoped"} {
+				if strings.Contains(err.Error(), unwanted) {
+					t.Errorf("unsafe/misleading %q in %q", unwanted, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCloudflareErrorDiagnosticsBounded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(429)
+		json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]any{{"code": 1000, "message": strings.Repeat("x", 10000)}}})
+	}))
+	defer server.Close()
+	client := newCloudflareClient("token")
+	client.base = server.URL
+	_, err := client.request("GET", "/zones", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "rate limit") || len(err.Error()) > 1200 {
+		t.Fatalf("expected bounded rate-limit diagnostic: %v", err)
+	}
+}

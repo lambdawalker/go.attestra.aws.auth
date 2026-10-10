@@ -13,7 +13,7 @@ Linux/macOS: `./teardown.sh`. Direct Go: `go -C tools/deploy run . -teardown`.
 
 ## Credentials and prerequisites
 
-Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. For Cloudflare cleanup, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint.
+Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. Cloudflare cleanup is optional: choose **Skip Cloudflare** before the token prompt to leave SES DNS records in place and continue tearing down AWS and GitHub. No Cloudflare token or API requests are needed when skipped. To clean up DNS automatically, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint.
 
 Stop all local deployments and finish/cancel pending GitHub deployment runs first. The wizard checks for active/waiting Deploy workflow runs across the repository, but cannot prevent someone starting a new run afterward. Keep the environment in a maintenance window until teardown finishes.
 
@@ -34,4 +34,14 @@ Rerun the same script with the same repository/environment. An ignored `teardown
 
 Do not delete or edit this progress file midway: once the SES identity is destroyed, its DNS tokens may no longer be recoverable from AWS. If Windows checkpoint replacement was interrupted and only `.bak` remains, restore it to the original `.json` filename before resuming. A `.lock` file prevents two teardown processes using the same checkpoint; after a crash, verify the old process is stopped before removing the stale lock.
 
+The skip choice is saved as `DNSSkipped`, separately from completed DNS deletion, and is preserved when resuming. Remaining DNS records need manual cleanup; their expected names/values and any previously approved IDs remain in the checkpoint. Skipping after an earlier partial cleanup does not restore deleted records. The final summary explicitly reports the skip.
+
 A completed checkpoint blocks another teardown. If you later recreate the environment, archive the completed checkpoint first so the next teardown reads fresh DNS/resource identities. Existing stack configuration and GitHub settings must match the saved target; changed targets stop the script for review.
+
+## Cloudflare request errors
+
+AWS SSO login and Cloudflare authentication are separate. Paste only the Cloudflare API token value when prompted, without `Bearer`, quotes, or an entire curl command. Use an API token with Zone Read and DNS Edit for the selected zone.
+
+An HTTP 400 alone does not establish a permissions problem. The wizard reports the failed method/path and Cloudflare's error codes and messages (including nested errors), with the entered token redacted. Raw response bodies and query strings are omitted. For 401/403, check token validity and zone permissions; for 429, wait before retrying.
+
+If a Cloudflare read fails before the destruction preview and confirmation, no teardown deletion has started in that invocation. Pull the latest script and rerun with the same environment. Preserve any checkpoint from earlier attempts. If it still fails, share the new error line, never your credentials.

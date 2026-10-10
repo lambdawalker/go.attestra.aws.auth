@@ -129,3 +129,26 @@ func TestTeardownCapturesEvidenceBeforeDestroy(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+func TestTeardownSkipCloudflarePersistsWithoutDeleting(t *testing.T) {
+	p := teardownProgress{DNSSkipped: true, DNS: []dnsRecord{{ID: "approved-id", Name: "_amazonses.dev.example.com"}}}
+	path := filepath.Join(t.TempDir(), "progress.json")
+	if err := p.save(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resumed teardownProgress
+	if err := json.Unmarshal(data, &resumed); err != nil {
+		t.Fatal(err)
+	}
+	// A nil client ensures a resumed skip cannot make any Cloudflare calls.
+	if err := cleanupTeardownDNS(&resumed, nil, func() error { t.Fatal("skip must not mark DNS deleted"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed.DNSSkipped || resumed.DNSDone || len(resumed.DNS) != 1 {
+		t.Fatalf("lost skipped DNS evidence: %+v", resumed)
+	}
+}

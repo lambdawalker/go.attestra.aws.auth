@@ -15,11 +15,11 @@ import (
 )
 
 type teardownProgress struct {
-	Repository, Environment                              string
-	Values                                               map[string]string
-	Domain, Bucket, Zone                                 string
-	Desired, DNS                                         []dnsRecord
-	Destroyed, DNSDone, RoleDone, StackRemoved, Complete bool
+	Repository, Environment                                          string
+	Values                                                           map[string]string
+	Domain, Bucket, Zone                                             string
+	Desired, DNS                                                     []dnsRecord
+	Destroyed, DNSDone, DNSSkipped, RoleDone, StackRemoved, Complete bool
 }
 
 func (p *teardownProgress) save(path string) error {
@@ -277,7 +277,14 @@ func runTeardown(root string) error {
 		}
 	}
 	var cf *cloudflareClient
-	if !p.DNSDone && len(p.Desired) > 0 {
+	if !p.DNSDone && !p.DNSSkipped && len(p.Desired) > 0 {
+		cleanup := true
+		if err = huh.NewConfirm().Title("Clean up this environment's SES DNS records in Cloudflare?").Description("Choose No to skip Cloudflare, keep its DNS records, and continue removing AWS and GitHub resources.").Affirmative("Clean up DNS").Negative("Skip Cloudflare").Value(&cleanup).Run(); err != nil {
+			return err
+		}
+		p.DNSSkipped = !cleanup
+	}
+	if !p.DNSDone && !p.DNSSkipped && len(p.Desired) > 0 {
 		cfToken := ""
 		if err = input("Cloudflare token (hidden; Zone Read + DNS Edit)", &cfToken, true, true).Run(); err != nil {
 			return err
@@ -322,8 +329,15 @@ func runTeardown(root string) error {
 		}
 	}
 	fmt.Printf("\nRepository: %s\nEnvironment/stack: %s\nAWS account: %s\nRegion: %s\nState backend (retained): %s\nRole: %s\nEvidence bucket: %s\n", repo, environment, identity.Account, o.Region, o.Backend, p.Values["AWS_ROLE_ARN"], p.Bucket)
-	for _, record := range p.DNS {
-		fmt.Printf("DELETE DNS %s %s = %s [id %s]\n", record.Type, record.Name, record.Content, record.ID)
+	if p.DNSSkipped {
+		fmt.Println("SKIP Cloudflare: remaining SES DNS records will be retained. Their expected values are saved in the teardown progress file for manual cleanup.")
+		for _, record := range p.Desired {
+			fmt.Printf("RETAIN DNS %s %s = %s\n", record.Type, record.Name, record.Content)
+		}
+	} else {
+		for _, record := range p.DNS {
+			fmt.Printf("DELETE DNS %s %s = %s [id %s]\n", record.Type, record.Name, record.Content, record.ID)
+		}
 	}
 	fmt.Println("Only approve these DNS records if no other environment/service still uses this SES identity. Do not start local or GitHub deployments during teardown.")
 	if !p.Destroyed {
@@ -373,18 +387,7 @@ func runTeardown(root string) error {
 			p.Destroyed = true
 			return persist()
 		}},
-		{"Cloudflare cleanup", func() error {
-			if p.DNSDone {
-				return nil
-			}
-			if len(p.DNS) > 0 {
-				if err := cf.deleteDNS(p.Zone, p.DNS); err != nil {
-					return err
-				}
-			}
-			p.DNSDone = true
-			return persist()
-		}},
+		{"Cloudflare cleanup", func() error { return cleanupTeardownDNS(&p, cf, persist) }},
 		{"Deployment role cleanup", func() error {
 			if p.RoleDone {
 				return nil
@@ -447,8 +450,28 @@ func runTeardown(root string) error {
 			if err = persist(); err != nil {
 				return err
 			}
+			if p.DNSSkipped {
+				fmt.Println("Cloudflare cleanup was skipped; remaining SES DNS records need manual cleanup. See Desired/DNS in the teardown progress file.")
+			}
 			fmt.Println("✓ Teardown complete. State bucket/history, shared OIDC provider, Cloudflare zone and unrelated records were retained. Review and commit removal of the stack YAML. Keep the teardown progress file and encrypted backup privately.")
 			return nil
 		}},
 	})
+}
+
+// A skipped phase remains distinct from a successfully completed DNS deletion.
+func cleanupTeardownDNS(p *teardownProgress, cf *cloudflareClient, persist func() error) error {
+	if p.DNSDone || p.DNSSkipped {
+		return nil
+	}
+	if len(p.DNS) > 0 {
+		if cf == nil {
+			return errors.New("Cloudflare client missing for approved DNS cleanup")
+		}
+		if err := cf.deleteDNS(p.Zone, p.DNS); err != nil {
+			return err
+		}
+	}
+	p.DNSDone = true
+	return persist()
 }
