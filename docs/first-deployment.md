@@ -126,7 +126,7 @@ Real ID capture remains disabled until `captureEnabled`, document type, purpose 
 
 Once bootstrap is complete, push reviewed changes to `main` and run **Deploy AWS [Pulumi S3]**, selecting the matching environment. Setup and DNS changes are not required for every code deployment. After a code/config fix, start a **new** workflow run; retrying an old run reuses the old commit.
 
-Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json` and the stack YAML. Existing resources/configuration are inspected and reused. Review confirmations: existing bucket protections are reasserted and the tested passphrase is saved to GitHub again. Cancelling after earlier stages leaves those changes intact.
+Rerun the wizard to resume setup, retaining `bootstrap.<environment>.local.json` and the stack YAML. Existing resources/configuration are inspected and reused. State buckets are created automatically when absent, or reused after ownership and region checks; versioning and public-access blocks are ensured without a separate confirmation. The tested passphrase is saved to GitHub again after its configuration confirmation. Cancelling after earlier stages leaves those changes intact.
 
 | Symptom | Next step |
 | --- | --- |

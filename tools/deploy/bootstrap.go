@@ -66,7 +66,7 @@ func validateBootstrapApp(origin, domain, sender string) error {
 }
 
 // Create only on an explicit S3 not-found response. A 403 is never absence.
-func ensureStateBucket(a awsSetupAPI, o options, account string, approve func(string) error) error {
+func ensureStateBucket(a awsSetupAPI, o options, account string) error {
 	u, _ := url.Parse(o.Backend)
 	_, err := a.call(nil, "s3api", "head-bucket", "--bucket", u.Host, "--expected-bucket-owner", account)
 	missing := false
@@ -79,9 +79,7 @@ func ensureStateBucket(a awsSetupAPI, o options, account string, approve func(st
 		}
 	}
 	if missing {
-		if err = approve("Create private state bucket " + u.Host + " in account " + account + " / " + o.Region + "? Keep its URL for resuming setup."); err != nil {
-			return err
-		}
+		fmt.Printf("Creating private state bucket %s in account %s / %s. Keep its URL for resuming setup.\n", u.Host, account, o.Region)
 		args := []string{"s3api", "create-bucket", "--bucket", u.Host}
 		if o.Region != "us-east-1" {
 			args = append(args, "--create-bucket-configuration", "LocationConstraint="+o.Region)
@@ -127,7 +125,7 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		return errors.New("stack must match selected environment")
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("1 / 4 • State bucket and Pulumi stack"))
-	if err := ensureStateBucket(a, o, account, confirm); err != nil {
+	if err := ensureStateBucket(a, o, account); err != nil {
 		return err
 	}
 	if err := input("Stack passphrase (new stack: choose and save it; existing stack: use its original passphrase)", &c.Passphrase, true, true).Run(); err != nil {

@@ -138,7 +138,7 @@ func (f *bootstrapBucketFake) call(result any, args ...string) (bool, error) {
 }
 func TestBucketAccessDeniedNeverCreates(t *testing.T) {
 	f := &bootstrapBucketFake{headErr: &awsSetupError{Code: "403"}}
-	if ensureStateBucket(f, testOptions(), "123456789012", func(string) error { t.Fatal("prompted after access denial"); return nil }) == nil {
+	if ensureStateBucket(f, testOptions(), "123456789012") == nil {
 		t.Fatal("accepted denial")
 	}
 	if len(f.calls) != 1 {
@@ -148,7 +148,7 @@ func TestBucketAccessDeniedNeverCreates(t *testing.T) {
 func TestBucketCreatesOnlyOnNotFoundAndStopsOnWriteFailure(t *testing.T) {
 	for _, failure := range []string{"", "create-bucket", "put-public-access-block", "put-bucket-versioning"} {
 		f := &bootstrapBucketFake{headErr: &awsSetupError{Code: "404"}, region: "us-east-2", fail: failure}
-		err := ensureStateBucket(f, testOptions(), "123456789012", func(string) error { return nil })
+		err := ensureStateBucket(f, testOptions(), "123456789012")
 		if failure == "" && err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +159,7 @@ func TestBucketCreatesOnlyOnNotFoundAndStopsOnWriteFailure(t *testing.T) {
 }
 func TestBucketWrongRegionDoesNotModify(t *testing.T) {
 	f := &bootstrapBucketFake{region: "us-west-2"}
-	if ensureStateBucket(f, testOptions(), "123456789012", func(string) error { return nil }) == nil {
+	if ensureStateBucket(f, testOptions(), "123456789012") == nil {
 		t.Fatal("accepted wrong region")
 	}
 	if len(f.calls) != 2 {
