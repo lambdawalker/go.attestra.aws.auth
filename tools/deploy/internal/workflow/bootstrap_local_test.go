@@ -10,7 +10,7 @@ import (
 
 func localSetupFixture(t *testing.T) (*bootstrapWizard, localRevision) {
 	t.Helper()
-	root := t.TempDir()
+	root := stateTestDir(t)
 	git := func(args ...string) {
 		t.Helper()
 		if _, err := localGit(root, args...); err != nil {
@@ -74,7 +74,7 @@ func TestLocalSetupSkipAndInvalidation(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "teardown":
-				if err := os.WriteFile(filepath.Join(w.root, "teardown.dev.local.json"), []byte("{}"), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(w.root, ".attestra", "teardown.dev.local.json"), []byte("{}"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -146,7 +146,7 @@ func TestLocalCompletionPersistsAndCommitChangeDuringDeploy(t *testing.T) {
 }
 func TestLocalEnvironmentDiscovery(t *testing.T) {
 	w, _ := localSetupFixture(t)
-	for _, name := range []string{"bootstrap.demo-2.local.json.bak", "infra/Pulumi.qa.yaml", "infra/Pulumi.BAD.yaml"} {
+	for _, name := range []string{".attestra/bootstrap.demo-2.local.json.bak", "infra/Pulumi.qa.yaml", "infra/Pulumi.BAD.yaml"} {
 		if err := os.WriteFile(filepath.Join(w.root, name), []byte("{}"), 0600); err != nil {
 			t.Fatal(err)
 		}

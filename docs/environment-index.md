@@ -89,7 +89,7 @@ Use the provided setup/deploy/teardown tools. Direct `pulumi up`, manual AWS edi
 
 ## Recover publication without redeploying
 
-If AWS deployment succeeds but publication fails, the tool retains `index-publication.<environment>.local.json`. It contains public configuration and a recovery receipt, not AWS credentials. Keep it private and never commit it; possession alone does not grant API access.
+If AWS deployment succeeds but publication fails, the tool retains `.attestra/index-publication.<environment>.local.json`. It contains public configuration and a recovery receipt, not AWS credentials. Keep it private and never commit it; possession alone does not grant API access.
 
 Locally, with the same checkout and receipt:
 
@@ -108,7 +108,7 @@ Locks deliberately do not expire automatically: an old process must not continue
 For an interrupted application deployment:
 
 1. Stop/verify completion of its local process and GitHub run. Inspect Pulumi's update status. Do not release a lock while any writer is still running.
-2. Restore its receipt artifact locally if necessary. If a local `index-publication.<environment>.local.json.lock` remains after a process crash, remove **only that local `.lock` file** after confirming the process has stopped; keep the JSON receipt.
+2. Restore its receipt artifact locally if necessary. If a local `.attestra/index-publication.<environment>.local.json.lock` remains after a process crash, remove **only that local `.lock` file** after confirming the process has stopped; keep the JSON receipt.
 3. If deployment completed successfully and `Deployed` is true, use `-publish-index`.
 4. Otherwise use the explicit recovery command, which asks you to type the environment name:
 
@@ -118,11 +118,11 @@ For an interrupted application deployment:
 
 This releases only the lock matching the saved token/revision; it does not publish potentially incomplete outputs. Rerun setup/deploy to reconcile the application. A token saved before a lost acquisition response can safely retry acquisition before releasing it.
 
-If teardown was interrupted, rerun teardown with its `teardown.<environment>.local.json` checkpoint. It retains its registry receipt and resumes deletion. Do not use a deployment receipt to override a teardown lock.
+If teardown was interrupted, rerun teardown with its `.attestra/teardown.<environment>.local.json` checkpoint. It retains its registry receipt and resumes deletion. Do not use a deployment receipt to override a teardown lock.
 
 If the receipt is irretrievably lost, an AWS administrator must inspect the registry table and all deployment processes before repairing the specific environment row. Increment its `revision` and remove `lock` in one conditional update matching the inspected revision and token. Do not delete the row or reset its revision; retain any existing entry/tombstone. This invalidates old receipts. Normal deployment tools never perform this administrative override.
 
-Shared-infrastructure setup has a separate conditional S3 lock, `bootstrap.lock`, in the shared state bucket. After an abrupt crash, verify no setup process or shared Pulumi update is running, then remove that exact lock object to resume. Never delete Pulumi state to resolve a lock. If shared infrastructure was changed outside setup, inspect it and remove only `bootstrap-ready.json` to force the next setup to reconcile it; keep the stack state and configuration.
+Shared-infrastructure setup has a separate conditional S3 lock, `.attestra/bootstrap.lock`, in the shared state bucket. After an abrupt crash, verify no setup process or shared Pulumi update is running, then remove that exact lock object to resume. Never delete Pulumi state to resolve a lock. If shared infrastructure was changed outside setup, inspect it and remove only `bootstrap-ready.json` to force the next setup to reconcile it; keep the stack state and configuration.
 
 ## Validation
 

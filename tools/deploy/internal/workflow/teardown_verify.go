@@ -141,9 +141,9 @@ func verifyTeardown(root string, p *teardownProgress, a awsenv.API, r commandRun
 	} else if len(p.Desired) > 0 && !p.DNSDone {
 		check("Cloudflare DNS", errors.New("no verified DNS cleanup or zone evidence"))
 	}
-	paths := []string{filepath.Join("infra", "Pulumi."+p.Environment+".yaml"), "bootstrap." + p.Environment + ".local.json", "bootstrap." + p.Environment + ".local.json.bak", filepath.Join("android-config", p.Environment+".properties")}
+	paths := []string{filepath.Join("infra", "Pulumi."+p.Environment+".yaml"), filepath.Join(".attestra", "bootstrap."+p.Environment+".local.json"), filepath.Join(".attestra", "bootstrap."+p.Environment+".local.json.bak"), filepath.Join("android-config", p.Environment+".properties")}
 	if p.Environment == "dev" {
-		paths = append(paths, "bootstrap.local.json", "bootstrap.local.json.bak")
+		paths = append(paths, filepath.Join(".attestra", "bootstrap.local.json"), filepath.Join(".attestra", "bootstrap.local.json.bak"))
 	}
 	for _, path := range paths {
 		_, e := os.Lstat(filepath.Join(root, path))

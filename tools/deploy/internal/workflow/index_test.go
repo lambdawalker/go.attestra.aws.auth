@@ -29,7 +29,7 @@ func TestIndexEndpointRejectsCredentialExfiltration(t *testing.T) {
 }
 
 func TestIndexPendingReceiptRoundTrip(t *testing.T) {
-	path := indexPendingPath(t.TempDir(), "qa")
+	path := indexPendingPath(stateTestDir(t), "qa")
 	p := pendingIndex{API: "https://example", Environment: "qa", Receipt: registry.Receipt{Token: "receipt", Revision: 12}, Deployed: true}
 	if e := savePendingIndex(path, p); e != nil {
 		t.Fatal(e)
@@ -48,7 +48,7 @@ func TestIndexPendingReceiptRoundTrip(t *testing.T) {
 	}
 }
 func TestRegistrySourceHashIgnoresGeneratedConfig(t *testing.T) {
-	root := t.TempDir()
+	root := stateTestDir(t)
 	for _, dir := range []string{"registry", "cmd/index", "infra-index"} {
 		os.MkdirAll(filepath.Join(root, dir), 0755)
 	}
@@ -97,7 +97,7 @@ func TestPendingPublicationRetriesWithoutDeployment(t *testing.T) {
 	}))
 	defer server.Close()
 	c := &envregistry.Client{URL: server.URL, Region: "us-east-2", Environment: "dev", HTTP: server.Client(), Credentials: aws.Credentials{AccessKeyID: "test", SecretAccessKey: "test"}}
-	o := options{Root: t.TempDir(), Stack: "dev", PublishOnly: true}
+	o := options{Root: stateTestDir(t), Stack: "dev", PublishOnly: true}
 	path := indexPendingPath(o.Root, o.Stack)
 	p := pendingIndex{API: c.URL, Region: c.Region, Environment: "dev", Deployed: true, Ready: true, Receipt: registry.Receipt{Token: strings.Repeat("a", 48), Revision: 7}}
 	if e := savePendingIndex(path, p); e != nil {
@@ -135,7 +135,7 @@ func TestDeploymentFailureReleasesLease(t *testing.T) {
 	}))
 	defer server.Close()
 	c := &envregistry.Client{URL: server.URL, Region: "us-east-2", Environment: "dev", HTTP: server.Client(), Credentials: aws.Credentials{AccessKeyID: "test", SecretAccessKey: "test"}}
-	o := options{Root: t.TempDir(), Stack: "dev"}
+	o := options{Root: stateTestDir(t), Stack: "dev"}
 	err := (&processRunner{}).withIndexClient(o, c, func() error { return fmt.Errorf("deployment failed") })
 	if err == nil || strings.Join(operations, ",") != "begin,abandon" {
 		t.Fatalf("%v %v", err, operations)
@@ -158,7 +158,7 @@ func TestSetupLeaseCoversConfigurationAndPassesToDeployment(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &envregistry.Client{URL: server.URL, Region: "us-east-2", Environment: "dev", HTTP: server.Client(), Credentials: aws.Credentials{AccessKeyID: "test", SecretAccessKey: "test"}}
-	o := options{Root: t.TempDir(), Stack: "dev"}
+	o := options{Root: stateTestDir(t), Stack: "dev"}
 	runner := &processRunner{}
 	if e := runner.acquireSetupIndex(o, client); e != nil {
 		t.Fatal(e)

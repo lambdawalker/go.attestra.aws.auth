@@ -17,7 +17,7 @@ func beginSetupLifecycle(root, repository, environment string) (func(), error) {
 	if err := ui.ValidateEnvironment(environment); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(root, "teardown."+environment+".local.json")
+	path := filepath.Join(root, ".attestra", "teardown."+environment+".local.json")
 	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("setup/teardown is locked for %s; verify no process is running before removing %s: %w", environment, path+".lock", err)
@@ -46,7 +46,7 @@ func beginSetupLifecycle(root, repository, environment string) (func(), error) {
 	if !p.Complete {
 		return fail(fmt.Errorf("unfinished teardown for %s; resume teardown before setting up this environment again: %s", environment, path))
 	}
-	history := filepath.Join(root, "teardown-history")
+	history := filepath.Join(root, ".attestra", "teardown-history")
 	if err := os.MkdirAll(history, 0700); err != nil {
 		return fail(err)
 	}

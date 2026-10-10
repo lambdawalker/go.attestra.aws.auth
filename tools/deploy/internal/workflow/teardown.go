@@ -203,7 +203,7 @@ func runTeardown(root string) error {
 	if err = g.EnsureNoDeployments(repo); err != nil {
 		return err
 	}
-	path := filepath.Join(root, "teardown."+environment+".local.json")
+	path := filepath.Join(root, ".attestra", "teardown."+environment+".local.json")
 	lockPath := path + ".lock"
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {

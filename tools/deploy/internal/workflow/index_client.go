@@ -72,7 +72,7 @@ type pendingIndex struct {
 }
 
 func indexPendingPath(root, stack string) string {
-	return filepath.Join(root, "index-publication."+stack+".local.json")
+	return filepath.Join(root, ".attestra", "index-publication."+stack+".local.json")
 }
 func publicIndexConfiguration(r commandRunner, o options) (registry.Configuration, error) {
 	data, e := r.Exec(filepath.Join(o.Root, "infra"), true, "pulumi", "stack", "output", "--json", "--stack", o.Stack)
@@ -98,6 +98,9 @@ func savePendingIndex(path string, p pendingIndex) error {
 	data, e := json.MarshalIndent(p, "", "  ")
 	if e != nil {
 		return e
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
 	}
 	if e = os.WriteFile(path+".tmp", data, 0600); e != nil {
 		return e

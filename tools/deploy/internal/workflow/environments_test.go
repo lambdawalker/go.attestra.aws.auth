@@ -49,7 +49,7 @@ func TestEnvironmentNamesAndDomains(t *testing.T) {
 }
 
 func TestCheckpointDoesNotCrossEnvironments(t *testing.T) {
-	root := t.TempDir()
+	root := stateTestDir(t)
 	for _, env := range []string{"dev", "qa", "demo"} {
 		w := bootstrapWizard{root: root, environment: env}
 		if err := w.saveSelections("owner/repo", map[string]string{"PULUMI_STACK": env, "PULUMI_BACKEND_URL": "s3://state-" + env}); err != nil {
@@ -69,8 +69,8 @@ func TestCheckpointDoesNotCrossEnvironments(t *testing.T) {
 }
 
 func TestLegacyCheckpointOnlyUsedForDev(t *testing.T) {
-	root := t.TempDir()
-	os.WriteFile(filepath.Join(root, "bootstrap.local.json"), []byte(`{"Repository":"owner/repo","Stack":"dev","Backend":"s3://legacy"}`), 0600)
+	root := stateTestDir(t)
+	os.WriteFile(filepath.Join(root, ".attestra", "bootstrap.local.json"), []byte(`{"Repository":"owner/repo","Stack":"dev","Backend":"s3://legacy"}`), 0600)
 	for _, env := range []string{"dev", "qa"} {
 		w := bootstrapWizard{root: root, environment: env}
 		v := map[string]string{}
@@ -144,7 +144,7 @@ func TestListEnvironmentsReadsAllPagesAndStopsOnFailure(t *testing.T) {
 func TestFreshQAStackDoesNotTouchDevConfiguration(t *testing.T) {
 	o := testOptions()
 	o.Stack = "qa"
-	o.Root = t.TempDir()
+	o.Root = stateTestDir(t)
 	os.Mkdir(filepath.Join(o.Root, "infra"), 0700)
 	path := filepath.Join(o.Root, "infra", "Pulumi.dev.yaml")
 	os.WriteFile(path, []byte("existing dev configuration"), 0600)

@@ -135,7 +135,7 @@ func manageCredentials(root string) error {
 
 func credentialRepository(root, environment, fallback string) string {
 	var saved struct{ Repository string }
-	data, err := os.ReadFile(filepath.Join(root, "bootstrap."+environment+".local.json"))
+	data, err := os.ReadFile(filepath.Join(root, ".attestra", "bootstrap."+environment+".local.json"))
 	if err == nil && json.Unmarshal(data, &saved) == nil && regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(saved.Repository) {
 		return saved.Repository
 	}

@@ -116,7 +116,7 @@ func TestTeardownCapturesEvidenceBeforeDestroy(t *testing.T) {
 	if len(p.Desired) != 4 || p.Bucket != "id-evidence-test" {
 		t.Fatal(p)
 	}
-	path := filepath.Join(t.TempDir(), "teardown.qa.local.json")
+	path := filepath.Join(stateTestDir(t), ".attestra", "teardown.qa.local.json")
 	if err := p.save(path); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestTeardownCapturesEvidenceBeforeDestroy(t *testing.T) {
 
 func TestTeardownSkipCloudflarePersistsWithoutDeleting(t *testing.T) {
 	p := teardownProgress{DNSSkipped: true, DNS: []dns.Record{{ID: "approved-id", Name: "_amazonses.dev.example.com"}}}
-	path := filepath.Join(t.TempDir(), "progress.json")
+	path := filepath.Join(stateTestDir(t), "progress.json")
 	if err := p.save(path); err != nil {
 		t.Fatal(err)
 	}

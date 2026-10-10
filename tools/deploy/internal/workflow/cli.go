@@ -66,6 +66,11 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	if !build {
+		if err := prepareGeneratedState(root); err != nil {
+			return err
+		}
+	}
 	if manageVault {
 		unsupported := ""
 		flag.Visit(func(f *flag.Flag) {

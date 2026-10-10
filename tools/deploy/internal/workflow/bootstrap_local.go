@@ -56,7 +56,7 @@ func localRepository(root string) string {
 }
 func localEnvironments(root string) []string {
 	var names []string
-	for _, pattern := range []string{"bootstrap.*.local.json*", "infra/Pulumi.*.yaml"} {
+	for _, pattern := range []string{".attestra/bootstrap.*.local.json*", "infra/Pulumi.*.yaml"} {
 		paths, _ := filepath.Glob(filepath.Join(root, pattern))
 		for _, path := range paths {
 			name := filepath.Base(path)
@@ -104,7 +104,7 @@ func (w *bootstrapWizard) locallyComplete(repo string, revision localRevision, f
 		}
 	}
 	// A local teardown plan, including an interrupted teardown, invalidates assumptions.
-	plans, err := filepath.Glob(filepath.Join(w.root, "teardown."+w.environment+".local.json*"))
+	plans, err := filepath.Glob(filepath.Join(w.root, ".attestra", "teardown."+w.environment+".local.json*"))
 	if err != nil || len(plans) != 0 {
 		return false
 	}

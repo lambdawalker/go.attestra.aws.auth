@@ -45,3 +45,16 @@ Use `./...` when testing: the command package alone does not include the interna
 The package layout does not change CLI flags, checkpoint JSON, vault encryption or location, Pulumi configuration, Android export keys, or the GitHub workflow entry point. See [deployment instructions](../../docs/deployment.md), [first deployment](../../docs/first-deployment.md), and [teardown](../../docs/teardown.md).
 
 Windows credential renewal uses an unquoted absolute helper path because the AWS Go SDK's `cmd.exe` invocation does not preserve quoted executable paths. Paths containing spaces use the Windows short-path alias. If that filesystem has short names disabled, the wizard stops with instructions to set `TEMP` and `TMP` to an existing path without spaces (for example, `C:\attestra-temp`) and rerun. If `GOTMPDIR` is set, update it too; for a prebuilt executable, move it to such a directory. It never changes the original AWS profile.
+
+## Generated local state
+
+Wizard progress files live in ignored `.attestra/` at the repository root:
+
+- `bootstrap.<environment>.local.json`: non-secret setup choices, progress, health/completion receipts and configuration fingerprints.
+- `teardown.<environment>.local.json`: teardown progress, resource inventory and deletion verification.
+- `index-publication.<environment>.local.json`: pending publication/recovery receipts.
+- `teardown-history/`: archived completed teardown records and their encrypted configuration backups.
+
+Their `.bak`, `.tmp` and `.lock` siblings stay alongside them. Stop any running setup/deployment/teardown before upgrading. On the next command, old root-level files are moved intact. Conflicting old/new files or existing operation locks stop migration for inspection; no history is overwritten. Interrupted moves resume on rerun.
+
+Keep `.attestra/` when resuming interrupted operations. These files contain no credential values but include infrastructure identifiers and recovery metadata; keep them private. The optional encrypted credential vault stays in its existing user-specific location. Build artifacts already live in `dist/`, public Android exports in `android-config/`, and Pulumi configuration stays in `infra/` and `infra-index/`.

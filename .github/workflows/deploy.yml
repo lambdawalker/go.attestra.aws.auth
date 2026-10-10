@@ -132,6 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: index-recovery-${{ inputs.environment }}
-          path: index-publication.${{ inputs.environment }}.local.json
+          path: .attestra/index-publication.${{ inputs.environment }}.local.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 90

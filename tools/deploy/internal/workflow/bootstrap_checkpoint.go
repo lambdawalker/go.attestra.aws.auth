@@ -31,7 +31,7 @@ func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, 
 		data, err = os.ReadFile(path + ".bak")
 	}
 	if os.IsNotExist(err) && w.environment == "dev" {
-		data, err = os.ReadFile(filepath.Join(w.root, "bootstrap.local.json"))
+		data, err = os.ReadFile(filepath.Join(w.root, ".attestra", "bootstrap.local.json"))
 	}
 	if os.IsNotExist(err) {
 		return nil
@@ -78,6 +78,9 @@ func (w *bootstrapWizard) saveMemory() error {
 		return err
 	}
 	path := w.checkpointPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
 	if err := os.WriteFile(path+".tmp", append(data, '\n'), 0600); err != nil {
 		return err
 	}
@@ -96,7 +99,7 @@ func (w *bootstrapWizard) saveMemory() error {
 }
 
 func (w *bootstrapWizard) checkpointPath() string {
-	return filepath.Join(w.root, "bootstrap."+w.environment+".local.json")
+	return filepath.Join(w.root, ".attestra", "bootstrap."+w.environment+".local.json")
 }
 
 // Only explicitly allowlisted non-secret UI settings enter the checkpoint.
