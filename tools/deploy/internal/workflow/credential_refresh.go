@@ -130,18 +130,13 @@ func prepareCloudEnvironment(base []string, c credentials, o options, empty stri
 	if e != nil {
 		return nil, e
 	}
-	exe = filepath.ToSlash(exe)
-	// This command is consumed by both shell-based SDKs and argv-based AWS CLI.
-	// Quoted ordinary paths (including spaces) work on both platforms.
-	if strings.ContainsAny(exe, "\"\r\n$`%!") {
-		return nil, errors.New("credential helper executable path contains unsupported shell characters; run from a standard temporary directory")
-	}
-	if runtime.GOOS != "windows" {
-		exe = strings.ReplaceAll(exe, "\\", "\\\\")
+	exe, e = credentialExecutable(exe, runtime.GOOS, shortCredentialPath)
+	if e != nil {
+		return nil, e
 	}
 	encoded := c.Source.encode()
 	config := empty + ".refresh"
-	content := "[profile attestra-refresh]\nregion = " + o.Region + "\ncredential_process = \"" + exe + "\" -credential-process " + encoded + "\n"
+	content := "[profile attestra-refresh]\nregion = " + o.Region + "\ncredential_process = " + exe + " -credential-process " + encoded + "\n"
 	if e = os.WriteFile(config, []byte(content), 0600); e != nil {
 		return nil, e
 	}

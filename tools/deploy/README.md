@@ -43,3 +43,5 @@ go -C tools/deploy build -o attestra-deploy ./
 Use `./...` when testing: the command package alone does not include the internal package tests. Tests use local fixtures and fake services; they do not deploy or tear down cloud environments.
 
 The package layout does not change CLI flags, checkpoint JSON, vault encryption or location, Pulumi configuration, Android export keys, or the GitHub workflow entry point. See [deployment instructions](../../docs/deployment.md), [first deployment](../../docs/first-deployment.md), and [teardown](../../docs/teardown.md).
+
+Windows credential renewal uses an unquoted absolute helper path because the AWS Go SDK's `cmd.exe` invocation does not preserve quoted executable paths. Paths containing spaces use the Windows short-path alias. If that filesystem has short names disabled, the wizard stops with instructions to set `TEMP` and `TMP` to an existing path without spaces (for example, `C:\attestra-temp`) and rerun. If `GOTMPDIR` is set, update it too; for a prebuilt executable, move it to such a directory. It never changes the original AWS profile.
