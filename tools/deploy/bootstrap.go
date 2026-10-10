@@ -172,7 +172,7 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if err != nil {
 		return err
 	}
-	w.r = &processRunner{env: env}
+	w.r = &processRunner{env: env, onPreview: w.recordPreview}
 	w.a = &setupAWSClient{env: env}
 	// Prefer actual stack configuration; memory covers interruption before config writes.
 	current := map[string]struct{ Value string }{}
@@ -260,6 +260,12 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		apiDomain = app["attestra-auth-email:apiDomain"]
 	}
 	fmt.Println("API hostname: " + apiDomain)
+	if w.memory.Summary.Domains == nil {
+		w.memory.Summary.Domains = map[string]string{}
+	}
+	for k, v := range map[string]string{"App": origin, "API": "https://" + apiDomain, "Sender domain": domain, "Sender email": sender} {
+		w.memory.Summary.Domains[k] = v
+	}
 	reserved, worker := "5", "5"
 	if w.environment == "dev" {
 		reserved, worker = "-1", "2"
@@ -285,7 +291,13 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 	if _, known := w.remembered("baseDomain"); !known && strings.HasPrefix(apiDomain, w.environment+".api.") {
 		base = strings.TrimPrefix(apiDomain, w.environment+".api.")
 	}
+	if err = w.summaryStep("state"); err != nil {
+		return err
+	}
 	if err = w.prepareIndex(base, zone); err != nil {
+		return err
+	}
+	if err = w.summaryStep("index-infra"); err != nil {
 		return err
 	}
 	if w.vault != nil {
@@ -313,6 +325,7 @@ func (w *bootstrapWizard) saveProofKey(value string) error {
 }
 func (w *bootstrapWizard) finish(repo string) error {
 	complete := false
+	w.showSetupSummary()
 	fmt.Println("Continuing automatically through SES, DNS verification, and application deployment.")
 	if err := checkBucket(w.r, w.o, w.account); err != nil {
 		return err
@@ -328,6 +341,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 		fmt.Println("✓ AWS application deployment complete.")
 	}
 
+	w.showSetupSummary()
 	fmt.Println(lipgloss.NewStyle().Bold(true).Render("3 / 4 • Commit configuration and deploy"))
 	fmt.Printf("Review and commit infra/Pulumi.%s.yaml on main, then push. This wizard does not commit or push for you:\n", w.o.Stack)
 	fmt.Printf("  git diff -- infra/Pulumi.%s.yaml\n  git add infra/Pulumi.%s.yaml\n  git commit -m \"Configure %s stack\"\n  git push origin main\n", w.o.Stack, w.o.Stack, w.o.Stack)
@@ -350,7 +364,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 		if w.memory.Settings["dnsProvider"] != "route53" {
 			choices = append(choices, huh.NewOption("Configure Cloudflare DNS for SES", "cloudflare"))
 		}
-		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"), huh.NewOption("Run environment health check", "health"))
+		choices = append(choices, huh.NewOption("Show SES DNS records and check verification", "dns"), huh.NewOption("Show deployed Android configuration", "outputs"), huh.NewOption("Run environment health check", "health"), huh.NewOption("Show setup summary", "summary"))
 		if err := huh.NewSelect[string]().Title("Next step").Options(choices...).Value(&choice).Run(); err != nil {
 			return err
 		}
@@ -374,6 +388,7 @@ func (w *bootstrapWizard) finish(repo string) error {
 				fmt.Println("Deployment stopped:", err)
 				fmt.Println("Existing resources/state retained. Resolve the reported issue, then choose Build, preview and deploy to resume the staged setup.")
 			}
+			w.showSetupSummary()
 		case "cloudflare":
 			if err := w.configureCloudflare(); err != nil {
 				fmt.Println("Cloudflare setup:", err)
@@ -382,10 +397,13 @@ func (w *bootstrapWizard) finish(repo string) error {
 			if err := w.showDNS(); err != nil {
 				fmt.Println("DNS check:", err)
 			}
+		case "summary":
+			w.showSetupSummary()
 		case "health":
-			if err := runEnvironmentHealth(w.r, w.o); err != nil {
+			if err := w.checkSummaryHealth(); err != nil {
 				fmt.Println(err)
 			}
+			w.showSetupSummary()
 		case "outputs":
 			for _, name := range []string{"apiUrl", "userPoolId", "clientId"} {
 				if _, err := w.r.Exec(filepath.Join(w.root, "infra"), false, "pulumi", "stack", "output", name, "--stack", w.o.Stack); err != nil {

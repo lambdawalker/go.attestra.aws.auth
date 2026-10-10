@@ -57,6 +57,7 @@ func runGitHubSetup(root string, full, force, freshCredentials bool) error {
 	}
 	if bootstrap != nil {
 		bootstrap.environment = environment
+		defer bootstrap.showSetupSummary()
 		if err := bootstrap.loadSelections(repo, map[string]string{}, nil); err != nil {
 			return err
 		}

@@ -31,6 +31,7 @@ type commandRunner interface {
 type processRunner struct {
 	env        []string
 	indexLease *pendingIndex
+	onPreview  func(string, map[string]int, bool)
 }
 
 func (p *processRunner) Exec(dir string, capture bool, name string, args ...string) ([]byte, error) {
@@ -57,6 +58,17 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 		}
 		cmd.Env = captureEnvironment(cmd.Env, effective)
 	}
+	var eventLog string
+	if name == "pulumi" && len(args) > 0 && args[0] == "preview" && p.onPreview != nil {
+		path, cleanup, err := previewEventLog()
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		eventLog = path
+		cmd.Args = append(cmd.Args, "--event-log", path)
+		cmd.Env = replaceEnvironment(cmd.Env, map[string]string{"PULUMI_DEBUG_COMMANDS": "true"})
+	}
 	cmd.Stdin = os.Stdin
 	var out, stderr bytes.Buffer
 	if capture {
@@ -67,7 +79,16 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
-	if err := cmd.Run(); err != nil {
+	runErr := cmd.Run()
+	if eventLog != "" {
+		var changes map[string]int
+		if f, e := os.Open(eventLog); e == nil {
+			changes, _ = readPreviewChanges(f)
+			f.Close()
+		}
+		p.onPreview(previewScope(dir, args), changes, runErr == nil)
+	}
+	if err := runErr; err != nil {
 		if renewal := credentialRenewalFailure(cmd.Env, stderr.String()); renewal != nil {
 			return nil, renewal
 		}

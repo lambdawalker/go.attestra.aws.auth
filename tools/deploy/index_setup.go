@@ -127,7 +127,7 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 			return e
 		}
 	}
-	r := &processRunner{env: replaceEnvironment(w.r.env, map[string]string{"PULUMI_BACKEND_URL": o.backendURL(), "PULUMI_CONFIG_PASSPHRASE": w.secrets.IndexPulumi})}
+	r := &processRunner{onPreview: w.recordPreview, env: replaceEnvironment(w.r.env, map[string]string{"PULUMI_BACKEND_URL": o.backendURL(), "PULUMI_CONFIG_PASSPHRASE": w.secrets.IndexPulumi})}
 	dir := filepath.Join(w.root, "infra-index")
 	run := func(capture bool, args ...string) ([]byte, error) { return r.Exec(dir, capture, "pulumi", args...) }
 	list, e := run(true, "stack", "ls", "--json", "--non-interactive")
@@ -303,6 +303,10 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 		}
 	}
 	w.indexAPIArn = out["apiArn"]
+	if w.memory.Summary.Domains == nil {
+		w.memory.Summary.Domains = map[string]string{}
+	}
+	w.memory.Summary.Domains["Index"] = out["indexUrl"]
 	fmt.Println("✓ Shared index ready:", out["indexUrl"])
 	return nil
 }

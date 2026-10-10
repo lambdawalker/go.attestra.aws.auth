@@ -263,3 +263,12 @@ Full setup now also provisions or reuses the separate `attestra-index/shared` pr
 
 
 The wizard finishes deployment with an environment health check before recording setup as complete. Review all FAIL and WARN entries. Failed checks retain existing resources and can be rerun without deployment using `deploy.bat -health-check` (supply the same backend, stack, region, and AWS login options). See [Final environment health check](deployment.md#final-environment-health-check).
+
+
+### Consolidated setup summary
+
+The wizard displays one summary with the environment, AWS account, region, state backend, DNS provider, app/API/sender/index domains, resource estimates, and completed/pending steps. It appears before application deployment, after previews, when deployment pauses or finishes, and when leaving setup. The recovery menu also includes **Show setup summary**.
+
+Resource estimates come from Pulumi's existing previews; collecting them does not launch another preview or make extra cloud calls. Prerequisite and full-stack previews for the application and shared index are separate, timestamped snapshots. They are not added together, do not describe remaining changes after deployment, and are not cost estimates. Failed or missing preview summaries show **not available**, never zero changes. Replacement sub-operations are not double-counted.
+
+The local checkpoint retains aggregate counts, non-secret domain settings, and recorded step completion. Raw preview event logs are temporary and removed after reading. On a retry, dependent deployment steps return to pending until rechecked. An unchanged-commit shortcut shows saved evidence without making remote calls. Manual follow-up—committing configuration, Android configuration, website hosting, and end-to-end testing—is listed separately.

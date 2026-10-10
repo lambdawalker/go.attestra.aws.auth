@@ -10,8 +10,9 @@ import (
 // Only non-secret selections are persisted, so interrupted bootstrap can reuse
 // its bucket before a GitHub environment exists. Never store a token/passphrase.
 type bootstrapCheckpoint struct {
-	StackInitialized bool             `json:",omitempty"`
-	Completion       *setupCompletion `json:",omitempty"`
+	Summary          setupSummaryState `json:",omitempty"`
+	StackInitialized bool              `json:",omitempty"`
+	Completion       *setupCompletion  `json:",omitempty"`
 	Repository       string
 	Environment      string
 	Region           string
@@ -120,5 +121,20 @@ func (w *bootstrapWizard) remembered(key string) (string, bool) {
 }
 func (w *bootstrapWizard) markStage(stage string) error {
 	w.memory.Stage = stage
+	if stage == "setup-in-progress" {
+		w.memory.Summary.Steps = nil
+	}
+	if stage == "deploying" {
+		for _, key := range []string{"prerequisites", "verification", "application", "publication", "health"} {
+			delete(w.memory.Summary.Steps, key)
+		}
+	}
+	key := map[string]string{"github-ready": "github", "ses-prerequisites": "prerequisites", "ses-verified": "verification", "deployed": "application"}[stage]
+	if key != "" {
+		if w.memory.Summary.Steps == nil {
+			w.memory.Summary.Steps = map[string]bool{}
+		}
+		w.memory.Summary.Steps[key] = true
+	}
 	return w.saveMemory()
 }
