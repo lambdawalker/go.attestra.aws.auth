@@ -168,7 +168,10 @@ func (w *bootstrapWizard) prepare(a *setupAWSClient, c credentials, o options, a
 		return err
 	}
 	w.o, w.account, w.passphrase = o, account, c.Passphrase
-	env := cloudEnvironment(os.Environ(), c, o, empty)
+	env, err := prepareCloudEnvironment(os.Environ(), c, o, empty)
+	if err != nil {
+		return err
+	}
 	w.r = &processRunner{env: env}
 	w.a = &setupAWSClient{env: env}
 	// Prefer actual stack configuration; memory covers interruption before config writes.

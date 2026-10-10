@@ -27,10 +27,10 @@ func (r *loginStub) Exec(_ string, capture bool, name string, args ...string) ([
 func TestLoginCredentials(t *testing.T) {
 	o := testOptions()
 	o.Profile = "attestra"
-	good := `{"Version":1,"AccessKeyId":"id","SecretAccessKey":"secret","SessionToken":"token"}`
+	good := `{"Version":1,"AccessKeyId":"id","SecretAccessKey":"secret","SessionToken":"token","Expiration":"2099-01-01T00:00:00Z"}`
 	r := &loginStub{response: good}
 	c, err := loginCredentials(r, o)
-	if err != nil || c.Access != "id" || c.Secret != "secret" || c.Token != "token" {
+	if err != nil || c.Source == nil || c.Source.Profile != "attestra" {
 		t.Fatal("login credentials not extracted")
 	}
 	if len(r.calls) != 2 || r.calls[0] != "aws login --profile attestra --region us-east-2" || r.calls[1] != "aws configure export-credentials --profile attestra --format process" || r.captured[0] || !r.captured[1] {
@@ -68,9 +68,9 @@ func TestSSOLoginCredentials(t *testing.T) {
 		o.Profile = "attestra"
 		o.Sso = true
 		o.Login = alsoLogin
-		r := &loginStub{response: `{"Version":1,"AccessKeyId":"id","SecretAccessKey":"secret","SessionToken":"token"}`}
+		r := &loginStub{response: `{"Version":1,"AccessKeyId":"id","SecretAccessKey":"secret","SessionToken":"token","Expiration":"2099-01-01T00:00:00Z"}`}
 		c, err := loginCredentials(r, o)
-		if err != nil || c.Token != "token" {
+		if err != nil || c.Source == nil || !c.Source.SSO {
 			t.Fatal("SSO credentials not extracted", err)
 		}
 		if r.calls[0] != "aws sso login --profile attestra" || r.calls[1] != "aws configure export-credentials --profile attestra --format process" || !r.captured[1] {
@@ -87,5 +87,19 @@ func TestSSOLoginCredentials(t *testing.T) {
 		if !strings.Contains(err.Error(), "SSO") || strings.Contains(err.Error(), "current AWS CLI") {
 			t.Fatal("misleading SSO error", err)
 		}
+	}
+}
+
+func TestLoginDoesNotFreezeTemporaryKeys(t *testing.T) {
+	r := &loginStub{response: `{"Version":1,"AccessKeyId":"id","SecretAccessKey":"secret","SessionToken":"token","Expiration":"2099-01-01T00:00:00Z"}`}
+	o := testOptions()
+	o.Profile = "attestra"
+	o.Sso = true
+	c, e := loginCredentials(r, o)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if c.Access != "" || c.Secret != "" || c.Token != "" {
+		t.Fatal("login retained a fixed credential snapshot instead of a renewable source")
 	}
 }

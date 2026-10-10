@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 )
 
 // Let aws login use normal profile/cache files, while removing ambient credentials
-// and endpoint overrides. Deployment commands later use only the exported values.
+// and endpoint overrides. Deployment commands later use a refreshable process provider.
 func loginEnvironment(base []string, region string) []string {
 	env := withoutCredentials(base)
 	for _, entry := range base {
@@ -39,12 +38,12 @@ func loginCredentials(r commandRunner, o options) (credentials, error) {
 	if err != nil {
 		return credentials{}, errors.New("could not obtain credentials from the AWS login profile")
 	}
-	var result struct {
-		Version                                    int
-		AccessKeyId, SecretAccessKey, SessionToken string
+	if _, err := parseProcessCredentials(data); err != nil {
+		return credentials{}, err
 	}
-	if json.Unmarshal(data, &result) != nil || result.Version != 1 || result.AccessKeyId == "" || result.SecretAccessKey == "" || result.SessionToken == "" {
-		return credentials{}, errors.New("AWS login returned incomplete temporary credentials")
+	source, err := profileSource(o)
+	if err != nil {
+		return credentials{}, err
 	}
-	return credentials{Access: result.AccessKeyId, Secret: result.SecretAccessKey, Token: result.SessionToken}, nil
+	return credentials{Source: source}, nil
 }

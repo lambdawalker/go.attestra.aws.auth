@@ -49,6 +49,9 @@ func (a *setupAWSClient) call(result any, args ...string) (bool, error) {
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {
+		if renewal := credentialRenewalFailure(a.env, stderr.String()); renewal != nil {
+			return false, renewal
+		}
 		code := regexp.MustCompile(`\(([A-Za-z0-9]+)\) when calling`).FindStringSubmatch(stderr.String())
 		if len(code) == 2 {
 			if code[1] == "NoSuchEntity" {
@@ -294,7 +297,11 @@ func setupAWSRole(g *githubClient, repo, environment string, metadata repository
 	if err = os.WriteFile(empty, nil, 0600); err != nil {
 		return err
 	}
-	a := &setupAWSClient{env: cloudEnvironment(os.Environ(), c, o, empty)}
+	env, err := prepareCloudEnvironment(os.Environ(), c, o, empty)
+	if err != nil {
+		return err
+	}
+	a := &setupAWSClient{env: env}
 	var id struct{ Account, Arn string }
 	found, err := a.call(&id, "sts", "get-caller-identity")
 	if err != nil {

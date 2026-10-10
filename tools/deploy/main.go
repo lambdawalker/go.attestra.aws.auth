@@ -49,6 +49,9 @@ func main() {
 	}
 }
 func run() error {
+	if len(os.Args) == 3 && os.Args[1] == "-credential-process" {
+		return runCredentialProcess(os.Args[2])
+	}
 	var o options
 	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials bool
 	flag.StringVar(&o.Root, "repo-root", "../..", "Repository root (default: run from tools/deploy)")
@@ -183,8 +186,8 @@ func run() error {
 			return err
 		}
 	}
-	// Empty AWS files prevent credential_process, local profiles and role chaining
-	// from silently replacing the credentials supplied above.
+	// Isolate pasted keys from ambient profiles. Profile login instead installs
+	// an explicit, refreshable provider in a separate temporary configuration.
 	dir, err := os.MkdirTemp("", "attestra-deploy-")
 	if err != nil {
 		return err
@@ -194,7 +197,10 @@ func run() error {
 	if err := os.WriteFile(empty, nil, 0600); err != nil {
 		return err
 	}
-	env := cloudEnvironment(os.Environ(), c, o, empty)
+	env, err := prepareCloudEnvironment(os.Environ(), c, o, empty)
+	if err != nil {
+		return err
+	}
 	runner := &processRunner{env: env}
 	identity, err := runner.Exec(o.Root, true, "aws", "sts", "get-caller-identity", "--output", "json", "--no-cli-pager")
 	if err != nil {

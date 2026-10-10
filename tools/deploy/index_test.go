@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -202,5 +203,31 @@ func TestSetupLeaseCoversConfigurationAndPassesToDeployment(t *testing.T) {
 	e := runner.withIndexClient(o, client, func() error { return fmt.Errorf("deployment failed") })
 	if e == nil || runner.indexLease != nil || strings.Join(operations, ",") != "begin,abandon" {
 		t.Fatalf("%v %v", e, operations)
+	}
+}
+
+func TestIndexUsesRenewedSigningCredentials(t *testing.T) {
+	count := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		if !strings.Contains(r.Header.Get("Authorization"), fmt.Sprintf("Credential=key%d/", count)) {
+			t.Error("stale signing credentials")
+		}
+		json.NewEncoder(w).Encode(registry.Receipt{Revision: 1, Token: strings.Repeat("a", 48)})
+	}))
+	defer server.Close()
+	calls := 0
+	provider := aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+		calls++
+		return aws.Credentials{AccessKeyID: fmt.Sprintf("key%d", calls), SecretAccessKey: "test"}, nil
+	})
+	client := indexClient{URL: server.URL, Region: "us-east-2", Environment: "dev", Provider: provider, HTTP: server.Client()}
+	for range 2 {
+		if _, err := client.change(registry.Change{Operation: "begin", Token: strings.Repeat("a", 48)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 2 || count != 2 {
+		t.Fatalf("provider calls %d requests %d", calls, count)
 	}
 }

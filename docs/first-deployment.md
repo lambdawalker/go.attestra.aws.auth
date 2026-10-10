@@ -159,7 +159,7 @@ Then choose:
 - **Show SES DNS records and check verification**: reads the created SES identity and displays the exact TXT/CNAME records and verification status.
 - **Show deployed Android configuration**: prints `apiUrl`, `userPoolId` and `clientId` after a successful deployment.
 
-The deployment menu stays open after a local failure so you can inspect SES or retry after addressing the reported error. Credentials are a snapshot of the AWS session; if they expire, rerun setup and authenticate again. Neither the wizard nor the action rolls back successful resources on failure.
+The deployment menu stays open after a local failure so you can inspect SES or retry after addressing the reported error. SSO and browser-login credentials renew automatically while the underlying session allows; if that session ends, sign in again and rerun setup to resume. Manually pasted credentials cannot renew automatically. GitHub Actions continues to use OIDC. Neither the wizard nor the action rolls back successful resources on failure.
 
 ## SES and Cloudflare DNS setup
 

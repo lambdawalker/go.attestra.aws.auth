@@ -241,7 +241,10 @@ func runTeardown(root string) error {
 	if err = os.WriteFile(empty, nil, 0600); err != nil {
 		return err
 	}
-	env := cloudEnvironment(os.Environ(), c, o, empty)
+	env, err := prepareCloudEnvironment(os.Environ(), c, o, empty)
+	if err != nil {
+		return err
+	}
 	r := &processRunner{env: env}
 	a := &setupAWSClient{env: env}
 	var identity struct{ Account, Arn string }

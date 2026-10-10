@@ -28,6 +28,7 @@ var errIndexConflict = errors.New("environment is locked by another deployment o
 type indexClient struct {
 	URL, Region, Environment string
 	Credentials              aws.Credentials
+	Provider                 aws.CredentialsProvider
 	HTTP                     *http.Client
 }
 
@@ -54,6 +55,12 @@ func newIndexClient(env []string, address, region, stack string) (*indexClient, 
 			continue
 		}
 		switch strings.ToUpper(parts[0]) {
+		case sourceEnvironmentKey:
+			source, err := decodeCredentialSource(parts[1])
+			if err != nil {
+				return nil, err
+			}
+			c.Provider = source.provider()
 		case "AWS_ACCESS_KEY_ID":
 			c.Credentials.AccessKeyID = parts[1]
 		case "AWS_SECRET_ACCESS_KEY":
@@ -63,7 +70,7 @@ func newIndexClient(env []string, address, region, stack string) (*indexClient, 
 		}
 	}
 	u, e := url.Parse(c.URL)
-	if e != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || !regexp.MustCompile(`^[a-z0-9]+\.execute-api\.`+regexp.QuoteMeta(c.Region)+`\.amazonaws\.com$`).MatchString(u.Host) || c.Credentials.AccessKeyID == "" || c.Credentials.SecretAccessKey == "" || !registry.ValidEnvironment(stack) {
+	if e != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || !regexp.MustCompile(`^[a-z0-9]+\.execute-api\.`+regexp.QuoteMeta(c.Region)+`\.amazonaws\.com$`).MatchString(u.Host) || (c.Provider == nil && (c.Credentials.AccessKeyID == "" || c.Credentials.SecretAccessKey == "")) || !registry.ValidEnvironment(stack) {
 		return nil, errors.New("invalid registry endpoint or AWS signing credentials; rerun setup")
 	}
 	return c, nil
@@ -85,7 +92,14 @@ func (c *indexClient) change(change registry.Change) (registry.Receipt, error) {
 		}
 		request.Header.Set("Content-Type", "application/json")
 		hash := sha256.Sum256(body)
-		if e = v4.NewSigner().SignHTTP(context.Background(), c.Credentials, request, hex.EncodeToString(hash[:]), "execute-api", c.Region, time.Now()); e != nil {
+		signing := c.Credentials
+		if c.Provider != nil {
+			signing, e = c.Provider.Retrieve(context.Background())
+			if e != nil {
+				return registry.Receipt{}, e
+			}
+		}
+		if e = v4.NewSigner().SignHTTP(context.Background(), signing, request, hex.EncodeToString(hash[:]), "execute-api", c.Region, time.Now()); e != nil {
 			return registry.Receipt{}, e
 		}
 		response, e := c.HTTP.Do(request)

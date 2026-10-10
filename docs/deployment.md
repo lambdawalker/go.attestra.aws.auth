@@ -24,7 +24,7 @@ By default, the tool prompts using hidden input:
 3. AWS session token, required for temporary credentials. A session token alone is insufficient. Leave it blank only for long-lived IAM access keys.
 4. Pulumi passphrase for encrypting the stack's secrets.
 
-Copy temporary credentials from your AWS credential source. Credentials are passed to AWS/Pulumi subprocesses through their environment, never as arguments or saved profiles. Existing AWS environment settings and shared profile files are isolated to avoid accidentally using another identity. The tool displays the account and ARN and asks you to confirm them. It does not refresh expired credentials; obtain a fresh set and rerun if they expire.
+Copy temporary credentials from your AWS credential source. Credentials are passed to AWS/Pulumi subprocesses through their environment, never as arguments or saved profiles. Existing AWS environment settings and shared profile files are isolated to avoid accidentally using another identity. The tool displays the account and ARN and asks you to confirm them. Manually pasted credentials cannot renew automatically; obtain a fresh set and rerun if they expire.
 
 ### IAM Identity Center (SSO)
 
@@ -40,7 +40,7 @@ For an existing SSO profile such as `attestra`, use:
 go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET -sso -profile attestra
 ```
 
-`-Sso` runs `aws sso login --profile attestra` and then captures temporary credentials without displaying them. The SSO region comes from your existing profile/session; it can differ from the deployment region. Your SSO configuration is preserved. `-Sso` works alone; when combined with `-Login`, SSO takes precedence. Login failures stop deployment and retain the AWS diagnostic rather than assuming the CLI is outdated.
+`-Sso` runs `aws sso login --profile attestra` and then uses a refreshable credential provider without displaying credentials. The SSO region comes from your existing profile/session; it can differ from the deployment region. Your SSO configuration is preserved. `-Sso` works alone; when combined with `-Login`, SSO takes precedence. Login failures stop deployment and retain the AWS diagnostic rather than assuming the CLI is outdated.
 
 ### AWS login alternative
 
@@ -54,9 +54,9 @@ Use AWS CLI's browser login instead of entering access keys:
 go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET -login -profile attestra
 ```
 
-This requires a current AWS CLI v2 supporting `aws login` and `aws configure export-credentials`. The profile defaults to `default`; you can edit it in the prompt. The tool runs `aws login --profile PROFILE`, then captures temporary credentials using `aws configure export-credentials --format process`. Credential output is never displayed or written to a file by the deployment tool. AWS CLI itself updates the selected profile and caches the login session in its normal files.
+This requires a current AWS CLI v2 supporting `aws login` and `aws configure export-credentials`. The profile defaults to `default`; you can edit it in the prompt. The tool runs `aws login --profile PROFILE`, then supplies a private `credential_process` profile that calls `aws configure export-credentials --format process` whenever credentials need renewal. Credential output is never displayed or written to a file by the deployment tool. AWS CLI itself updates the selected profile and caches the login session in its normal files.
 
-The deployment uses a snapshot of the exported credentials, so rerun if they expire during a long deployment. Existing environment credentials are cleared for login; custom AWS config, shared-credentials and login-cache paths are honored. The same identity confirmation and isolated deployment credential handling apply. Add `-Login -Profile attestra` to the migration command below if desired. The Pulumi passphrase is still required.
+Pulumi (including S3 state), AWS CLI commands, and index publication can renew credentials from the selected profile during deployment. Automatic renewal lasts only as long as the underlying login session allows. For SSO, use a modern `sso-session` profile (configure with `aws configure sso --profile attestra`); legacy profiles may require signing in again. If renewal fails, sign in again and rerun setup to resume. A private temporary configuration contains only the helper command and profile locations; it is removed when the tool exits. The selected profile and AWS CLI session cache remain managed by AWS CLI. Existing environment credentials are cleared for login; custom AWS config, shared-credentials and login-cache paths are honored. The same identity confirmation and isolated deployment credential handling apply. Add `-Login -Profile attestra` to the migration command below if desired. The Pulumi passphrase is still required.
 
 Keep the Pulumi passphrase in a password manager. It is separate from AWS credentials. Losing it prevents decrypting the stack's secrets. It is not persisted by the tool or sent to Pulumi Cloud during normal deployment. Normal deployments require no Pulumi Cloud token. Local processes running as your user can still inspect process memory/environment; use a trusted machine.
 

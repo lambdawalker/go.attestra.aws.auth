@@ -42,7 +42,11 @@ func runCI(o options) error {
 	if err := os.WriteFile(empty, nil, 0600); err != nil {
 		return err
 	}
-	r := &processRunner{env: cloudEnvironment(os.Environ(), c, o, empty)}
+	env, err := prepareCloudEnvironment(os.Environ(), c, o, empty)
+	if err != nil {
+		return err
+	}
+	r := &processRunner{env: env}
 	data, err := r.Exec(root, true, "aws", "sts", "get-caller-identity", "--output", "json", "--no-cli-pager")
 	if err != nil {
 		return err

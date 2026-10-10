@@ -20,7 +20,10 @@ type options struct {
 	Root, Stack, Backend, Region, MigrateFrom, Profile, CI string
 	Pull, Login, Sso                                       bool
 }
-type credentials struct{ Access, Secret, Token, Passphrase, CloudToken string }
+type credentials struct {
+	Access, Secret, Token, Passphrase, CloudToken string
+	Source                                        *credentialSource
+}
 type commandRunner interface {
 	Exec(dir string, capture bool, name string, args ...string) ([]byte, error)
 }
@@ -54,16 +57,19 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 		cmd.Env = captureEnvironment(cmd.Env, effective)
 	}
 	cmd.Stdin = os.Stdin
-	var out bytes.Buffer
+	var out, stderr bytes.Buffer
 	if capture {
 		cmd.Stdout = &out
-		cmd.Stderr = &bytes.Buffer{}
+		cmd.Stderr = &stderr
 	} else {
 		fmt.Printf("\n→ %s %s\n", name, strings.Join(args, " "))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
 	if err := cmd.Run(); err != nil {
+		if renewal := credentialRenewalFailure(cmd.Env, stderr.String()); renewal != nil {
+			return nil, renewal
+		}
 		return nil, fmt.Errorf("%s failed: %w", name, err)
 	}
 	return out.Bytes(), nil
@@ -72,7 +78,7 @@ func withoutCredentials(base []string) []string {
 	result := []string{}
 	for _, entry := range base {
 		key := strings.ToUpper(strings.SplitN(entry, "=", 2)[0])
-		if strings.HasPrefix(key, "AWS_") || strings.HasPrefix(key, "PULUMI_") {
+		if key == sourceEnvironmentKey || strings.HasPrefix(key, "AWS_") || strings.HasPrefix(key, "PULUMI_") {
 			continue
 		}
 		// Do not let the developer's cross-compilation flags affect host build tools.
