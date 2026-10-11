@@ -28,3 +28,8 @@ infra-index/Pulumi.*.yaml.bak*
 
 # Wizard checkpoints, receipts, locks and archived teardown history.
 /.attestra/
+
+# Generated documentation and local Python environments
+sites/dist/
+sites/__pycache__/
+.venv-docs/

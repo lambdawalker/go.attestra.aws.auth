@@ -73,7 +73,7 @@ Android consumption of this endpoint is a separate client change. Until then, th
 
 ## Concurrent deployments
 
-Before changing an indexed application’s stack configuration or IAM/GitHub settings, setup acquires its lock. First-time setup acquires it as soon as the shared registry is ready, before IAM/GitHub configuration. Application deployments use the same AWS SigV4-authenticated endpoint. Setup and deploy call an AWS SigV4-authenticated endpoint:
+Before changing an indexed application’s stack configuration or IAM/GitHub settings, setup acquires its lock. First-time setup acquires it as soon as the shared registry is ready, before IAM/GitHub configuration. Application deployments use the same AWS SigV4-authenticated endpoint. The endpoint is:
 
 ```text
 POST /v1/environments/<environment>/changes
@@ -122,7 +122,7 @@ If teardown was interrupted, rerun teardown with its `.attestra/teardown.<enviro
 
 If the receipt is irretrievably lost, an AWS administrator must inspect the registry table and all deployment processes before repairing the specific environment row. Increment its `revision` and remove `lock` in one conditional update matching the inspected revision and token. Do not delete the row or reset its revision; retain any existing entry/tombstone. This invalidates old receipts. Normal deployment tools never perform this administrative override.
 
-Shared-infrastructure setup has a separate conditional S3 lock, `.attestra/bootstrap.lock`, in the shared state bucket. After an abrupt crash, verify no setup process or shared Pulumi update is running, then remove that exact lock object to resume. Never delete Pulumi state to resolve a lock. If shared infrastructure was changed outside setup, inspect it and remove only `bootstrap-ready.json` to force the next setup to reconcile it; keep the stack state and configuration.
+Shared-infrastructure setup has a separate conditional S3 lock, `bootstrap.lock`, in the shared state bucket. After an abrupt crash, verify no setup process or shared Pulumi update is running, then remove that exact lock object to resume. Never delete Pulumi state to resolve a lock. If shared infrastructure was changed outside setup, inspect it and remove only `bootstrap-ready.json` to force the next setup to reconcile it; keep the stack state and configuration.
 
 ## Validation
 

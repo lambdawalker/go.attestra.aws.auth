@@ -1,0 +1,50 @@
+name: Documentation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r sites/requirements.txt
+      - run: python sites/test_build.py
+      - run: python sites/catalog.py --check
+      - run: python sites/build.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: sites/dist
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DOCS_PAGES_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: documentation-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check current main before publishing
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api repos/${{ github.repository }}/commits/main --jq .sha)
+          if [ "$head" = "${{ github.sha }}" ]; then echo 'publish=true' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/configure-pages@v5
+        if: steps.current.outputs.publish == 'true'
+      - uses: actions/deploy-pages@v4
+        if: steps.current.outputs.publish == 'true'
+        id: deployment

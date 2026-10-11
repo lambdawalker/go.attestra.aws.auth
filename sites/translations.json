@@ -1,0 +1,32 @@
+{
+  "docs/agents/index.md": {
+    "path": "docs/es/agents/index.md",
+    "source_sha256": "a20f7318b443a9178fcaa1bfd517f1b6a454cdc5477c94e6519ab20b4e42deed",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  },
+  "docs/agents/quickstart.md": {
+    "path": "docs/es/agents/quickstart.md",
+    "source_sha256": "3200c9bbdb3b9245304c0461295a91921579a62afaccb4fc04d1791ea3fb3b25",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  },
+  "docs/agents/api.md": {
+    "path": "docs/es/agents/api.md",
+    "source_sha256": "20cc2fef700f1cf9c422a5d6c37bbc7c44200af14966ba5697796589a88a8848",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  },
+  "docs/agents/operations.md": {
+    "path": "docs/es/agents/operations.md",
+    "source_sha256": "e91b4c221171731a1ebe283f98ca06bef6da1cd8610b5c99608bcd06c1e0b743",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  },
+  "docs/agents/integration.md": {
+    "path": "docs/es/agents/integration.md",
+    "source_sha256": "8ad570ef5d079a68ac6141f9aa83a5d4cfffc55eb83ac1b3c7d4aea04cc1ef12",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  },
+  "docs/agents/limitations.md": {
+    "path": "docs/es/agents/limitations.md",
+    "source_sha256": "d5714a2df1062b2610a76f6f920166f8f2ee36f6a57874fc2d7db26590207604",
+    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+  }
+}

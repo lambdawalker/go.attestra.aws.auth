@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "module": "go.attestra.aws.auth",
+  "canonicalLanguage": "en",
+  "languages": [
+    "en",
+    "es"
+  ],
+  "channels": [
+    {
+      "id": "main",
+      "kind": "development",
+      "source_ref": "64f4faea74e71a82795560e4b43e195d820a5242",
+      "agent_entry": "agents/index.md"
+    }
+  ],
+  "releases": [],
+  "archiveBoundary": "Current-source only; no confirmed releases at 2026-10-11 audit."
+}

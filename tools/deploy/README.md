@@ -5,6 +5,7 @@ This Go module contains the setup, deployment, credential management, health-che
 ```sh
 go -C tools/deploy run . -bootstrap
 go -C tools/deploy run . -teardown
+go -C tools/deploy run . -teardown-index
 go -C tools/deploy run . -manage-credentials
 ```
 
@@ -58,3 +59,5 @@ Wizard progress files live in ignored `.attestra/` at the repository root:
 Their `.bak`, `.tmp` and `.lock` siblings stay alongside them. Stop any running setup/deployment/teardown before upgrading. On the next command, old root-level files are moved intact. Conflicting old/new files or existing operation locks stop migration for inspection; no history is overwritten. Interrupted moves resume on rerun.
 
 Keep `.attestra/` when resuming interrupted operations. These files contain no credential values but include infrastructure identifiers and recovery metadata; keep them private. The optional encrypted credential vault stays in its existing user-specific location. Build artifacts already live in `dist/`, public Android exports in `android-config/`, and Pulumi configuration stays in `infra/` and `infra-index/`.
+
+Shared-index teardown has its own [runbook](../../docs/teardown-index.md) and private `.attestra/teardown-index.<account>.<region>.local.json` checkpoint. It does not replace environment teardown.

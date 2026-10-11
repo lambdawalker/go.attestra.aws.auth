@@ -1,0 +1,39 @@
+{
+  "repository": "lambdawalker/go.attestra.aws.auth",
+  "title": "Backend & operations",
+  "source_ref": "64f4faea74e71a82795560e4b43e195d820a5242",
+  "sources": [
+    "README.md",
+    "IMPORT.md",
+    "AI_INTEGRATION_GUIDE.md",
+    "docs/**/*.md",
+    "tools/deploy/README.md",
+    "sites/README.md"
+  ],
+  "nav": {
+    "docs/agents/index.md": {
+      "en": "Overview",
+      "es": "Resumen"
+    },
+    "docs/agents/quickstart.md": {
+      "en": "Quickstart",
+      "es": "Inicio r\u00e1pido"
+    },
+    "docs/agents/api.md": {
+      "en": "HTTP API",
+      "es": "API HTTP"
+    },
+    "docs/agents/operations.md": {
+      "en": "Operations",
+      "es": "Operaci\u00f3n"
+    },
+    "docs/agents/integration.md": {
+      "en": "Android integration",
+      "es": "Integraci\u00f3n Android"
+    },
+    "docs/agents/limitations.md": {
+      "en": "Limitations & recovery",
+      "es": "L\u00edmites y recuperaci\u00f3n"
+    }
+  }
+}
