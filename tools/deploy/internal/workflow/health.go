@@ -51,15 +51,21 @@ func checkEnvironmentHealth(r commandRunner, o options, client *http.Client) hea
 		return e == nil && json.Unmarshal(data, v) == nil
 	}
 	var output struct {
-		APIURL  string `json:"apiUrl"`
-		Pool    string `json:"userPoolId"`
-		Client  string `json:"clientId"`
-		Index   string `json:"indexUrl"`
-		Capture bool   `json:"captureEnabled"`
+		AssetLinksURL     string `json:"assetLinksUrl"`
+		AssetLinksContent string `json:"assetLinksContent"`
+		APIURL            string `json:"apiUrl"`
+		Pool              string `json:"userPoolId"`
+		Client            string `json:"clientId"`
+		Index             string `json:"indexUrl"`
+		Capture           bool   `json:"captureEnabled"`
 	}
 	if !read(&output, "pulumi", "stack", "output", "--json", "--stack", o.Stack) {
 		add("Stack outputs", false, "", "Cannot read deployed outputs; check AWS session, backend, passphrase, and stack.")
 		return report
+	}
+	if output.AssetLinksURL != "" {
+		err := checkAssetLinks(client, output.AssetLinksURL, output.AssetLinksContent)
+		add("Android associations", err == nil, "Published associations match approved configuration.", "Android associations are unavailable or differ from deployed content.")
 	}
 	expected := registry.Configuration{APIURL: output.APIURL, AWSRegion: o.Region, CognitoUserPoolID: output.Pool, CognitoClientID: output.Client}
 	expected.Features.IDCapture = output.Capture
@@ -69,6 +75,9 @@ func checkEnvironmentHealth(r commandRunner, o options, client *http.Client) hea
 	if !read(&config, "pulumi", "config", "--json", "--stack", o.Stack) {
 		add("Stack configuration", false, "", "Cannot read configuration; check backend and stack access.")
 		return report
+	}
+	if config["attestra-auth-email:androidAssociations"].Value != "" && output.AssetLinksURL == "" {
+		add("Android associations", false, "", "Configured association hosting has not been deployed.")
 	}
 	domain, origin := config["attestra-auth-email:senderDomain"].Value, config["attestra-auth-email:appOrigin"].Value
 	if custom := config["attestra-auth-email:apiDomain"].Value; custom != "" {

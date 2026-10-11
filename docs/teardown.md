@@ -84,3 +84,7 @@ An older teardown checkpoint that predates inventory capture cannot establish th
 A successful SSO/browser login confirms authentication, but does not establish access to the Pulumi state objects or prove that the stack passphrase is correct. Captured Pulumi failures now identify the operation (for example, `pulumi stack ls`) and include redacted stderr. Stack-export/configuration stdout is never included in an error, and configuration-write stderr is suppressed because it can echo secret values.
 
 If you see only `pulumi failed: exit status 1`, pull the latest script and retry. Preserve the teardown checkpoint. Share the operation and redacted error lines, not credentials or stack exports. A failure before the destruction preview/typed confirmation has not started resource deletion in that invocation; removals from earlier attempts are not rolled back.
+
+## Android domain associations
+
+See [Android association hosting](android-associations.md) for approved public fingerprints, optional S3/CloudFront hosting, staged DNS/certificate readiness, CI updates and teardown.

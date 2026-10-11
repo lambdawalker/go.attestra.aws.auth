@@ -108,7 +108,7 @@ func captureTeardownEvidence(data []byte, p *teardownProgress) error {
 				route53 = true
 			}
 		case "aws:acm/certificate:Certificate":
-			if strings.HasSuffix(r.URN, "::api-certificate") {
+			if strings.HasSuffix(r.URN, "::api-certificate") || strings.HasSuffix(r.URN, "::app-certificate") {
 				var options []struct{ ResourceRecordName, ResourceRecordType, ResourceRecordValue string }
 				if err := json.Unmarshal(r.Outputs["domainValidationOptions"], &options); err != nil {
 					return errors.New("cannot capture API certificate DNS evidence")
@@ -127,6 +127,17 @@ func captureTeardownEvidence(data []byte, p *teardownProgress) error {
 					return errors.New("cannot capture API domain DNS evidence")
 				}
 				p.Desired = append(p.Desired, dns.Record{Type: "CNAME", Name: name, Content: configuration.TargetDomainName})
+			}
+		case "aws:cloudfront/distribution:Distribution":
+			if strings.HasSuffix(r.URN, "::app-associations-cdn") {
+				var names []string
+				var target string
+				if json.Unmarshal(r.Outputs["aliases"], &names) != nil || json.Unmarshal(r.Outputs["domainName"], &target) != nil || target == "" {
+					return errors.New("cannot capture app hosting DNS evidence")
+				}
+				for _, name := range names {
+					p.Desired = append(p.Desired, dns.Record{Type: "CNAME", Name: name, Content: target})
+				}
 			}
 		case "aws:s3/bucketV2:BucketV2":
 			if strings.HasSuffix(r.URN, "::id-evidence") {

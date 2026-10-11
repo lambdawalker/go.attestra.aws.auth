@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/dns"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -100,6 +102,10 @@ func (w *bootstrapWizard) deployStagesActual() error {
 			partial.Targets = append(partial.Targets, prefix+"aws:route53/record:Record::api-certificate-dns")
 		}
 	}
+	associations := config["attestra-auth-email:androidAssociations"].Value != ""
+	if associations {
+		partial.Targets = append(partial.Targets, associationTargets(w.o.Stack, route53)...)
+	}
 	if err := execute(w.r, partial); err != nil {
 		return err
 	}
@@ -137,6 +143,19 @@ func (w *bootstrapWizard) deployStagesActual() error {
 			return err
 		}
 	}
+	if associations {
+		app, err := url.Parse(config["attestra-auth-email:appOrigin"].Value)
+		if err != nil {
+			return err
+		}
+		arn, err := w.output("appCertificateArn")
+		if err != nil {
+			return err
+		}
+		if err := w.waitCertificate(app.Hostname(), arn, route53); err != nil {
+			return err
+		}
+	}
 	fmt.Println("4 / 4 • Preview and deploy the complete application")
 	if err := w.markStage("ses-verified"); err != nil {
 		return err
@@ -150,6 +169,24 @@ func (w *bootstrapWizard) deployStagesActual() error {
 	}
 	if apiDomain != "" {
 		if err := w.publishAPIDomain(apiDomain, route53); err != nil {
+			return err
+		}
+	}
+	if associations {
+		app, err := url.Parse(config["attestra-auth-email:appOrigin"].Value)
+		if err != nil {
+			return err
+		}
+		if !route53 {
+			target, err := w.output("appDomainTarget")
+			if err != nil {
+				return err
+			}
+			if err := w.publishDNS(app.Hostname(), []dns.Record{{Type: "CNAME", Name: app.Hostname(), Content: target}}); err != nil {
+				return err
+			}
+		}
+		if err := waitAssetLinks(w.r, w.o); err != nil {
 			return err
 		}
 	}

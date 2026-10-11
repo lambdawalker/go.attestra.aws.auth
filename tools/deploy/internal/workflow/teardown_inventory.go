@@ -39,6 +39,12 @@ func teardownResourceProbe(kind, urn, id string, out map[string]json.RawMessage)
 		p.Kind = "bucket"
 	case "aws:s3/bucketVersioningV2:BucketVersioningV2", "aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2", "aws:s3/bucketOwnershipControls:BucketOwnershipControls", "aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock", "aws:s3/bucketServerSideEncryptionConfigurationV2:BucketServerSideEncryptionConfigurationV2", "aws:s3/bucketPolicy:BucketPolicy":
 		parent("bucket", "bucket")
+	case "aws:s3/bucketObjectv2:BucketObjectv2":
+		parent("bucket", "bucket")
+	case "aws:cloudfront/distribution:Distribution":
+		p.Kind = "distribution"
+	case "aws:cloudfront/originAccessControl:OriginAccessControl":
+		p.Kind = "origin-access-control"
 	case "aws:sqs/queue:Queue":
 		p.Kind = "queue"
 	case "aws:cognito/userPool:UserPool":
@@ -115,8 +121,17 @@ func verifyTeardownProbe(a awsenv.API, p teardownProbe) error {
 	case "domain":
 		args = []string{"apigatewayv2", "get-domain-name", "--domain-name", p.ID}
 		missing = "NotFoundException"
+	case "distribution":
+		args = []string{"cloudfront", "get-distribution", "--id", p.ID}
+		missing = "NoSuchDistribution"
+	case "origin-access-control":
+		args = []string{"cloudfront", "get-origin-access-control", "--id", p.ID}
+		missing = "NoSuchOriginAccessControl"
 	case "certificate":
 		args = []string{"acm", "describe-certificate", "--certificate-arn", p.ID}
+		if parts := strings.Split(p.ID, ":"); len(parts) == 6 && parts[3] != "" {
+			args = append(args, "--region", parts[3])
+		}
 	case "rule":
 		args = []string{"events", "describe-rule", "--name", p.ID}
 	case "alarm":

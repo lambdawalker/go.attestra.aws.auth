@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -84,6 +85,20 @@ func runCI(o options) error {
 				return errors.New("API certificate is not issued for configured apiDomain; run setup to validate DNS before deploying")
 			}
 		}
+		if config["attestra-auth-email:androidAssociations"].Value != "" {
+			arn, e := wizard.output("appCertificateArn")
+			if e != nil {
+				return errors.New("Android hosting prerequisites missing; run setup first")
+			}
+			cert, e := wizard.certificateStatus(arn)
+			if e != nil {
+				return e
+			}
+			app, e := url.Parse(config["attestra-auth-email:appOrigin"].Value)
+			if e != nil || cert.Certificate.Status != "ISSUED" || cert.Certificate.DomainName != app.Hostname() {
+				return errors.New("Android hosting certificate is not ready; run setup first")
+			}
+		}
 		evidence, err := wizard.readSES()
 		if err != nil {
 			return fmt.Errorf("SES readiness check failed; run setup and choose Build, preview and deploy to complete SES/DNS prerequisites: %w", err)
@@ -99,6 +114,9 @@ func runCI(o options) error {
 		return err
 	}
 	if o.CI != "preview" {
+		if err := waitAssetLinks(r, o); err != nil {
+			return err
+		}
 		return runEnvironmentHealth(r, o)
 	}
 	return nil

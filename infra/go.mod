@@ -120,3 +120,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/frand v1.4.2 // indirect
 )
+
+require github.com/lambdawalker/go.attestra.aws.auth v0.0.0
+
+replace github.com/lambdawalker/go.attestra.aws.auth => ..
