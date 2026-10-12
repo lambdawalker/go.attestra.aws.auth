@@ -115,7 +115,7 @@ func bootstrapStack(r commandRunner, o options, defaults map[string]string, know
 	}
 	slices.Sort(keys)
 	for _, key := range keys {
-		if value, ok := current[key]; ok && !(key == "attestra-auth-email:route53ZoneId" && value.Value == "" && defaults[key] != "") {
+		if value, ok := current[key]; ok && key != "attestra-auth-email:androidAssociations" && !(key == "attestra-auth-email:route53ZoneId" && value.Value == "" && defaults[key] != "") {
 			fmt.Println("Keeping existing", key)
 			continue
 		}
