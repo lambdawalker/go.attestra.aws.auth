@@ -1,0 +1,16 @@
+encryptionsalt: v1:mqAULSbajTc=:v1:e8z7M95zeAn1hBe6:fldHtdazJwzNiIS6OuXYhZpZdPiu5w==
+config:
+  attestra-auth-email:apiDomain: dev.api.attestrabond.com
+  attestra-auth-email:appOrigin: https://dev.attestrabond.com
+  attestra-auth-email:captureReservedConcurrency: "-1"
+  attestra-auth-email:captureWorkerMaxConcurrency: "2"
+  attestra-auth-email:environmentClass: test
+  attestra-auth-email:senderAddress: verify@dev.info.attestrabond.com
+  attestra-auth-email:senderDomain: dev.info.attestrabond.com
+  aws:region: us-east-2
+  attestra-auth-email:proofKey:
+    secure: v1:gKwnm84+Wj5W5KoA:NSjv7oAUvqU+0OXXvlCH47kYHiBYZh73Rf9O8e2+ab2/5mbt6bf4koqnc6nzTA5RP9eoMPPi0zh2e4L6
+  attestra-auth-email:indexApiUrl: https://fsfr6sv8u5.execute-api.us-east-2.amazonaws.com
+  attestra-auth-email:indexRegion: us-east-2
+  attestra-auth-email:indexApiArn: arn:aws:execute-api:us-east-2:878093321137:fsfr6sv8u5
+  attestra-auth-email:indexUrl: https://index.attestrabond.com/v1/environments

@@ -1,0 +1,5 @@
+encryptionsalt: v1:X0kimvwVs18=:v1:wiQYlFNDwaJXUgq2:45q98tNgbc0eE/rSqxsODWFS5I1log==
+config:
+  aws:region: us-east-2
+  attestra-index:domain: index.attestrabond.com
+  attestra-index:sourceHash: 9cef6782d750df0e05c5bcba28854de2cb94aa5a7feffe637e51a06c092dd764
