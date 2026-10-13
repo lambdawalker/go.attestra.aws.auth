@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"github.com/lambdawalker/go.attestra.aws.auth/assetlinks"
 	"io"
 	"net/http"
 	"strings"
@@ -39,5 +40,37 @@ func TestAssociationTargetsAndTeardown(t *testing.T) {
 		if p.Kind != want {
 			t.Fatal(p)
 		}
+	}
+}
+
+func TestMergeLocalAssociations(t *testing.T) {
+	a := strings.Repeat("AA:", 31) + "AA"
+	b := strings.Repeat("BB:", 31) + "BB"
+	existing := []assetlinks.Application{{PackageName: "com.example.app", Fingerprints: []string{a}}}
+	incoming := []assetlinks.Application{{PackageName: "com.example.app", Fingerprints: []string{b}}}
+	merged, changed, err := mergeAssociations(existing, incoming)
+	if err != nil || !changed || len(merged[0].Fingerprints) != 2 || len(existing[0].Fingerprints) != 1 {
+		t.Fatalf("merge failed: %v %v", merged, err)
+	}
+	_, changed, err = mergeAssociations(merged, incoming)
+	if err != nil || changed {
+		t.Fatal("repeat import must not change approvals")
+	}
+	_, _, err = mergeAssociations(existing, []assetlinks.Application{{PackageName: "invalid", Fingerprints: []string{b}}})
+	if err == nil {
+		t.Fatal("invalid package accepted")
+	}
+}
+
+func TestApprovedAssociationUpdateReachesExistingStack(t *testing.T) {
+	o := testOptions()
+	o.Root = t.TempDir()
+	f := &bootstrapFake{list: `[{"name":"dev"}]`, state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, config: `{"attestra-auth-email:androidAssociations":{"value":"[]"},"attestra-auth-email:proofKey":{"value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","secret":true}}`}
+	approved := `[{"packageName":"com.example.app","sha256CertFingerprints":["` + strings.Repeat("AA:", 31) + `AA"]}]`
+	if err := bootstrapStack(f, o, map[string]string{"attestra-auth-email:androidAssociations": approved}, false, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.calls, "\n"), "attestra-auth-email:androidAssociations -- "+approved) {
+		t.Fatal("approved update was skipped", f.calls)
 	}
 }

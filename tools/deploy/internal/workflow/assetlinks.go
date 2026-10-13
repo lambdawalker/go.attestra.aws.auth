@@ -16,19 +16,61 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/lambdawalker/go.attestra.aws.auth/assetlinks"
 	"github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/ui"
 )
 
 // Import only public associations. Empty input leaves any existing website alone.
 func (w *bootstrapWizard) associationDefaults(current string, defaults map[string]string) error {
+	var existing []assetlinks.Application
 	if current != "" {
-		var apps []assetlinks.Application
-		if json.Unmarshal([]byte(current), &apps) != nil {
+		if json.Unmarshal([]byte(current), &existing) != nil {
 			return errors.New("invalid androidAssociations JSON")
 		}
-		_, e := assetlinks.Render(apps)
-		return e
+		if _, err := assetlinks.Render(existing); err != nil {
+			return err
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	local := filepath.Join(home, ".attestra", "associations", w.environment, "developer-associations.json")
+	if data, readErr := os.ReadFile(local); readErr == nil {
+		var discovered []assetlinks.Application
+		if json.Unmarshal(data, &discovered) != nil {
+			return fmt.Errorf("invalid public association JSON: %s", local)
+		}
+		merged, changed, err := mergeAssociations(existing, discovered)
+		if err != nil {
+			return fmt.Errorf("public association file %s: %w", local, err)
+		}
+		fmt.Printf("Local Android associations • environment %s\nSource: %s\n", w.environment, local)
+		for _, app := range discovered {
+			fmt.Println("Package:", app.PackageName)
+			for _, fp := range app.Fingerprints {
+				fmt.Println("  SHA-256:", strings.ToUpper(fp))
+			}
+		}
+		if changed {
+			approve := false
+			if err := huh.NewConfirm().Title("Approve these public signing identities for " + w.environment + "?").Description("Adds fingerprints without removing existing approvals. Enables CloudFront hosting on appOrigin; do not approve if that hostname already serves an unrelated website.").Value(&approve).Run(); err != nil {
+				return err
+			}
+			if approve {
+				compact, _ := json.Marshal(merged)
+				defaults["attestra-auth-email:androidAssociations"] = string(compact)
+			}
+		} else {
+			fmt.Println("These public signing identities are already configured.")
+		}
+		return nil
+	} else if !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if current != "" {
+		return nil
 	}
 	if _, known := w.remembered("androidAssociationsSkipped"); known {
 		return nil
@@ -55,6 +97,52 @@ func (w *bootstrapWizard) associationDefaults(current string, defaults map[strin
 	defaults["attestra-auth-email:androidAssociations"] = string(compact)
 	return nil
 }
+
+// Merge only additions; a local handoff cannot revoke existing identities.
+func mergeAssociations(existing, incoming []assetlinks.Application) ([]assetlinks.Application, bool, error) {
+	if _, err := assetlinks.Render(existing); err != nil {
+		return nil, false, err
+	}
+	if _, err := assetlinks.Render(incoming); err != nil {
+		return nil, false, err
+	}
+	data, _ := json.Marshal(existing)
+	var merged []assetlinks.Application
+	_ = json.Unmarshal(data, &merged)
+	changed := false
+	for _, app := range incoming {
+		index := -1
+		for i := range merged {
+			if merged[i].PackageName == app.PackageName {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			merged = append(merged, app)
+			changed = true
+			continue
+		}
+		for _, fp := range app.Fingerprints {
+			found := false
+			for _, old := range merged[index].Fingerprints {
+				if strings.EqualFold(old, fp) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				merged[index].Fingerprints = append(merged[index].Fingerprints, strings.ToUpper(fp))
+				changed = true
+			}
+		}
+	}
+	if _, err := assetlinks.Render(merged); err != nil {
+		return nil, false, err
+	}
+	return merged, changed, nil
+}
+
 func associationTargets(stack string, route53 bool) []string {
 	prefix := "urn:pulumi:" + stack + "::attestra-auth-email::"
 	targets := []string{prefix + "pulumi:providers:aws::app-edge", prefix + "aws:acm/certificate:Certificate::app-certificate"}
