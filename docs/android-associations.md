@@ -38,3 +38,23 @@ Outputs: `appCertificateArn`, `appDomainTarget`, `appDistributionId`, `assetLink
 Environment teardown removes the Pulumi-managed object, private bucket, CloudFront distribution/OAC and certificate, plus approved app DNS evidence through the existing DNS cleanup. Certificate verification uses the ARN's region. The bucket is not force-emptied: unrelated objects stop deletion for manual review. Shared index infrastructure and developer/CI signing keys are not removed. CloudFront disable/delete may take several minutes.
 
 Checks: `go test ./assetlinks`; `go -C infra test ./...` (Pulumi mocks); `go -C tools/deploy test ./...` (workflow/HTTP/teardown fixtures). No live cloud deployment is required for these tests. Signing identities and GitHub secrets must be supplied by the operator; this feature does not create production keys or auto-register certificates discovered during builds.
+
+## Manage approvals without a full deployment
+
+Run the separate root launcher after association hosting has been set up:
+
+```powershell
+.\associations.bat -sso -profile attestra -stack dev -backend s3://YOUR-DEV-STATE-BUCKET
+```
+
+```sh
+./associations.sh -sso -profile attestra -stack qa -backend s3://YOUR-QA-STATE-BUCKET
+```
+
+The tool uses the existing Go deployment authentication flow (SSO, browser login with `-login`, or prompted AWS credentials) and requests the Pulumi passphrase. Confirm the environment, AWS identity and state backend. No GitHub or Cloudflare token is needed.
+
+The menu lists approvals, adds a public JSON file (defaulting to the local environment handoff), removes one selected fingerprint, or publishes. Add/remove changes remain in memory until Publish; exiting warns about unpublished changes. Publishing displays the exact list for approval, writes the Pulumi config, updates only the existing `android-assetlinks` S3 object using `--target --skip-preview`, then checks the public URL. Removing the final fingerprint retains an empty array so hosting remains deployed.
+
+This skips Lambda builds, full-stack updates and preview. Pulumi still executes/compiles the infrastructure program, which can require the existing local deployment artifacts and configuration. Initial hosting creation remains a setup operation. This tool does not write directly to S3 outside Pulumi ownership.
+
+Commit the changed `infra/Pulumi.<environment>.yaml` so later CI deployments preserve approvals/removals. Do not edit the same stack configuration concurrently from another checkout. If publishing fails, the edited YAML is retained for retry; exiting does not revert it. The local handoff may still contain a removed fingerprint and setup may offer it again—do not reapprove it. Device caches and sessions remain separate from public-file publication.

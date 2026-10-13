@@ -24,8 +24,10 @@ func Run() error {
 	if len(os.Args) == 3 && os.Args[1] == "-credential-process" {
 		return runCredentialProcess(os.Args[2])
 	}
+	var associations bool
 	var o options
 	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex bool
+	flag.BoolVar(&associations, "associations", false, "Manage and publish Android signing approvals without a full deployment")
 	flag.StringVar(&o.ExportAndroid, "export-android", "", "Export deployed public Android settings to a properties file without deployment")
 	flag.BoolVar(&manageVault, "manage-credentials", false, "Manage the local credential vault without running setup")
 	flag.BoolVar(&o.HealthCheck, "health-check", false, "Check the deployed environment without building or deploying")
@@ -50,6 +52,9 @@ func Run() error {
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
+	}
+	if associations && (build || bootstrap || setupGitHub || teardown || teardownIndex || manageVault || forceSetup || freshCredentials || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex || o.HealthCheck || o.ExportAndroid != "") {
+		return errors.New("-associations cannot be combined with other operations")
 	}
 	if o.ExportAndroid != "" && (o.HealthCheck || build || bootstrap || setupGitHub || teardown || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex) {
 		return errors.New("-export-android cannot be combined with other operation flags")
@@ -147,9 +152,9 @@ func Run() error {
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Attestra • Deploy"))
 	fmt.Println("S3 state • interactive AWS authentication")
 	if err := huh.NewForm(huh.NewGroup(
+		ui.Input("Environment / stack", &o.Stack, false, true),
 		ui.Input("S3 state URL (bucket must already exist)", &o.Backend, false, true),
 		ui.Input("AWS region", &o.Region, false, true),
-		ui.Input("Stack", &o.Stack, false, true),
 	)).Run(); err != nil {
 		return err
 	}
@@ -241,6 +246,9 @@ func Run() error {
 		if err := pullRepository(&processRunner{}, o.Root); err != nil {
 			return err
 		}
+	}
+	if associations {
+		return manageAssociations(runner, o)
 	}
 	if o.ExportAndroid != "" {
 		return exportAndroidConfiguration(runner, o, o.ExportAndroid)
