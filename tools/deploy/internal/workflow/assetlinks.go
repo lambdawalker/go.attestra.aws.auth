@@ -198,7 +198,7 @@ func waitAssetLinks(r commandRunner, o options) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
 		err := checkAssetLinks(&http.Client{}, out.URL, out.Content)
@@ -206,11 +206,11 @@ func waitAssetLinks(r commandRunner, o options) error {
 			fmt.Println("✓ Android associations ready: " + out.URL)
 			return nil
 		}
-		fmt.Printf("Waiting for Android association hosting: %v; checking again in 10 seconds.\n", err)
+		fmt.Printf("Waiting for Android association hosting: %v; checking again in 30 seconds.\n", err)
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("Android association readiness stopped; resources retained: %w", err)
-		case <-time.After(10 * time.Second):
+		case <-time.After(30 * time.Second):
 		}
 	}
 }
