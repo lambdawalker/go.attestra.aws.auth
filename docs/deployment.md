@@ -194,3 +194,7 @@ The setup recovery menu also offers **Export Android configuration**. In `androi
 ```
 
 On Unix, use `./deploy.sh` and `./gradlew` with the same flags. Re-export and rebuild when switching environments; the file does not change an already installed app. No AWS access keys, tokens, or Pulumi secrets are exported.
+
+## Android domain associations
+
+See [Android association hosting](android-associations.md) for approved public fingerprints, optional S3/CloudFront hosting, staged DNS/certificate readiness, CI updates and teardown.

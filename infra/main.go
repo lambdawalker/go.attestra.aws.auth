@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/lambdawalker/go.attestra.aws.auth/assetlinks"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -31,6 +32,16 @@ func deploy(ctx *pulumi.Context) error {
 	certificate, err := apiCertificate(ctx, cfg.Get("apiDomain"), zone)
 	if err != nil {
 		return err
+	}
+	// Absence preserves existing sites; an explicit empty array publishes a revocation file.
+	if cfg.Get("androidAssociations") != "" {
+		var apps []assetlinks.Application
+		if err := cfg.GetObject("androidAssociations", &apps); err != nil {
+			return err
+		}
+		if err := deployAssetLinks(ctx, origin, zone, apps); err != nil {
+			return err
+		}
 	}
 	diagnosticMode := cfg.Get("diagnosticMode") == "true"
 	proofKey := cfg.RequireSecret("proofKey")

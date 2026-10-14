@@ -50,6 +50,15 @@ func deploymentPolicies(account string, o options) map[string]any {
 	serviceRole := statement([]string{"iam:CreateServiceLinkedRole"}, []string{"arn:aws:iam::" + account + ":role/aws-service-role/ops.apigateway.amazonaws.com/AWSServiceRoleForAPIGateway"})
 	serviceRole["Condition"] = map[string]any{"StringEquals": map[string]string{"iam:AWSServiceName": "ops.apigateway.amazonaws.com"}}
 	return map[string]any{
+		"attestra-associations": document(
+			statement([]string{"s3:*"}, []string{"arn:aws:s3:::app-associations-*", "arn:aws:s3:::app-associations-*/*"}),
+			statement([]string{"cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags", "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig", "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution", "cloudfront:CreateOriginAccessControl", "cloudfront:GetOriginAccessControl", "cloudfront:GetOriginAccessControlConfig", "cloudfront:UpdateOriginAccessControl", "cloudfront:DeleteOriginAccessControl", "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource"}, []string{"*"}),
+			func() map[string]any {
+				s := statement([]string{"acm:RequestCertificate", "acm:DescribeCertificate", "acm:DeleteCertificate", "acm:AddTagsToCertificate", "acm:RemoveTagsFromCertificate", "acm:ListTagsForCertificate"}, []string{"*"})
+				s["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": "us-east-1"}}
+				return s
+			}(),
+		),
 		"attestra-state": state,
 		"attestra-iam":   document(iam, attach, pass, serviceRole),
 		"attestra-services": document(regional,

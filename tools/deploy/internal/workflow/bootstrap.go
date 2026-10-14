@@ -287,6 +287,9 @@ func (w *bootstrapWizard) prepare(a *awsenv.Client, c credentials, o options, ac
 	if zone != "" {
 		defaults["attestra-auth-email:route53ZoneId"] = zone
 	}
+	if err = w.associationDefaults(current["attestra-auth-email:androidAssociations"].Value, defaults); err != nil {
+		return err
+	}
 	if err = bootstrapStack(w.r, o, defaults, w.memory.StackInitialized, w.saveProofKey); err != nil {
 		return err
 	}

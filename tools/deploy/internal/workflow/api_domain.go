@@ -63,7 +63,11 @@ type apiCertificateStatus struct {
 
 func (w *bootstrapWizard) certificateStatus(arn string) (apiCertificateStatus, error) {
 	var result apiCertificateStatus
-	_, err := w.a.Call(&result, "acm", "describe-certificate", "--certificate-arn", arn)
+	args := []string{"acm", "describe-certificate", "--certificate-arn", arn}
+	if parts := strings.Split(arn, ":"); len(parts) == 6 && parts[3] != "" {
+		args = append(args, "--region", parts[3])
+	}
+	_, err := w.a.Call(&result, args...)
 	return result, err
 }
 func (w *bootstrapWizard) prepareAPICertificate(domain string, route53 bool) error {
@@ -86,9 +90,9 @@ func (w *bootstrapWizard) waitCertificate(domain, arn string, route53 bool) erro
 			return err
 		}
 		if status.Certificate.DomainName != domain {
-			return errors.New("certificate domain differs from configured API domain")
+			return errors.New("certificate domain differs from configured domain")
 		}
-		fmt.Println("API certificate: " + status.Certificate.Status)
+		fmt.Println("HTTPS certificate: " + status.Certificate.Status)
 		if status.Certificate.Status == "ISSUED" {
 			return nil
 		}
