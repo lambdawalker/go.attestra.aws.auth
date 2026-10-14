@@ -14,3 +14,4 @@ config:
   attestra-auth-email:indexRegion: us-east-2
   attestra-auth-email:indexApiArn: arn:aws:execute-api:us-east-2:878093321137:fsfr6sv8u5
   attestra-auth-email:indexUrl: https://index.attestrabond.com/v1/environments
+  attestra-auth-email:androidAssociations: '[{"packageName":"com.apexfission.android.attestra.auth","sha256CertFingerprints":["70:D5:93:A2:5B:AE:6E:E4:67:AD:8E:42:C0:8D:DF:17:26:18:5C:B0:2E:A5:1D:BF:3F:C2:DF:77:5A:3C:18:CB"]}]'
