@@ -15,6 +15,10 @@ import (
 )
 
 func (w *bootstrapWizard) loadCredentials(repo string, fresh bool) error {
+	return w.loadCredentialsPrompt(repo, fresh, true)
+}
+
+func (w *bootstrapWizard) loadCredentialsPrompt(repo string, fresh, ask bool) error {
 	w.credentialRepo = repo
 	path, scope, err := credentialvault.Location(repo, w.environment)
 	if err != nil {
@@ -29,8 +33,10 @@ func (w *bootstrapWizard) loadCredentials(repo string, fresh bool) error {
 		return err
 	}
 	use := true
-	if err := huh.NewConfirm().Title("Unlock saved credentials for " + w.environment + "?").Description("No uses credentials entered for this run. The encrypted vault stays unchanged unless you choose to replace it later.").Value(&use).Run(); err != nil {
-		return err
+	if ask {
+		if err := huh.NewConfirm().Title("Unlock saved credentials for " + w.environment + "?").Description("No uses credentials entered for this run. The encrypted vault stays unchanged unless you choose to replace it later.").Value(&use).Run(); err != nil {
+			return err
+		}
 	}
 	if !use {
 		return nil
@@ -41,7 +47,7 @@ func (w *bootstrapWizard) loadCredentials(repo string, fresh bool) error {
 	}
 	vault, values, err := credentialvault.Unlock(path, scope, phrase)
 	if err != nil {
-		return fmt.Errorf("%w; rerun and decline vault unlock to enter fresh credentials, or use credentials.bat/credentials.sh to manage the vault", err)
+		return fmt.Errorf("%w; use credentials.bat/credentials.sh to replace credentials, change the passphrase or delete the vault", err)
 	}
 	w.vault, w.secrets = vault, values
 	fmt.Println("✓ Credentials unlocked locally. Saved tokens may expire; use credentials.bat/credentials.sh to replace them. AWS SSO/browser sessions remain managed by the AWS CLI.")
@@ -62,6 +68,10 @@ func (w *bootstrapWizard) ensureCloudflare() error {
 	return nil
 }
 func (w *bootstrapWizard) offerCredentialSaving() error {
+	return w.saveCredentialsPrompt(true)
+}
+
+func (w *bootstrapWizard) saveCredentialsPrompt(ask bool) error {
 	if w.memory.Settings["dnsProvider"] == "cloudflare" {
 		if err := w.ensureCloudflare(); err != nil {
 			return err
@@ -71,9 +81,11 @@ func (w *bootstrapWizard) offerCredentialSaving() error {
 	if w.vault != nil {
 		return w.vault.Save(w.secrets)
 	}
-	save := false
-	if err := huh.NewConfirm().Title("Save these credentials in an encrypted local vault?").Description("Includes GitHub, Cloudflare (if used), the application and shared index Pulumi passphrases, and manually entered AWS keys/session token. AWS expiry still applies. Default: do not save.").Value(&save).Run(); err != nil {
-		return err
+	save := !ask
+	if ask {
+		if err := huh.NewConfirm().Title("Save these credentials in an encrypted local vault?").Description("Includes GitHub, Cloudflare (if used), the application and shared index Pulumi passphrases, and manually entered AWS keys/session token. AWS expiry still applies. Default: do not save.").Value(&save).Run(); err != nil {
+			return err
+		}
 	}
 	if !save {
 		return nil

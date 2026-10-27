@@ -15,7 +15,6 @@ import (
 
 	"github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/ui"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
 )
@@ -151,44 +150,19 @@ func Run() error {
 	}
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Attestra • Deploy"))
 	fmt.Println("S3 state • interactive AWS authentication")
-	if err := huh.NewForm(huh.NewGroup(
-		ui.Input("Environment / stack", &o.Stack, false, true),
-		ui.Input("S3 state URL (bucket must already exist)", &o.Backend, false, true),
-		ui.Input("AWS region", &o.Region, false, true),
-	)).Run(); err != nil {
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	saved, err := configureLocalDeploy(&o, explicit)
+	if err != nil {
 		return err
 	}
-	if err := o.validate(); err != nil {
-		return err
-	}
-	c := credentials{}
-	if o.Login || o.Sso {
-		if err := ui.Input("AWS login profile", &o.Profile, false, true).Run(); err != nil {
-			return err
+	defer func() {
+		if saved.vault != nil {
+			saved.vault.Close()
 		}
-		fmt.Println("AWS CLI will open its login flow and cache the session in your selected profile.")
-		loginRunner := &processRunner{env: loginEnvironment(os.Environ(), o.Region)}
-		c, err = loginCredentials(loginRunner, o)
-		if err != nil {
-			return err
-		}
-	} else {
-		fmt.Println("Temporary AWS credentials need all three fields. For long-lived keys only, leave session token blank.")
-		if err := huh.NewForm(huh.NewGroup(
-			ui.Input("AWS access key ID", &c.Access, true, true),
-			ui.Input("AWS secret access key", &c.Secret, true, true),
-			ui.Input("AWS session token (required for temporary credentials)", &c.Token, true, false),
-		)).Run(); err != nil {
-			return err
-		}
-		c.Access = strings.TrimSpace(c.Access)
-		c.Secret = strings.TrimSpace(c.Secret)
-		c.Token = strings.TrimSpace(c.Token)
-		if strings.HasPrefix(c.Access, "ASIA") && c.Token == "" {
-			return errors.New("temporary AWS access keys require the session token")
-		}
-	}
-	if err := ui.Input("Pulumi state passphrase (keep a recoverable copy)", &c.Passphrase, true, true).Run(); err != nil {
+	}()
+	c, err := deployCredentials(saved, o)
+	if err != nil {
 		return err
 	}
 	if o.MigrateFrom != "" {
@@ -221,7 +195,7 @@ func Run() error {
 	runner := &processRunner{env: env}
 	identity, err := runner.Exec(o.Root, true, "aws", "sts", "get-caller-identity", "--output", "json", "--no-cli-pager")
 	if err != nil {
-		return errors.New("AWS credentials could not be verified; check all credential fields and their expiry")
+		return errors.New("AWS credentials could not be verified; check their expiry and use credentials.bat/credentials.sh to replace saved manual credentials, or retry with -Sso/-Login")
 	}
 	var id struct {
 		Account string
@@ -236,6 +210,18 @@ func Run() error {
 	}
 	if err := checkBucket(runner, o, id.Account); err != nil {
 		return err
+	}
+	if o.MigrateFrom == "" {
+		if err := saveDeploySettings(o, saved.credentialRepo); err != nil {
+			return err
+		}
+		saved.passphrase = c.Passphrase
+		if !o.Login && !o.Sso {
+			saved.secrets.AWSAccess, saved.secrets.AWSSecret, saved.secrets.AWSToken = c.Access, c.Secret, c.Token
+		}
+		if err := saved.saveCredentialsPrompt(false); err != nil {
+			return err
+		}
 	}
 	if o.MigrateFrom != "" {
 		if err := ui.Confirm("Migrate " + o.MigrateFrom + " to S3 and rewrite the local stack configuration?"); err != nil {

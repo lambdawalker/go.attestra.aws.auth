@@ -30,7 +30,7 @@ func cleanupTeardownLocal(root string, p *teardownProgress) error {
 	if err := ui.ValidateEnvironment(p.Environment); err != nil {
 		return err
 	}
-	paths := []string{filepath.Join(root, ".attestra", "bootstrap."+p.Environment+".local.json"), filepath.Join(root, ".attestra", "bootstrap."+p.Environment+".local.json.bak")}
+	paths := []string{filepath.Join(root, ".attestra", "deploy."+p.Environment+".local.json"), filepath.Join(root, ".attestra", "bootstrap."+p.Environment+".local.json"), filepath.Join(root, ".attestra", "bootstrap."+p.Environment+".local.json.bak")}
 	if p.Environment == "dev" {
 		paths = append(paths, filepath.Join(root, ".attestra", "bootstrap.local.json"), filepath.Join(root, ".attestra", "bootstrap.local.json.bak"))
 	}
