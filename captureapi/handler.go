@@ -21,6 +21,8 @@ func reply(status int, v any) events.APIGatewayV2HTTPResponse {
 func fail(e error) events.APIGatewayV2HTTPResponse {
 	status, code := 503, "service_unavailable"
 	switch {
+	case errors.Is(e, capture.ErrPolicyChanged):
+		status, code = 409, "policy_changed"
 	case errors.Is(e, capture.ErrInvalid):
 		status, code = 400, "invalid_request"
 	case errors.Is(e, capture.ErrNotFound):
@@ -78,7 +80,11 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	}
 	method, path := req.RequestContext.HTTP.Method, req.RawPath
 	if method == "GET" && path == "/onboarding/id/document-policy" {
-		return reply(200, h.Service.Policy()), nil
+		p, e := h.Service.CurrentPolicy(ctx)
+		if e != nil {
+			return fail(e), nil
+		}
+		return reply(200, p), nil
 	}
 	if method == "GET" && path == "/onboarding/id/status" {
 		r, e := h.Service.Current(ctx, owner)
@@ -89,13 +95,14 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	}
 	if method == "POST" && path == "/onboarding/id/captures" {
 		var in struct {
-			OperationKey string `json:"operation_key"`
-			DocumentType string `json:"document_type"`
+			ExpectedPolicyVersion string `json:"expected_policy_version"`
+			OperationKey          string `json:"operation_key"`
+			DocumentType          string `json:"document_type"`
 		}
 		if e := decode(req, &in); e != nil {
 			return fail(e), nil
 		}
-		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType)
+		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType, in.ExpectedPolicyVersion)
 		if e != nil {
 			return fail(e), nil
 		}

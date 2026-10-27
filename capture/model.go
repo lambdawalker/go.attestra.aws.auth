@@ -8,14 +8,15 @@ import (
 )
 
 var (
-	ErrInvalid    = errors.New("invalid_request")
-	ErrNotFound   = errors.New("not_found")
-	ErrConflict   = errors.New("revision_conflict")
-	ErrExpired    = errors.New("capture_expired")
-	ErrLimited    = errors.New("capture_limit")
-	ErrDisabled   = errors.New("capture_disabled")
-	ErrIncomplete = errors.New("uploads_incomplete")
-	ErrImage      = errors.New("invalid_image")
+	ErrPolicyChanged = errors.New("policy_changed")
+	ErrInvalid       = errors.New("invalid_request")
+	ErrNotFound      = errors.New("not_found")
+	ErrConflict      = errors.New("revision_conflict")
+	ErrExpired       = errors.New("capture_expired")
+	ErrLimited       = errors.New("capture_limit")
+	ErrDisabled      = errors.New("capture_disabled")
+	ErrIncomplete    = errors.New("uploads_incomplete")
+	ErrImage         = errors.New("invalid_image")
 )
 
 const MaxBytes int64 = 4 * 1024 * 1024
@@ -51,31 +52,33 @@ type Asset struct {
 	Size      int64  `json:"size"`
 }
 type Record struct {
-	ID                string            `json:"capture_id" dynamodbav:"CaptureID"`
-	Owner             string            `json:"-"`
-	EvidenceVersion   int64             `json:"evidence_version"`
-	Revision          int64             `json:"revision"`
-	PolicyVersion     string            `json:"policy_version"`
-	DocumentType      string            `json:"document_type"`
-	State             string            `json:"state"`
-	ExpiresAt         int64             `json:"expires_at"`
-	CreatedAt         int64             `json:"created_at"`
-	Slots             map[string]string `json:"selected_uploads"`
-	Uploads           []Upload          `json:"uploads"`
-	Assets            []Asset           `json:"assets,omitempty"`
-	Processed         []Asset           `json:"processed,omitempty"`
-	ProcessingVersion string            `json:"processing_version,omitempty"`
-	Error             string            `json:"error,omitempty"`
-	CreateKey         string            `json:"-"`
-	FinalizeKey       string            `json:"-"`
-	RetryKey          string            `json:"-"`
-	Generation        int64             `json:"-"`
-	Attempts          int               `json:"-"`
-	LeaseUntil        int64             `json:"-"`
-	Work              string            `json:"-"`
-	Due               int64             `json:"-"`
-	DeleteAfter       int64             `json:"delete_after,omitempty"`
-	TTL               int64             `json:"-"`
+	ID                    string            `json:"capture_id" dynamodbav:"CaptureID"`
+	Owner                 string            `json:"-"`
+	EvidenceVersion       int64             `json:"evidence_version"`
+	Revision              int64             `json:"revision"`
+	PolicySnapshot        Policy            `json:"policy"`
+	ExpectedPolicyVersion string            `json:"-"`
+	PolicyVersion         string            `json:"policy_version"`
+	DocumentType          string            `json:"document_type"`
+	State                 string            `json:"state"`
+	ExpiresAt             int64             `json:"expires_at"`
+	CreatedAt             int64             `json:"created_at"`
+	Slots                 map[string]string `json:"selected_uploads"`
+	Uploads               []Upload          `json:"uploads"`
+	Assets                []Asset           `json:"assets,omitempty"`
+	Processed             []Asset           `json:"processed,omitempty"`
+	ProcessingVersion     string            `json:"processing_version,omitempty"`
+	Error                 string            `json:"error,omitempty"`
+	CreateKey             string            `json:"-"`
+	FinalizeKey           string            `json:"-"`
+	RetryKey              string            `json:"-"`
+	Generation            int64             `json:"-"`
+	Attempts              int               `json:"-"`
+	LeaseUntil            int64             `json:"-"`
+	Work                  string            `json:"-"`
+	Due                   int64             `json:"-"`
+	DeleteAfter           int64             `json:"delete_after,omitempty"`
+	TTL                   int64             `json:"-"`
 }
 type Account struct {
 	Owner        string
