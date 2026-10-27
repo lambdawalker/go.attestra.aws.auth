@@ -15,13 +15,29 @@ In the AWS S3 console, create a **separate state bucket**, with a globally uniqu
 
 The deployment credentials need `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` for state/locks/history, plus `s3:GetBucketVersioning` and `s3:GetBucketPublicAccessBlock` for preflight checks. Restrict object permissions to the selected prefix when using one. AWS infrastructure permissions are still required separately. A bucket using SSE-KMS additionally needs the applicable KMS permissions.
 
+## Saved settings and encrypted credentials
+
+After setup, run:
+
+```powershell
+.\deploy.bat -Stack dev
+```
+
+The selected environment's `.attestra/bootstrap.<environment>.local.json` supplies the state bucket (`Backend`), region, AWS authentication method and profile. Verified standalone deployment choices are saved in `.attestra/deploy.<environment>.local.json`. Precedence is explicit flags, standalone deployment preferences, then bootstrap settings. These files are ignored by Git and contain only non-secret settings. Use `-Backend`, `-Region`, `-Profile`, `-Sso` or `-Login` to override saved choices. Remove only the `deploy.<environment>.local.json` preferences file to return to bootstrap defaults; retain bootstrap and teardown progress.
+
+When `-Stack` is supplied, the wizard does not ask for it again. Otherwise it asks for the environment before reading its settings. Missing settings are prompted for; existing values are displayed for review. AWS identity/state confirmation remains in place. Successful AWS and bucket checks save the selections even if a later deployment fails. Teardown removes that environment's standalone preferences too.
+
+The tool automatically unlocks an existing repository/environment credential vault using its passphrase, then reuses the stored Pulumi passphrase and any manual AWS credentials. It does not request GitHub or DNS tokens for routine deployment. New or updated secrets are saved in the same vault, preserving its other credentials. On first use without a vault, you must create and confirm a separate vault passphrase (20–1024 characters; use randomly chosen words or a password manager). Encryption uses the existing Argon2id key derivation and AES-256-GCM authenticated encryption. The vault lives outside the repository in the OS user configuration directory under `attestra/credentials`; its unlock passphrase is never saved.
+
+Use `credentials.bat` / `credentials.sh` to replace expired tokens, rotate the vault passphrase or delete saved credentials. AWS SSO/browser sessions remain managed by the AWS CLI and may still require login. Saving temporary keys does not extend their lifetime. CI continues using its configured environment; one-time migration still asks for a new destination Pulumi passphrase and does not overwrite the saved deployment credentials.
+
 ## AWS credentials
 
-By default, the tool prompts using hidden input:
+If there is no saved authentication choice, select SSO, AWS browser login or manual access keys. For missing manual credentials, the tool prompts using hidden input:
 
 1. AWS access key ID.
 2. AWS secret access key.
-3. AWS session token, required for temporary credentials. A session token alone is insufficient. Leave it blank only for long-lived IAM access keys.
+3. AWS session token, required for temporary credentials. A session token alone is insufficient. Long-lived IAM access keys do not need a session token.
 4. Pulumi passphrase for encrypting the stack's secrets.
 
 Copy temporary credentials from your AWS credential source. Credentials are passed to AWS/Pulumi subprocesses through their environment, never as arguments or saved profiles. Existing AWS environment settings and shared profile files are isolated to avoid accidentally using another identity. The tool displays the account and ARN and asks you to confirm them. Manually pasted credentials cannot renew automatically; obtain a fresh set and rerun if they expire.
@@ -58,7 +74,7 @@ This requires a current AWS CLI v2 supporting `aws login` and `aws configure exp
 
 Pulumi (including S3 state), AWS CLI commands, and index publication can renew credentials from the selected profile during deployment. Automatic renewal lasts only as long as the underlying login session allows. For SSO, use a modern `sso-session` profile (configure with `aws configure sso --profile attestra`); legacy profiles may require signing in again. If renewal fails, sign in again and rerun setup to resume. A private temporary configuration contains only the helper command and profile locations; it is removed when the tool exits. The selected profile and AWS CLI session cache remain managed by AWS CLI. Existing environment credentials are cleared for login; custom AWS config, shared-credentials and login-cache paths are honored. The same identity confirmation and isolated deployment credential handling apply. Add `-Login -Profile attestra` to the migration command below if desired. The Pulumi passphrase is still required.
 
-Keep the Pulumi passphrase in a password manager. It is separate from AWS credentials. Losing it prevents decrypting the stack's secrets. It is not persisted by the tool or sent to Pulumi Cloud during normal deployment. Normal deployments require no Pulumi Cloud token. Local processes running as your user can still inspect process memory/environment; use a trusted machine.
+Keep the Pulumi passphrase in a password manager. It is separate from AWS credentials. Losing it prevents decrypting the stack's secrets. It is persisted only inside the encrypted credential vault and is not sent to Pulumi Cloud during normal deployment. Normal deployments require no Pulumi Cloud token. Local processes running as your user can still inspect process memory/environment; use a trusted machine.
 
 ## One-time migration from Pulumi Cloud
 
