@@ -250,6 +250,10 @@ func (s Service) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	}
 	switch c.Operation {
 	case "begin":
+	case "defaults":
+		if c.Revision < 1 || c.Defaults == nil || c.Defaults.Environment != parts[2] || c.Defaults.Validate() != nil {
+			return response(400, map[string]string{"error": "invalid runtime defaults or receipt"}), nil
+		}
 	case "publish", "retire", "delete", "abandon":
 		if c.Revision < 1 {
 			return response(400, map[string]string{"error": "deployment receipt required"}), nil

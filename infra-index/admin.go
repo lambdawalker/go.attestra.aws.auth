@@ -93,7 +93,7 @@ func deployAdmin(ctx *pulumi.Context, cfg *config.Config) (*dynamodb.Table, erro
 	for _, r := range []struct {
 		name, path string
 		protected  bool
-	}{{"home", "GET /", false}, {"callback", "GET /callback", false}, {"script", "GET /app.js", false}, {"style", "GET /style.css", false}, {"settings", "GET /settings", false}, {"environments", "GET /api/environments", true}, {"read", "GET /api/environments/{environment}", true}, {"history", "GET /api/environments/{environment}/history", true}, {"publish", "POST /api/environments/{environment}", true}, {"grant-read", "GET /api/environments/{environment}/grants", true}, {"grants", "POST /api/environments/{environment}/grants", true}} {
+	}{{"home", "GET /", false}, {"callback", "GET /callback", false}, {"script", "GET /app.js", false}, {"style", "GET /style.css", false}, {"settings", "GET /settings", false}, {"passkey-activate", "POST /api/passkey/activate", true}, {"environments", "GET /api/environments", true}, {"read", "GET /api/environments/{environment}", true}, {"history", "GET /api/environments/{environment}/history", true}, {"publish", "POST /api/environments/{environment}", true}, {"grant-read", "GET /api/environments/{environment}/grants", true}, {"grants", "POST /api/environments/{environment}/grants", true}} {
 		args := &apigatewayv2.RouteArgs{ApiId: api.ID(), RouteKey: pulumi.String(r.path), Target: pulumi.Sprintf("integrations/%s", integration.ID())}
 		if r.protected {
 			args.AuthorizationType = pulumi.String("JWT")

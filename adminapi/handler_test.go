@@ -150,7 +150,7 @@ func TestConsoleSecurityAndNoInlineExecutableAssets(t *testing.T) {
 	if strings.Contains(index, "onclick=") || strings.Contains(index, "<script>") || strings.Contains(script, "localStorage") || strings.Contains(script, "sessionStorage.setItem('access") {
 		t.Fatal("unsafe token persistence or inline script")
 	}
-	if !strings.Contains(script, "/passkeys/add") || !strings.Contains(script, "code_challenge_method:'S256'") {
+	if !strings.Contains(script, "/passkeys/add") || !strings.Contains(script, `code_challenge_method: "S256"`) {
 		t.Fatal("enrollment or PKCE missing")
 	}
 }

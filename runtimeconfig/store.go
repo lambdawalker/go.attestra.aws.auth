@@ -49,6 +49,9 @@ func (s Store) Get(ctx context.Context, env string) (Config, error) {
 	e := s.read(ctx, "ENV#"+env, "CONFIG", &c)
 	if e == nil {
 		e = c.Validate()
+		if c.Environment != env {
+			e = ErrInvalid
+		}
 	}
 	return c, e
 }
@@ -60,17 +63,30 @@ func (s Store) query(ctx context.Context, id, prefix string) ([]map[string]types
 	return r.Items, nil
 }
 func (s Store) Grants(ctx context.Context, sub string) ([]Grant, error) {
-	items, e := s.query(ctx, "USER#"+sub, "GRANT#")
 	out := []Grant{}
-	for _, m := range items {
-		var g Grant
-		if e := attributevalue.UnmarshalMap(m, &g); e != nil {
+	var cursor map[string]types.AttributeValue
+	for {
+		r, e := s.DB.Query(ctx, &dynamodb.QueryInput{TableName: aws.String(s.Table), ConsistentRead: aws.Bool(true), KeyConditionExpression: aws.String("id = :id AND begins_with(sk, :prefix)"), ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: "USER#" + sub}, ":prefix": &types.AttributeValueMemberS{Value: "GRANT#"}}, ExclusiveStartKey: cursor, Limit: aws.Int32(100)})
+		if e != nil {
 			return nil, e
 		}
-		out = append(out, g)
+		for _, m := range r.Items {
+			var g Grant
+			if e := attributevalue.UnmarshalMap(m, &g); e != nil {
+				return nil, e
+			}
+			if g.Subject != sub || !ValidEnvironment(g.Environment) || g.Revision < 1 {
+				return nil, ErrInvalid
+			}
+			out = append(out, g)
+		}
+		cursor = r.LastEvaluatedKey
+		if len(cursor) == 0 {
+			return out, nil
+		}
 	}
-	return out, e
 }
+
 func (s Store) GetVersion(ctx context.Context, env string, rev int64) (Version, error) {
 	var v Version
 	e := s.read(ctx, "ENV#"+env, "VERSION#"+fmtRevision(rev), &v)

@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/lambdawalker/go.attestra.aws.auth/passkey"
 	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 	"io"
 	"strings"
 )
 
 type Handler struct {
+	Passkeys                              *PasskeyMFA
 	Service                               runtimeconfig.Service
 	Issuer, ClientID, Origin, LoginDomain string
 }
@@ -82,6 +84,26 @@ func (h Handler) Handle(ctx context.Context, r events.APIGatewayV2HTTPRequest) (
 	}
 	if method != "GET" && r.Headers["origin"] != h.Origin {
 		return failure(runtimeconfig.ErrForbidden), nil
+	}
+	if method == "POST" && path == "/api/passkey/activate" {
+		var in struct{}
+		if e := decode(r, &in); e != nil {
+			return failure(e), nil
+		}
+		if h.Passkeys == nil {
+			return failure(errors.New("unavailable")), nil
+		}
+		token, e := passkey.Bearer(r.Headers["authorization"])
+		if e != nil {
+			return reply(401, map[string]string{"error": "admin_sign_in_required"}), nil
+		}
+		if e = h.Passkeys.Activate(ctx, token); e != nil {
+			if errors.Is(e, ErrPasskeyNotReady) {
+				return reply(409, map[string]string{"error": ErrPasskeyNotReady.Error()}), nil
+			}
+			return failure(e), nil
+		}
+		return reply(200, map[string]bool{"activated": true}), nil
 	}
 	if method == "GET" && path == "/api/environments" {
 		gs, e := h.Service.Store.Grants(ctx, sub)
