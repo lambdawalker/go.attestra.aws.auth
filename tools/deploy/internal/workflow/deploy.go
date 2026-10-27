@@ -227,7 +227,7 @@ func executeCore(r commandRunner, o options) error {
 	if _, err := r.Exec(infra, true, "pulumi", "stack", "select", o.Stack, "--non-interactive"); err != nil {
 		return errors.New("cannot select the S3 stack; check access or run --migrate-from OWNER/attestra-auth-email/STACK once; no empty stack was created")
 	}
-	if err := checkStack(r, o); err != nil {
+	if err := checkStackRequirements(r, o, true); err != nil {
 		return err
 	}
 	if o.ReuseBuild {
@@ -271,7 +271,12 @@ func executeCore(r commandRunner, o options) error {
 func buildCommand(_ string) (string, []string) {
 	return "go", []string{"-C", "tools/deploy", "run", ".", "-build"}
 }
+
+// Setup calls this before provisioning shared infrastructure.
 func checkStack(r commandRunner, o options) error {
+	return checkStackRequirements(r, o, false)
+}
+func checkStackRequirements(r commandRunner, o options, requireRuntime bool) error {
 	infra := filepath.Join(o.Root, "infra")
 	data, err := r.Exec(infra, true, "pulumi", "stack", "export", "--stack", o.Stack)
 	if err != nil {
@@ -301,7 +306,7 @@ func checkStack(r commandRunner, o options) error {
 	if config["aws:region"].Value != o.Region {
 		return errors.New("entered AWS region must match the stack's aws:region configuration")
 	}
-	if o.MigrateFrom == "" && (strings.TrimSpace(config["attestra-auth-email:runtimeTableName"].Value) == "" || strings.TrimSpace(config["attestra-auth-email:runtimeTableArn"].Value) == "") {
+	if requireRuntime && (strings.TrimSpace(config["attestra-auth-email:runtimeTableName"].Value) == "" || strings.TrimSpace(config["attestra-auth-email:runtimeTableArn"].Value) == "") {
 		return fmt.Errorf("shared admin/runtime setup is incomplete for %s (runtimeTableName and runtimeTableArn are required); run .\\setup.bat -Stack %s -force-setup on Windows or ./setup.sh -stack %s -force-setup on macOS/Linux, complete the shared dashboard setup and provide your administrator email, then retry deployment; setup writes these values automatically", o.Stack, o.Stack, o.Stack)
 	}
 	return nil

@@ -227,3 +227,11 @@ func TestLegacyStateMigrationDoesNotRequireRuntimeUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSetupCanValidateLegacyStackBeforeProvisioningSharedRuntime(t *testing.T) {
+	r := goodRunner()
+	r.config = `{"aws:region":{"value":"us-east-2"}}`
+	if err := checkStack(r, testOptions()); err != nil {
+		t.Fatalf("setup cannot reach prepareIndex: %v", err)
+	}
+}
