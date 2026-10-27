@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"testing"
@@ -257,5 +258,19 @@ func TestPolicyContentIdentityAndCreateBinding(t *testing.T) {
 	}
 	if _, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", disabled.Version); e != ErrConflict {
 		t.Fatalf("changed idempotency intent: %v", e)
+	}
+}
+
+func TestLegacyRecordDoesNotInventPolicyDisclosure(t *testing.T) {
+	b, e := json.Marshal(Record{ID: "legacy", PolicyVersion: "capture-v1"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	var body map[string]any
+	if e = json.Unmarshal(b, &body); e != nil {
+		t.Fatal(e)
+	}
+	if _, ok := body["policy"]; ok {
+		t.Fatal("legacy record contains fabricated or invalid disclosure", string(b))
 	}
 }

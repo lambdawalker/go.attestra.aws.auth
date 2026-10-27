@@ -132,21 +132,12 @@ func (h Handler) Handle(ctx context.Context, r events.APIGatewayV2HTTPRequest) (
 			return failure(runtimeconfig.ErrInvalid), nil
 		}
 		if in.RollbackRevision != nil {
-			versions, e := h.Service.Store.History(ctx, env)
+			version, e := h.Service.Store.GetVersion(ctx, env, *in.RollbackRevision)
 			if e != nil {
 				return failure(e), nil
 			}
-			found := false
-			for _, v := range versions {
-				if v.Config.Revision == *in.RollbackRevision {
-					in.Config = v.Config
-					found = true
-					break
-				}
-			}
-			if !found {
-				return failure(runtimeconfig.ErrNotFound), nil
-			}
+			in.Config = version.Config
+
 		}
 		if in.Config.Environment != env {
 			return failure(runtimeconfig.ErrInvalid), nil
@@ -156,6 +147,25 @@ func (h Handler) Handle(ctx context.Context, r events.APIGatewayV2HTTPRequest) (
 			return failure(e), nil
 		}
 		return reply(200, out), nil
+	}
+	if method == "GET" && len(p) == 2 && p[1] == "grants" {
+		if !g.ManageGrants {
+			return failure(runtimeconfig.ErrForbidden), nil
+		}
+		subject := r.QueryStringParameters["subject"]
+		if subject == "" || len(subject) > 100 {
+			return failure(runtimeconfig.ErrInvalid), nil
+		}
+		grants, e := h.Service.Store.Grants(ctx, subject)
+		if e != nil {
+			return failure(e), nil
+		}
+		for _, target := range grants {
+			if target.Environment == env {
+				return reply(200, target), nil
+			}
+		}
+		return reply(200, runtimeconfig.Grant{Subject: subject, Environment: env}), nil
 	}
 	if method == "POST" && len(p) == 2 && p[1] == "grants" {
 		var target runtimeconfig.Grant

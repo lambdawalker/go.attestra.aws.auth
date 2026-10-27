@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,7 +58,12 @@ func main() {
 		if !errors.As(e, &missing) {
 			log.Fatal(e)
 		}
-		created, e := c.AdminCreateUser(ctx, &cognitoidentityprovider.AdminCreateUserInput{UserPoolId: pool, Username: email, DesiredDeliveryMediums: []types.DeliveryMediumType{types.DeliveryMediumTypeEmail}, UserAttributes: []types.AttributeType{{Name: aws.String("email"), Value: email}, {Name: aws.String("email_verified"), Value: aws.String("true")}}})
+		temporary := make([]byte, 24)
+		if _, e = rand.Read(temporary); e != nil {
+			log.Fatal("temporary password generation failed")
+		}
+		password := base64.RawURLEncoding.EncodeToString(temporary) + "Aa1!"
+		created, e := c.AdminCreateUser(ctx, &cognitoidentityprovider.AdminCreateUserInput{UserPoolId: pool, Username: email, TemporaryPassword: aws.String(password), DesiredDeliveryMediums: []types.DeliveryMediumType{types.DeliveryMediumTypeEmail}, UserAttributes: []types.AttributeType{{Name: aws.String("email"), Value: email}, {Name: aws.String("email_verified"), Value: aws.String("true")}}})
 		if e != nil {
 			log.Fatal(e)
 		}
@@ -72,8 +79,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "admin subject unavailable; no grant written")
 		os.Exit(1)
 	}
-	if e = store.BootstrapGrant(ctx, sub, *environment); e != nil && !errors.Is(e, runtimeconfig.ErrConflict) {
-		log.Fatal(e)
+	if e = store.BootstrapGrant(ctx, sub, *environment); e != nil {
+		if errors.Is(e, runtimeconfig.ErrConflict) {
+			done, readErr := store.Bootstrapped(ctx, *environment)
+			if readErr == nil && done {
+				fmt.Println("Existing bootstrap grant preserved.")
+				return
+			}
+		}
+		log.Fatal("bootstrap grant could not be recorded; existing grants were preserved: ", e)
 	}
 	fmt.Println("Admin MFA verified; first environment grant recorded.")
 }

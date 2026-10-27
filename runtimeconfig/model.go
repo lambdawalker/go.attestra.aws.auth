@@ -78,6 +78,7 @@ type Repository interface {
 	Get(context.Context, string) (Config, error)
 	Grants(context.Context, string) ([]Grant, error)
 	History(context.Context, string) ([]Version, error)
+	GetVersion(context.Context, string, int64) (Version, error)
 	Publish(context.Context, Grant, int64, Version) error
 	SetGrant(context.Context, Grant, Grant) error
 }
@@ -99,6 +100,9 @@ func (s Service) Authorized(ctx context.Context, sub, env string) (Grant, error)
 	return Grant{}, ErrForbidden
 }
 func (s Service) Publish(ctx context.Context, g Grant, expected int64, c Config, source *int64) (Config, error) {
+	if expected < 0 || expected == 9223372036854775807 {
+		return Config{}, ErrInvalid
+	}
 	if !g.Active || c.Environment != g.Environment {
 		return Config{}, ErrForbidden
 	}

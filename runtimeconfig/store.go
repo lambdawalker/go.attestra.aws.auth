@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -69,6 +70,11 @@ func (s Store) Grants(ctx context.Context, sub string) ([]Grant, error) {
 		out = append(out, g)
 	}
 	return out, e
+}
+func (s Store) GetVersion(ctx context.Context, env string, rev int64) (Version, error) {
+	var v Version
+	e := s.read(ctx, "ENV#"+env, "VERSION#"+fmtRevision(rev), &v)
+	return v, e
 }
 func (s Store) History(ctx context.Context, env string) ([]Version, error) {
 	items, e := s.query(ctx, "ENV#"+env, "VERSION#")
@@ -141,9 +147,10 @@ func (s Store) SetGrant(ctx context.Context, actor, target Grant) error {
 		values = nil
 	}
 	audit, e := item("ENV#"+target.Environment, "GRANT-AUDIT#"+target.Subject+"#"+fmtRevision(target.Revision), struct {
-		Actor string
-		Grant Grant
-	}{actor.Subject, target})
+		Actor     string
+		Grant     Grant
+		UpdatedAt string
+	}{actor.Subject, target, time.Now().UTC().Format(time.RFC3339Nano)})
 	if e != nil {
 		return e
 	}
