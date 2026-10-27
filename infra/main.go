@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lambdawalker/go.attestra.aws.auth/assetlinks"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/apigatewayv2"
@@ -256,6 +258,9 @@ func deploy(ctx *pulumi.Context) error {
 			return e
 		}
 	}
+	if err = deployRuntime(ctx, cfg, httpAPI); err != nil {
+		return err
+	}
 	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region); err != nil {
 		return err
 	}
@@ -266,6 +271,18 @@ func deploy(ctx *pulumi.Context) error {
 	if indexURL := cfg.Get("indexUrl"); indexURL != "" {
 		ctx.Export("indexUrl", pulumi.String(indexURL))
 	}
+	defaults := runtimeconfig.Default(ctx.Stack())
+	defaults.Features.IDCapture = cfg.GetBool("captureEnabled")
+	defaults.Capture.Purpose = cfg.Get("capturePurpose")
+	defaults.Capture.Jurisdiction = cfg.Get("captureJurisdiction")
+	if v := cfg.Get("captureDocumentType"); v != "" {
+		defaults.Capture.DocumentType = v
+	}
+	defaults.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if e := defaults.Validate(); e != nil {
+		return e
+	}
+	ctx.Export("runtimeDefaults", pulumi.Any(defaults))
 	ctx.Export("rawApiUrl", httpAPI.ApiEndpoint)
 	if err := apiDomainMapping(ctx, cfg.Get("apiDomain"), zone, certificate, httpAPI, stage); err != nil {
 		return err

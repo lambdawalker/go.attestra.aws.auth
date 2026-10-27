@@ -34,6 +34,8 @@ An unchanged, locally completed setup still returns before calling AWS, GitHub, 
 
 ## Infrastructure and scope
 
+The shared project also owns the [admin console and runtime settings](admin-runtime-config.md), including a separate admin pool and protected runtime table. Its deployment lease now fences runtime-default synchronization before index publication. Application roles receive only their environment-scoped registry API permission; the registry Lambda performs the atomic runtime write.
+
 The shared project owns an HTTP API, a Go Lambda, an on-demand DynamoDB table with point-in-time recovery and Pulumi deletion protection, an ACM certificate, its custom domain, and Route 53 records when selected. Cloudflare records use the existing token flow and conflict/read-back checks. No Lambda concurrency is reserved for the index.
 
 Application teardown retains all shared infrastructure, DNS, and shared state. Removing the last environment leaves a working endpoint with an empty array.

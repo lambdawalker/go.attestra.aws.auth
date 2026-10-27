@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 )
 
 // This in-memory store enforces the same conditional writes as DynamoDB. It
@@ -229,5 +231,53 @@ func TestTeardownRetirementKeepsLockUntilCleanup(t *testing.T) {
 	}
 	if _, e = s.change(ctx, "qa", Change{Operation: "begin", Token: strings.Repeat("b", 48)}); e != nil {
 		t.Fatal("completed teardown blocked new setup", e)
+	}
+}
+
+type runtimeDB struct {
+	writes *dynamodb.TransactWriteItemsInput
+	fail   bool
+}
+
+func (db *runtimeDB) GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	return &dynamodb.GetItemOutput{}, nil
+}
+func (db *runtimeDB) Query(context.Context, *dynamodb.QueryInput, ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+	return &dynamodb.QueryOutput{}, nil
+}
+func (db *runtimeDB) TransactWriteItems(_ context.Context, in *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+	db.writes = in
+	if db.fail {
+		return nil, &types.TransactionCanceledException{CancellationReasons: []types.CancellationReason{{Code: aws.String("ConditionalCheckFailed")}}}
+	}
+	return &dynamodb.TransactWriteItemsOutput{}, nil
+}
+func TestSignedRegistryDefaultsRouteUsesDeploymentLease(t *testing.T) {
+	db := &runtimeDB{}
+	s := Service{DB: &memoryDB{records: map[string]Record{}}, Table: "registry", Runtime: &runtimeconfig.Store{DB: db, Table: "runtime"}}
+	config := runtimeconfig.Default("dev")
+	change := Change{Operation: "defaults", Token: strings.Repeat("a", 48), Revision: 4, Defaults: &config}
+	body, _ := json.Marshal(change)
+	req := events.APIGatewayV2HTTPRequest{RawPath: "/v1/environments/dev/changes", Body: string(body), RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: "POST"}}}
+	out, _ := s.Handle(context.Background(), req)
+	if out.StatusCode != 200 || db.writes == nil || len(db.writes.TransactItems) != 3 {
+		t.Fatal("defaults route not integrated", out)
+	}
+	check := db.writes.TransactItems[0].ConditionCheck
+	if aws.ToString(check.TableName) != "registry" || check.ExpressionAttributeValues[":revision"].(*types.AttributeValueMemberN).Value != "4" {
+		t.Fatal("defaults omitted exact registry receipt")
+	}
+	db.fail = true
+	out, _ = s.Handle(context.Background(), req)
+	if out.StatusCode != 409 {
+		t.Fatal("stale deployment not rejected", out)
+	}
+	config.Environment = "prod"
+	change.Defaults = &config
+	body, _ = json.Marshal(change)
+	req.Body = string(body)
+	out, _ = s.Handle(context.Background(), req)
+	if out.StatusCode != 400 {
+		t.Fatal("cross-env defaults accepted", out)
 	}
 }

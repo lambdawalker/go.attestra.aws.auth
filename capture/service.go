@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"reflect"
 	"regexp"
 	"time"
@@ -29,6 +30,7 @@ func newID() string {
 }
 
 type Service struct {
+	PolicySource func(context.Context) (Policy, error)
 	Store        Store
 	Objects      Objects
 	Enabled      bool
@@ -50,7 +52,22 @@ func (s Service) Policy() Policy {
 	if kind == "" {
 		kind = "sample_card"
 	}
-	return Policy{Enabled: s.Enabled, Version: "capture-v1", DocumentType: kind, Slots: []string{"front", "back"}, ContentType: "image/jpeg", MaxBytes: MaxBytes, Purpose: s.Purpose, Jurisdiction: s.Jurisdiction, RetentionDays: 7}
+	return Policy{Enabled: s.Enabled, DocumentType: kind, Slots: []string{"front", "back"}, ContentType: "image/jpeg", MaxBytes: MaxBytes, Purpose: s.Purpose, Jurisdiction: s.Jurisdiction, RetentionDays: 7}.WithVersion()
+}
+
+// WithVersion binds every consent-relevant field, including deployment defaults.
+func (p Policy) WithVersion() Policy {
+	p.Version = ""
+	b, _ := json.Marshal(p)
+	sum := sha256.Sum256(b)
+	p.Version = "capture-sha256-" + hex.EncodeToString(sum[:])
+	return p
+}
+func (s Service) CurrentPolicy(ctx context.Context) (Policy, error) {
+	if s.PolicySource != nil {
+		return s.PolicySource(ctx)
+	}
+	return s.Policy(), nil
 }
 func (s Service) Get(ctx context.Context, owner, id string) (Record, error) {
 	if owner == "" || !ValidID(id) {
@@ -79,21 +96,37 @@ func (s Service) Current(ctx context.Context, owner string) (*Record, error) {
 	}
 	return &r, e
 }
-func (s Service) Create(ctx context.Context, owner, key, kind string) (Record, error) {
-	if !s.Enabled {
-		return Record{}, ErrDisabled
+func (s Service) Create(ctx context.Context, owner, key, kind string, expected ...string) (Record, error) {
+	version := ""
+	if len(expected) == 1 {
+		version = expected[0]
 	}
-	if owner == "" || !ValidOperation(key) || kind != s.Policy().DocumentType {
+	if owner == "" || !ValidOperation(key) {
 		return Record{}, ErrInvalid
 	}
+	// Replay precedes current admission; a disabled or changed policy must not destroy an existing intent.
 	if old, e := s.Store.FindCreate(ctx, owner, key); e == nil {
-		if old.DocumentType != kind {
+		if old.DocumentType != kind || old.ExpectedPolicyVersion != version {
 			return Record{}, ErrConflict
 		}
 		return s.Get(ctx, owner, old.ID)
 	} else if e != ErrNotFound {
 		return Record{}, e
 	}
+	policy, e := s.CurrentPolicy(ctx)
+	if e != nil {
+		return Record{}, e
+	}
+	if version == "" || version != policy.Version {
+		return Record{}, ErrPolicyChanged
+	}
+	if !policy.Enabled {
+		return Record{}, ErrDisabled
+	}
+	if kind != policy.DocumentType {
+		return Record{}, ErrInvalid
+	}
+
 	a, e := s.Store.Account(ctx, owner)
 	if e != nil {
 		return Record{}, e
@@ -124,7 +157,7 @@ func (s Service) Create(ctx context.Context, owner, key, kind string) (Record, e
 	next.CurrentID = id
 	now := s.now().Unix()
 	expires := s.now().Add(SessionLifetime).Unix()
-	r := Record{ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: s.Policy().Version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
+	r := Record{ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: policy.Version, PolicySnapshot: &policy, ExpectedPolicyVersion: version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
 	if e = s.Store.Create(ctx, a, next, r); e != nil {
 		return Record{}, e
 	}

@@ -21,7 +21,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 	regional := statement([]string{"apigateway:*", "cognito-idp:*", "lambda:ListEventSourceMappings", "lambda:CreateEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:UpdateEventSourceMapping", "lambda:DeleteEventSourceMapping", "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"}, []string{"arn:aws:apigateway:" + o.Region + "::/*", arn("cognito-idp", "userpool/*"), arn("lambda", "event-source-mapping:*")})
 	regional["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": o.Region}}
 	roles := []string{}
-	for _, name := range []string{"signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "capture", "capture-dispatcher", "capture-worker"} {
+	for _, name := range []string{"app-config", "signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "capture", "capture-dispatcher", "capture-worker"} {
 		roles = append(roles, "arn:aws:iam::"+account+":role/"+name+"-role-*")
 	}
 	iam := statement([]string{"iam:CreateRole", "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:ListRolePolicies", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags"}, roles)
@@ -30,7 +30,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 	pass := statement([]string{"iam:PassRole"}, roles)
 	pass["Condition"] = map[string]any{"StringEquals": map[string]string{"iam:PassedToService": "lambda.amazonaws.com"}}
 	functions := []string{}
-	for _, prefix := range []string{"email-", "cognito-grant-challenge-", "passkeyoptions-", "passkeycomplete-", "auth-", "capture-"} {
+	for _, prefix := range []string{"app-config-", "email-", "cognito-grant-challenge-", "passkeyoptions-", "passkeycomplete-", "auth-", "capture-"} {
 		functions = append(functions, arn("lambda", "function:"+prefix+"*"))
 	}
 	u, _ := url.Parse(o.Backend)

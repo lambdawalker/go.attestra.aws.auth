@@ -16,6 +16,10 @@ import (
 func main() { pulumi.Run(deployIndex) }
 func deployIndex(ctx *pulumi.Context) error {
 	cfg := config.New(ctx, "")
+	runtimeTable, e := deployAdmin(ctx, cfg)
+	if e != nil {
+		return e
+	}
 	domain := cfg.Require("domain")
 	zone := cfg.Get("route53ZoneId")
 	cert, e := acm.NewCertificate(ctx, "index-certificate", &acm.CertificateArgs{DomainName: pulumi.String(domain), ValidationMethod: pulumi.String("DNS")})
@@ -48,12 +52,12 @@ func deployIndex(ctx *pulumi.Context) error {
 	if e != nil {
 		return e
 	}
-	grant, e := iam.NewRolePolicy(ctx, "index-data", &iam.RolePolicyArgs{Role: role.Name, Policy: pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:UpdateItem","dynamodb:Scan"],"Resource":%q}]}`, table.Arn)})
+	grant, e := iam.NewRolePolicy(ctx, "index-data", &iam.RolePolicyArgs{Role: role.Name, Policy: pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:UpdateItem","dynamodb:Scan","dynamodb:ConditionCheckItem"],"Resource":%q},{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem"],"Resource":%q}]}`, table.Arn, runtimeTable.Arn)})
 	if e != nil {
 		return e
 	}
 	archive, _ := filepath.Abs("../dist/index.zip")
-	fn, e := lambda.NewFunction(ctx, "index-handler", &lambda.FunctionArgs{Role: role.Arn, Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Code: pulumi.NewFileArchive(archive), MemorySize: pulumi.Int(256), Timeout: pulumi.Int(20), ReservedConcurrentExecutions: pulumi.Int(-1), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"REGISTRY_TABLE": table.Name}}}, pulumi.DependsOn([]pulumi.Resource{logs, grant}))
+	fn, e := lambda.NewFunction(ctx, "index-handler", &lambda.FunctionArgs{Role: role.Arn, Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Code: pulumi.NewFileArchive(archive), MemorySize: pulumi.Int(256), Timeout: pulumi.Int(20), ReservedConcurrentExecutions: pulumi.Int(-1), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"REGISTRY_TABLE": table.Name, "RUNTIME_TABLE": runtimeTable.Name}}}, pulumi.DependsOn([]pulumi.Resource{logs, grant}))
 	if e != nil {
 		return e
 	}

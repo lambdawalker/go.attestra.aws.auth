@@ -17,6 +17,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/lambdawalker/go.attestra.aws.auth/registry"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 )
 
 func TestIndexEndpointRejectsCredentialExfiltration(t *testing.T) {
@@ -52,7 +53,7 @@ func TestIndexPendingReceiptRoundTrip(t *testing.T) {
 }
 func TestRegistrySourceHashIgnoresGeneratedConfig(t *testing.T) {
 	root := stateTestDir(t)
-	for _, dir := range []string{"registry", "cmd/index", "infra-index"} {
+	for _, dir := range []string{"registry", "runtimeconfig", "capture", "adminapi", "cmd/admin", "adminsetup", "cmd/admin-setup", "cmd/index", "infra-index"} {
 		os.MkdirAll(filepath.Join(root, dir), 0755)
 	}
 	for _, name := range []string{"go.mod", "go.sum", "registry/service.go", "infra-index/Pulumi.yaml"} {
@@ -218,5 +219,50 @@ func TestIndexReadinessRecoversAndValidatesSchema(t *testing.T) {
 	}
 	if calls != 2 || !strings.Contains(output.String(), "schemaVersion 2") {
 		t.Fatalf("calls=%d output=%s", calls, &output)
+	}
+}
+
+func TestPendingPublicationSynchronizesDefaultsBeforeIndex(t *testing.T) {
+	operations := []string{}
+	reject := true
+	defaults := runtimeconfig.Default("dev")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var change registry.Change
+		if e := json.NewDecoder(r.Body).Decode(&change); e != nil {
+			t.Error(e)
+		}
+		operations = append(operations, change.Operation)
+		if change.Operation == "defaults" {
+			if change.Defaults == nil || change.Defaults.Environment != "dev" || change.Revision != 9 || change.Token != strings.Repeat("a", 48) {
+				t.Errorf("defaults lost immutable deployment receipt: %+v", change)
+			}
+			if reject {
+				w.WriteHeader(409)
+				return
+			}
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	client := &envregistry.Client{URL: server.URL, Region: "us-east-2", Environment: "dev", HTTP: server.Client(), Credentials: aws.Credentials{AccessKeyID: "test", SecretAccessKey: "test"}}
+	o := options{Root: stateTestDir(t), Stack: "dev", PublishOnly: true}
+	path := indexPendingPath(o.Root, o.Stack)
+	pending := pendingIndex{API: client.URL, Region: client.Region, Environment: "dev", Receipt: registry.Receipt{Token: strings.Repeat("a", 48), Revision: 9}, Defaults: &defaults, Ready: true, Deployed: true}
+	if e := savePendingIndex(path, pending); e != nil {
+		t.Fatal(e)
+	}
+	runner := &processRunner{}
+	if e := runner.withIndexClient(o, client, nil); e == nil {
+		t.Fatal("failed defaults synchronization did not block index publication")
+	}
+	if _, e := os.Stat(path); e != nil {
+		t.Fatal("lost recovery receipt")
+	}
+	reject = false
+	if e := runner.withIndexClient(o, client, nil); e != nil {
+		t.Fatal(e)
+	}
+	if strings.Join(operations, ",") != "defaults,defaults,publish" {
+		t.Fatal(operations)
 	}
 }

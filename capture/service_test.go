@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"testing"
@@ -95,7 +96,7 @@ func fixture(t *testing.T) (Service, *memoryStore, *memoryObjects, *time.Time) {
 func freeze(t *testing.T, s Service, o *memoryObjects) Record {
 	t.Helper()
 	ctx := context.Background()
-	r, e := s.Create(ctx, "owner", "create_operation_1", "sample_card")
+	r, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", s.Policy().Version)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -116,11 +117,11 @@ func freeze(t *testing.T, s Service, o *memoryObjects) Record {
 func TestCreateReplayAndOwnership(t *testing.T) {
 	s, _, _, _ := fixture(t)
 	ctx := context.Background()
-	r, e := s.Create(ctx, "owner", "create_operation_1", "sample_card")
+	r, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", s.Policy().Version)
 	if e != nil {
 		t.Fatal(e)
 	}
-	again, e := s.Create(ctx, "owner", "create_operation_1", "sample_card")
+	again, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", s.Policy().Version)
 	if e != nil || r.ID != again.ID {
 		t.Fatal("create was not idempotent", e)
 	}
@@ -170,7 +171,7 @@ func TestInvalidJPEGRequiresRecapture(t *testing.T) {
 }
 func TestExpiredSessionAndCleanup(t *testing.T) {
 	s, m, o, now := fixture(t)
-	r, e := s.Create(context.Background(), "owner", "create_operation_1", "sample_card")
+	r, e := s.Create(context.Background(), "owner", "create_operation_1", "sample_card", s.Policy().Version)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -207,7 +208,7 @@ func TestExpiredFinalizingCaptureCannotPublishReady(t *testing.T) {
 }
 func TestCurrentCaptureTTLDoesNotBlockFutureCapture(t *testing.T) {
 	s, m, _, now := fixture(t)
-	r, e := s.Create(context.Background(), "owner", "create_operation_1", "sample_card")
+	r, e := s.Create(context.Background(), "owner", "create_operation_1", "sample_card", s.Policy().Version)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -217,8 +218,59 @@ func TestCurrentCaptureTTLDoesNotBlockFutureCapture(t *testing.T) {
 	if e != nil || current != nil {
 		t.Fatal("stale account pointer prevented status discovery", e)
 	}
-	created, e := s.Create(context.Background(), "owner", "create_operation_2", "sample_card")
+	created, e := s.Create(context.Background(), "owner", "create_operation_2", "sample_card", s.Policy().Version)
 	if e != nil || created.EvidenceVersion != r.EvidenceVersion+1 {
 		t.Fatal("expired metadata prevented a new capture", e)
+	}
+}
+
+func TestPolicyContentIdentityAndCreateBinding(t *testing.T) {
+	s, _, _, _ := fixture(t)
+	ctx := context.Background()
+	original := s.Policy()
+	changed := original
+	changed.Purpose = "new purpose"
+	changed = changed.WithVersion()
+	if changed.Version == original.Version {
+		t.Fatal("disclosure change retained policy identity")
+	}
+	s.PolicySource = func(context.Context) (Policy, error) { return changed, nil }
+	if _, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", original.Version); e != ErrPolicyChanged {
+		t.Fatalf("mismatch: %v", e)
+	}
+	if _, e := s.Create(ctx, "owner", "create_operation_1", "sample_card"); e != ErrPolicyChanged {
+		t.Fatalf("missing expected version: %v", e)
+	}
+	r, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", changed.Version)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if r.PolicySnapshot.Purpose != "new purpose" || r.ExpectedPolicyVersion != changed.Version {
+		t.Fatal("lost accepted snapshot")
+	}
+	disabled := changed
+	disabled.Enabled = false
+	disabled = disabled.WithVersion()
+	s.PolicySource = func(context.Context) (Policy, error) { return disabled, nil }
+	replay, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", changed.Version)
+	if e != nil || replay.ID != r.ID || replay.PolicySnapshot.Version != changed.Version {
+		t.Fatalf("replay changed: %+v %v", replay, e)
+	}
+	if _, e := s.Create(ctx, "owner", "create_operation_1", "sample_card", disabled.Version); e != ErrConflict {
+		t.Fatalf("changed idempotency intent: %v", e)
+	}
+}
+
+func TestLegacyRecordDoesNotInventPolicyDisclosure(t *testing.T) {
+	b, e := json.Marshal(Record{ID: "legacy", PolicyVersion: "capture-v1"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	var body map[string]any
+	if e = json.Unmarshal(b, &body); e != nil {
+		t.Fatal(e)
+	}
+	if _, ok := body["policy"]; ok {
+		t.Fatal("legacy record contains fabricated or invalid disclosure", string(b))
 	}
 }

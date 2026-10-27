@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Attestra | Runtime control</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="brand">attéstra<span>CONTROL ROOM</span></a
+      ><span class="badge">Runtime configuration</span
+      ><button id="activatePasskey" hidden>Activate passkey MFA</button>
+      <button id="passkey" hidden>Add a passkey</button
+      ><button id="refresh" hidden>Refresh</button
+      ><button id="logout" hidden>Sign out</button>
+    </header>
+    <main>
+      <section class="intro">
+        <p class="eyebrow">APPLICATION OPERATIONS</p>
+        <h1>Change the experience.<br />Keep the safeguards.</h1>
+        <p>
+          Publish capture settings directly to your applications. Every change
+          is versioned, attributed, and reversible.
+        </p>
+      </section>
+      <p id="message" role="status" aria-live="polite">
+        Loading secure console…
+      </p>
+      <button id="login" hidden>Sign in to your workspace →</button>
+      <section id="console" hidden>
+        <div class="toolbar">
+          <label>Environment<select id="environment"></select></label>
+          <div>
+            <span class="eyebrow">CURRENT REVISION</span
+            ><strong id="revision">—</strong><small id="updated"></small>
+          </div>
+        </div>
+        <div class="grid">
+          <form id="config">
+            <div class="card-head">
+              <div>
+                <p class="eyebrow">FEATURE ACCESS</p>
+                <h2>Identity document capture</h2>
+              </div>
+              <label class="switch"
+                ><input type="checkbox" id="enabled" /> Enabled</label
+              >
+            </div>
+            <p class="muted">
+              New capture sessions use these settings. Existing captures retain
+              the disclosure the user accepted.
+            </p>
+            <label
+              >Document type<input
+                id="documentType"
+                required
+                maxlength="64"
+                pattern="[a-z][a-z0-9_]{0,63}"
+                placeholder="passport" /></label
+            ><label
+              >Jurisdiction<input
+                id="jurisdiction"
+                maxlength="1024"
+                placeholder="Country or region governing this capture" /></label
+            ><label
+              >Purpose<textarea
+                id="purpose"
+                maxlength="1024"
+                rows="4"
+                placeholder="Explain exactly why this document is collected"
+              ></textarea>
+            </label>
+            <section id="review" hidden class="notice">
+              <strong>Review changes</strong>
+              <pre id="diff"></pre>
+              <button type="button" id="confirmPublish">
+                Confirm publication</button
+              ><button type="button" id="cancelPublish">Keep editing</button>
+            </section>
+            <div class="notice">
+              Enabling capture requires a purpose, jurisdiction, and a document
+              type other than sample_card.
+            </div>
+            <button type="submit" id="publish">Publish revision</button>
+          </form>
+          <aside>
+            <section class="panel">
+              <p class="eyebrow">AUDIT TRAIL</p>
+              <h2>Revision history</h2>
+              <p class="muted">
+                Restore a previous configuration as a new revision.
+              </p>
+              <ol id="history"></ol>
+            </section>
+            <form id="grant" class="panel" hidden>
+              <p class="eyebrow">ENVIRONMENT ACCESS</p>
+              <h2>Manage a grant</h2>
+              <label
+                >Admin Cognito subject<input
+                  id="subject"
+                  required
+                  maxlength="100" /></label
+              ><button id="inspectGrant" type="button">
+                Load current grant</button
+              ><label
+                >Current grant revision<input
+                  id="grantRevision"
+                  type="number"
+                  min="0"
+                  value="0"
+                  required /></label
+              ><label
+                ><input id="grantActive" type="checkbox" checked />
+                Active</label
+              ><label
+                ><input id="grantManage" type="checkbox" /> May manage
+                grants</label
+              ><button type="submit">Save grant</button>
+              <p class="muted">
+                Use revision 0 for a new grant. Revoked grants remain recorded;
+                setup never restores them.
+              </p>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <footer>
+      ATTESTRA BOND
+      <span>Private administration · Explicit access · Durable history</span>
+    </footer>
+  </body>
+</html>

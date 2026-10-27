@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -25,12 +26,12 @@ import (
 
 func indexSourceHash(root string) (string, error) {
 	files := []string{"go.mod", "go.sum"}
-	for _, dir := range []string{"registry", "cmd/index", "infra-index"} {
+	for _, dir := range []string{"registry", "runtimeconfig", "capture", "adminapi", "cmd/admin", "adminsetup", "cmd/admin-setup", "cmd/index", "infra-index"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, e error) error {
 			if e != nil {
 				return e
 			}
-			if !d.IsDir() && (strings.HasSuffix(path, ".go") || d.Name() == "go.mod" || d.Name() == "go.sum" || d.Name() == "Pulumi.yaml") {
+			if !d.IsDir() && ((strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".html")) || d.Name() == "go.mod" || d.Name() == "go.sum" || d.Name() == "Pulumi.yaml") {
 				rel, _ := filepath.Rel(root, path)
 				files = append(files, filepath.ToSlash(rel))
 			}
@@ -53,13 +54,21 @@ func indexSourceHash(root string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 func buildIndex(root string) error {
-	dir, e := os.MkdirTemp("", "attestra-index-build-")
+	for _, name := range []string{"index", "admin"} {
+		if e := buildSharedLambda(root, name); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+func buildSharedLambda(root, name string) error {
+	dir, e := os.MkdirTemp("", "attestra-shared-build-")
 	if e != nil {
 		return e
 	}
 	defer os.RemoveAll(dir)
 	binary := filepath.Join(dir, "bootstrap")
-	cmd := exec.Command("go", "build", "-trimpath", "-tags", "lambda.norpc", "-o", binary, "./cmd/index")
+	cmd := exec.Command("go", "build", "-trimpath", "-tags", "lambda.norpc", "-o", binary, "./cmd/"+name)
 	cmd.Dir = root
 	cmd.Env = append(awsenv.WithoutCredentials(os.Environ()), "GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0")
 	cmd.Stdout = os.Stdout
@@ -70,8 +79,9 @@ func buildIndex(root string) error {
 	if e = os.MkdirAll(filepath.Join(root, "dist"), 0755); e != nil {
 		return e
 	}
-	return build.PackageLambda(binary, filepath.Join(root, "dist", "index.zip"))
+	return build.PackageLambda(binary, filepath.Join(root, "dist", name+".zip"))
 }
+
 func replaceEnvironment(env []string, values map[string]string) []string {
 	result := []string{}
 	for _, v := range env {
@@ -192,6 +202,20 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 			return errors.New("shared index AWS provider configuration requires review")
 		}
 	}
+	adminDomain := cfg["attestra-index:adminDomain"].Value
+	if adminDomain == "" {
+		adminDomain = "admin." + base
+	}
+	bootstrapEmail := cfg["attestra-index:bootstrapEmail"].Value
+	if bootstrapEmail == "" {
+		if e = ui.Input("First administrator email (invitation-only, password plus authenticator MFA)", &bootstrapEmail, false, true).Run(); e != nil {
+			return e
+		}
+		address, e := mail.ParseAddress(bootstrapEmail)
+		if e != nil || address.Address != bootstrapEmail || strings.ToLower(bootstrapEmail) != bootstrapEmail {
+			return errors.New("valid lowercase administrator email required")
+		}
+	}
 	domain := "index." + base
 	if v := cfg["attestra-index:domain"].Value; v != "" {
 		domain = v
@@ -212,7 +236,7 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 	if e != nil {
 		return e
 	}
-	for k, v := range map[string]string{"aws:region": o.Region, "attestra-index:domain": domain, "attestra-index:route53ZoneId": zone, "attestra-index:sourceHash": hash} {
+	for k, v := range map[string]string{"aws:region": o.Region, "attestra-index:domain": domain, "attestra-index:route53ZoneId": zone, "attestra-index:sourceHash": hash, "attestra-index:adminDomain": adminDomain, "attestra-index:bootstrapEmail": bootstrapEmail} {
 		if cfg[k].Value == v {
 			continue
 		}
@@ -237,9 +261,9 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 		if e = buildIndex(w.root); e != nil {
 			return e
 		}
-		targets := []string{"--target", "urn:pulumi:shared::attestra-index::aws:acm/certificate:Certificate::index-certificate"}
+		targets := []string{"--target", "urn:pulumi:shared::attestra-index::aws:acm/certificate:Certificate::index-certificate", "--target", "urn:pulumi:shared::attestra-index::aws:acm/certificate:Certificate::admin-certificate"}
 		if zone != "" {
-			targets = append(targets, "--target", "urn:pulumi:shared::attestra-index::aws:route53/record:Record::index-certificate-dns")
+			targets = append(targets, "--target", "urn:pulumi:shared::attestra-index::aws:route53/record:Record::index-certificate-dns", "--target", "urn:pulumi:shared::attestra-index::aws:route53/record:Record::admin-certificate-dns")
 		}
 		for _, op := range []string{"preview", "up"} {
 			args := []string{op, "--stack", "shared", "--non-interactive"}
@@ -256,6 +280,13 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 			return e
 		}
 		if e = w.waitCertificate(domain, strings.TrimSpace(string(arn)), zone != ""); e != nil {
+			return e
+		}
+		adminArn, e := run(true, "stack", "output", "adminCertificateArn", "--stack", "shared")
+		if e != nil {
+			return e
+		}
+		if e = w.waitCertificate(adminDomain, strings.TrimSpace(string(adminArn)), zone != ""); e != nil {
 			return e
 		}
 		for _, op := range []string{"preview", "up"} {
@@ -275,7 +306,7 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 		return e
 	}
 	var out map[string]string
-	if json.Unmarshal(outputs, &out) != nil || out["apiUrl"] == "" || out["domainTarget"] == "" || out["apiArn"] == "" {
+	if json.Unmarshal(outputs, &out) != nil || out["apiUrl"] == "" || out["domainTarget"] == "" || out["apiArn"] == "" || out["runtimeTableName"] == "" || out["runtimeTableArn"] == "" || out["adminPoolId"] == "" || out["adminLoginDomain"] == "" || out["adminDomainTarget"] == "" {
 		return errors.New("shared index outputs are incomplete")
 	}
 	if _, e = newIndexClient(w.r.env, out["apiUrl"], o.Region, w.environment); e != nil {
@@ -288,6 +319,14 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 		if e = w.publishDNS(domain, []dns.Record{{Type: "CNAME", Name: domain, Content: out["domainTarget"]}}); e != nil {
 			return e
 		}
+	}
+	if zone == "" {
+		if e = w.publishDNS(adminDomain, []dns.Record{{Type: "CNAME", Name: adminDomain, Content: out["adminDomainTarget"]}}); e != nil {
+			return e
+		}
+	}
+	if _, e = r.Exec(w.root, false, "go", "run", "./cmd/admin-setup", "-pool", out["adminPoolId"], "-login", out["adminLoginDomain"], "-table", out["runtimeTableName"], "-email", bootstrapEmail, "-environment", w.environment); e != nil {
+		return fmt.Errorf("admin identity setup incomplete: %w", e)
 	}
 	if e = waitIndexHTTP(out["apiUrl"] + "/v1/environments"); e != nil {
 		return e
@@ -309,7 +348,7 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 	if e = w.r.acquireSetupIndex(w.o, client); e != nil {
 		return e
 	}
-	for k, v := range map[string]string{"indexApiUrl": out["apiUrl"], "indexRegion": o.Region, "indexApiArn": out["apiArn"], "indexUrl": out["indexUrl"]} {
+	for k, v := range map[string]string{"indexApiUrl": out["apiUrl"], "indexRegion": o.Region, "indexApiArn": out["apiArn"], "indexUrl": out["indexUrl"], "runtimeTableName": out["runtimeTableName"], "runtimeTableArn": out["runtimeTableArn"]} {
 		if _, e = w.r.Exec(filepath.Join(w.root, "infra"), false, "pulumi", "config", "set", "attestra-auth-email:"+k, "--stack", w.o.Stack, "--non-interactive", "--", v); e != nil {
 			return e
 		}
@@ -319,6 +358,7 @@ func (w *bootstrapWizard) prepareIndex(base, zone string) error {
 		w.memory.Summary.Domains = map[string]string{}
 	}
 	w.memory.Summary.Domains["Index"] = out["indexUrl"]
+	w.memory.Summary.Domains["Admin"] = out["adminUrl"]
 	fmt.Println("✓ Shared index ready:", out["indexUrl"])
 	return nil
 }

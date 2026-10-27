@@ -98,9 +98,11 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 		return e
 	}
 	trust := pulumi.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}`)
+	runtimeArn := cfg.Require("runtimeTableArn")
+	runtimeRead := fmt.Sprintf(`{"Effect":"Allow","Action":"dynamodb:GetItem","Resource":%q,"Condition":{"ForAllValues:StringEquals":{"dynamodb:LeadingKeys":[%q]}}}`, runtimeArn, "ENV#"+ctx.Stack())
 	dbStatement := pulumi.Sprintf(`{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem"],"Resource":%q}`, table.Arn)
 	policies := map[string]pulumi.StringOutput{
-		"capture":            pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":%q}]}`, dbStatement, pulumi.Sprintf("%s/uploads/*", bucket.Arn)),
+		"capture":            pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,%s,{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":%q}]}`, dbStatement, pulumi.String(runtimeRead), pulumi.Sprintf("%s/uploads/*", bucket.Arn)),
 		"capture-worker":     pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,{"Effect":"Allow","Action":["s3:GetObjectVersion","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":["s3:PutObject","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":%q,"Condition":{"StringLike":{"s3:prefix":["uploads/*","processed/*"]}}},{"Effect":"Allow","Action":["sqs:ReceiveMessage","sqs:DeleteMessage","sqs:GetQueueAttributes"],"Resource":%q}]}`, dbStatement, pulumi.Sprintf("%s/uploads/*", bucket.Arn), pulumi.Sprintf("%s/processed/*", bucket.Arn), bucket.Arn, queue.Arn),
 		"capture-dispatcher": pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"dynamodb:Query","Resource":%q},{"Effect":"Allow","Action":"sqs:SendMessage","Resource":%q}]}`, pulumi.Sprintf("%s/index/work-due", table.Arn), queue.Arn),
 	}
@@ -123,7 +125,7 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 		if name != "capture" {
 			timeout, memory = 90, 1024
 		}
-		fn, e := lambda.NewFunction(ctx, name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(archive), Timeout: pulumi.Int(timeout), MemorySize: pulumi.Int(memory), ReservedConcurrentExecutions: pulumi.Int(reserved), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"CAPTURE_TABLE": table.Name, "CAPTURE_BUCKET": bucket.ID(), "CAPTURE_QUEUE_URL": queue.Url, "CAPTURE_ENABLED": pulumi.String(fmt.Sprint(enabled)), "CAPTURE_DOCUMENT_TYPE": pulumi.String(kind), "CAPTURE_PURPOSE": pulumi.String(cfg.Get("capturePurpose")), "CAPTURE_JURISDICTION": pulumi.String(cfg.Get("captureJurisdiction"))}}}, pulumi.DependsOn([]pulumi.Resource{grant, versioning}))
+		fn, e := lambda.NewFunction(ctx, name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(archive), Timeout: pulumi.Int(timeout), MemorySize: pulumi.Int(memory), ReservedConcurrentExecutions: pulumi.Int(reserved), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"RUNTIME_TABLE": pulumi.String(cfg.Require("runtimeTableName")), "ENVIRONMENT": pulumi.String(ctx.Stack()), "CAPTURE_TABLE": table.Name, "CAPTURE_BUCKET": bucket.ID(), "CAPTURE_QUEUE_URL": queue.Url, "CAPTURE_ENABLED": pulumi.String(fmt.Sprint(enabled)), "CAPTURE_DOCUMENT_TYPE": pulumi.String(kind), "CAPTURE_PURPOSE": pulumi.String(cfg.Get("capturePurpose")), "CAPTURE_JURISDICTION": pulumi.String(cfg.Get("captureJurisdiction"))}}}, pulumi.DependsOn([]pulumi.Resource{grant, versioning}))
 		if e != nil {
 			return e
 		}

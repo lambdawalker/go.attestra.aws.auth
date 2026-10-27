@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/lambdawalker/go.attestra.aws.auth/registry"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 	"log"
 	"os"
 )
@@ -19,6 +20,7 @@ func main() {
 	if table == "" {
 		log.Fatal("REGISTRY_TABLE missing")
 	}
-	service := registry.Service{DB: dynamodb.NewFromConfig(cfg), Table: table}
+	db := dynamodb.NewFromConfig(cfg)
+	service := registry.Service{DB: db, Table: table, Runtime: &runtimeconfig.Store{DB: db, Table: os.Getenv("RUNTIME_TABLE")}}
 	lambda.Start(service.Handle)
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 )
 
 type Configuration struct {
@@ -38,10 +39,11 @@ type Entry struct {
 	UpdatedAt  string        `json:"updatedAt"`
 }
 type Change struct {
-	Operation string        `json:"operation"`
-	Token     string        `json:"token,omitempty"`
-	Revision  int64         `json:"revision,omitempty"`
-	Config    Configuration `json:"configuration,omitempty"`
+	Defaults  *runtimeconfig.Config `json:"defaults,omitempty"`
+	Operation string                `json:"operation"`
+	Token     string                `json:"token,omitempty"`
+	Revision  int64                 `json:"revision,omitempty"`
+	Config    Configuration         `json:"configuration,omitempty"`
 }
 type Receipt struct {
 	Token    string `json:"token"`
@@ -61,8 +63,9 @@ type DB interface {
 	Scan(context.Context, *dynamodb.ScanInput, ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
 }
 type Service struct {
-	DB    DB
-	Table string
+	Runtime *runtimeconfig.Store
+	DB      DB
+	Table   string
 }
 
 func str(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
@@ -138,6 +141,16 @@ func (s Service) change(ctx context.Context, id string, c Change) (any, error) {
 			return nil, e
 		}
 		return Receipt{Token: value, Revision: r.Revision}, nil
+	}
+	if c.Operation == "defaults" {
+		if c.Defaults == nil || s.Runtime == nil {
+			return nil, errors.New("runtime defaults unavailable")
+		}
+		e := s.Runtime.SyncDefaults(ctx, *c.Defaults, runtimeconfig.Fence{Table: s.Table, Environment: id, Token: c.Token, Revision: c.Revision})
+		if errors.Is(e, runtimeconfig.ErrConflict) {
+			return nil, &types.ConditionalCheckFailedException{}
+		}
+		return map[string]bool{"ok": true}, e
 	}
 	if c.Token == "" || c.Revision < 1 {
 		return nil, errors.New("deployment receipt required")
@@ -237,6 +250,10 @@ func (s Service) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	}
 	switch c.Operation {
 	case "begin":
+	case "defaults":
+		if c.Revision < 1 || c.Defaults == nil || c.Defaults.Environment != parts[2] || c.Defaults.Validate() != nil {
+			return response(400, map[string]string{"error": "invalid runtime defaults or receipt"}), nil
+		}
 	case "publish", "retire", "delete", "abandon":
 		if c.Revision < 1 {
 			return response(400, map[string]string{"error": "deployment receipt required"}), nil
