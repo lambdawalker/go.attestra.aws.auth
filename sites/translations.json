@@ -21,8 +21,8 @@
   },
   "docs/agents/integration.md": {
     "path": "docs/es/agents/integration.md",
-    "source_sha256": "8ad570ef5d079a68ac6141f9aa83a5d4cfffc55eb83ac1b3c7d4aea04cc1ef12",
-    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+    "source_sha256": "3454ac28e336ef22004121e82932e5ba97f7e2bf63f271d970d548af60f74ac8",
+    "provenance": "Reviewed Spanish runtime configuration integration update 2026-10-27"
   },
   "docs/agents/limitations.md": {
     "path": "docs/es/agents/limitations.md",

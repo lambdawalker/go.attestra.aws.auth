@@ -54,7 +54,7 @@ func deployAdmin(ctx *pulumi.Context, cfg *config.Config) (*dynamodb.Table, erro
 	if e != nil {
 		return nil, e
 	}
-	_, e = cognito.NewManagedLoginBranding(ctx, "admin-branding", &cognito.ManagedLoginBrandingArgs{UserPoolId: pool.ID(), ClientId: client.ID(), UseCognitoProvidedValues: pulumi.Bool(true)})
+	_, e = cognito.NewManagedLoginBranding(ctx, "admin-branding", &cognito.ManagedLoginBrandingArgs{UserPoolId: pool.ID(), ClientId: client.ID(), UseCognitoProvidedValues: pulumi.Bool(true)}, pulumi.DependsOn([]pulumi.Resource{login}))
 	if e != nil {
 		return nil, e
 	}
