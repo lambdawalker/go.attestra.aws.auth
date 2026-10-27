@@ -1,7 +1,7 @@
 # Remove the shared environment index
 
-Use this only when retiring the shared index itself. Normal `teardown.bat` /
-`teardown.sh` removes one environment's registry entry and retains the index.
+Use this only when retiring the shared index itself. Normal `scripts/teardown.bat` /
+`scripts/teardown.sh` removes one environment's registry entry and retains the index.
 
 First tear down every environment with the normal environment teardown wizard.
 Stop local deployments and GitHub deployment workflows until index teardown
@@ -11,11 +11,11 @@ and retired environments can still hold locks in the registry.
 From the repository root:
 
 ```powershell
-.\teardown-index.bat
+.\scripts\teardown-index.bat
 ```
 
 ```sh
-./teardown-index.sh
+./scripts/teardown-index.sh
 ```
 
 Or run `go -C tools/deploy run . -teardown-index`. There is no unattended destroy

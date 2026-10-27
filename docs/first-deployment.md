@@ -26,7 +26,7 @@ Linux/macOS:
 ./setup.sh
 ```
 
-`setup-github.bat` and `setup-github.sh` are aliases for the same full wizard. You can also invoke Go directly:
+`scripts/setup-github.bat` and `scripts/setup-github.sh` are aliases for the same full wizard. You can also invoke Go directly:
 
 ```sh
 go -C tools/deploy run . -bootstrap
@@ -196,14 +196,14 @@ Rerun the wizard to resume setup, retaining `.attestra/bootstrap.<environment>.l
 | Profile override rejected | Remove `aws:profile` from stack config; use local profile selection only for AWS login. |
 | Cognito says SES identity is unverified | Check the exact identity/account/region and complete DNS verification, then resume. |
 | Lambda reserved concurrency exceeds available quota | Pull the latest scripts and rerun setup. The quota preflight logs insufficient capacity and deploys capture functions using the shared pool while retaining requested YAML settings. |
-| Local preview cannot find Lambda ZIPs | Use `build.bat` / `build.sh`, or the wizard/deploy tool which builds automatically. |
+| Local preview cannot find Lambda ZIPs | Use `scripts/build.bat` / `scripts/build.sh`, or the wizard/deploy tool which builds automatically. |
 | Partial application deployment | Keep state and fix the reported prerequisite; rerun deployment. |
 
 The wizard does not request Lambda quota increases, leave the SES sandbox, provision website hosting or rotate existing proof keys automatically. Cloudflare DNS changes are applied through the DNS stage or dedicated menu option; manual DNS setup remains available.
 
 ## Remove an environment
 
-Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.
+Use `scripts/teardown.bat` or `./scripts/teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.
 
 ## Ordered first deployment and DNS verification
 

@@ -3,11 +3,11 @@
 | Objetivo | Entrada | Guía autoritativa |
 | --- | --- | --- |
 | Crear/reanudar entorno | `setup.bat` / `./setup.sh` | [Primer despliegue](../../first-deployment.md) |
-| Compilar ZIP de Lambda | `build.bat` / `./build.sh` | [Despliegue](../../deployment.md) |
+| Compilar ZIP de Lambda | `scripts/build.bat` / `./scripts/build.sh` | [Despliegue](../../deployment.md) |
 | Previsualizar/actualizar aplicación | `deploy.bat` / `./deploy.sh` o acción Deploy AWS | [GitHub](../../github-deployment.md) |
-| Reemplazar tokens, cambiar frase o borrar credenciales | `credentials.bat` / `./credentials.sh` | [Credenciales](../../deployment.md) |
-| Eliminar un entorno | `teardown.bat` / `./teardown.sh` | [Desmontaje de entorno](../../teardown.md) |
-| Eliminar índice después de todos los entornos | `teardown-index.bat` / `./teardown-index.sh` | [Desmontaje del índice](../../teardown-index.md) |
+| Reemplazar tokens, cambiar frase o borrar credenciales | `scripts/credentials.bat` / `./scripts/credentials.sh` | [Credenciales](../../deployment.md) |
+| Eliminar un entorno | `scripts/teardown.bat` / `./scripts/teardown.sh` | [Desmontaje de entorno](../../teardown.md) |
+| Eliminar índice después de todos los entornos | `scripts/teardown-index.bat` / `./scripts/teardown-index.sh` | [Desmontaje del índice](../../teardown-index.md) |
 
 Setup es reanudable; no hace rollback transaccional. Un error conserva recursos completados y checkpoints privados en `.attestra/`. No borres estado para reparar un bloqueo. Después de una interrupción, confirma que no quede otro escritor antes de seguir la recuperación del recibo. Un recibo local de setup completo no comprueba salud remota; `-force-setup` reconcilia servicios.
 

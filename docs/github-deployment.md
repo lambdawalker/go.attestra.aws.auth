@@ -12,7 +12,7 @@ After pulling `main`, run from the repository root:
 
 ```powershell
 .\setup.bat
-# Alias: .\setup-github.bat
+# Alias: .\scripts\setup-github.bat
 ```
 
 On Linux/macOS:
@@ -194,7 +194,7 @@ Cloudflare DNS token permissions, record handling, and the first-deployment sequ
 
 ## Remove an environment
 
-Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.
+Use `scripts/teardown.bat` or `./scripts/teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](teardown.md). The state bucket and shared OIDC provider are retained.
 
 First deployments require SES/DNS bootstrapping. Run the setup wizard's **Build, preview and deploy** option to create SES prerequisites, publish verification DNS and wait for AWS before completing the application. The GitHub deploy operation checks identity and DKIM verification before deploying; an unready identity stops with setup instructions. Preview-only does not require verified SES.
 

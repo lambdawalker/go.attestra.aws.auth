@@ -44,11 +44,11 @@ Checks: `go test ./assetlinks`; `go -C infra test ./...` (Pulumi mocks); `go -C 
 Run the separate root launcher after association hosting has been set up:
 
 ```powershell
-.\associations.bat -sso -profile attestra -stack dev -backend s3://YOUR-DEV-STATE-BUCKET
+.\scripts\associations.bat -sso -profile attestra -stack dev -backend s3://YOUR-DEV-STATE-BUCKET
 ```
 
 ```sh
-./associations.sh -sso -profile attestra -stack qa -backend s3://YOUR-QA-STATE-BUCKET
+./scripts/associations.sh -sso -profile attestra -stack qa -backend s3://YOUR-QA-STATE-BUCKET
 ```
 
 The tool uses the existing Go deployment authentication flow (SSO, browser login with `-login`, or prompted AWS credentials) and requests the Pulumi passphrase. Confirm the environment, AWS identity and state backend. No GitHub or Cloudflare token is needed.

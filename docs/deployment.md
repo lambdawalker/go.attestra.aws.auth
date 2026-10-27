@@ -29,7 +29,7 @@ When `-Stack` is supplied, the wizard does not ask for it again. Otherwise it as
 
 The tool automatically unlocks an existing repository/environment credential vault using its passphrase, then reuses the stored Pulumi passphrase and any manual AWS credentials. It does not request GitHub or DNS tokens for routine deployment. New or updated secrets are saved in the same vault, preserving its other credentials. On first use without a vault, you must create and confirm a separate vault passphrase (20–1024 characters; use randomly chosen words or a password manager). Encryption uses the existing Argon2id key derivation and AES-256-GCM authenticated encryption. The vault lives outside the repository in the OS user configuration directory under `attestra/credentials`; its unlock passphrase is never saved.
 
-Use `credentials.bat` / `credentials.sh` to replace expired tokens, rotate the vault passphrase or delete saved credentials. AWS SSO/browser sessions remain managed by the AWS CLI and may still require login. Saving temporary keys does not extend their lifetime. CI continues using its configured environment; one-time migration still asks for a new destination Pulumi passphrase and does not overwrite the saved deployment credentials.
+Use `scripts/credentials.bat` / `scripts/credentials.sh` to replace expired tokens, rotate the vault passphrase or delete saved credentials. AWS SSO/browser sessions remain managed by the AWS CLI and may still require login. Saving temporary keys does not extend their lifetime. CI continues using its configured environment; one-time migration still asks for a new destination Pulumi passphrase and does not overwrite the saved deployment credentials.
 
 ## AWS credentials
 
@@ -121,7 +121,7 @@ go -C tools/deploy run . -backend s3://YOUR-STATE-BUCKET
 
 Omit `Backend` to enter the S3 URL in the form. A prefix such as `s3://YOUR-STATE-BUCKET/attestra` is supported. Use the exact same URL/prefix for migration and every deployment. The entered region must match `aws:region` in the stack.
 
-The sequence is: prompt → verify AWS identity and bucket → optional Git pull → select existing S3 stack → check secrets provider/configuration → build Lambda archives → `pulumi preview` → `pulumi up`. Each failure stops subsequent steps. Pulumi retains its native deployment confirmation; no `--yes` flag is used. The build invokes the Go packager in `tools/deploy`, also available through `build.bat`/`build.sh`.
+The sequence is: prompt → verify AWS identity and bucket → optional Git pull → select existing S3 stack → check secrets provider/configuration → build Lambda archives → `pulumi preview` → `pulumi up`. Each failure stops subsequent steps. Pulumi retains its native deployment confirmation; no `--yes` flag is used. The build invokes the Go packager in `tools/deploy`, also available through `scripts/build.bat`/`scripts/build.sh`.
 
 Git pull is opt-in so it does not prevent deploying reviewed local changes or interfere with migration edits. Commit/stash changes before choosing it. The launchers support paths containing spaces and forward failures. `go run` reports failures as a nonzero exit; its wrapper may report 1 rather than the underlying command's exact status.
 
@@ -189,7 +189,7 @@ Insufficient production capacity stops deployment with required and available fi
 
 ### Manage saved credentials without setup
 
-Run `credentials.bat` on Windows or `./credentials.sh` on Unix (`deploy -manage-credentials` is equivalent). Select the environment, then replace GitHub/Cloudflare tokens, a manual AWS credential set, or a saved Pulumi passphrase; change the vault passphrase; or delete the environment's vault. Inputs are hidden. Replacement and passphrase rotation preserve other entries and use the existing encrypted-file replacement mechanism. Rotation requires the current passphrase; deletion requires typing the environment name and works even if the passphrase is lost.
+Run `scripts/credentials.bat` on Windows or `./scripts/credentials.sh` on Unix (`deploy -manage-credentials` is equivalent). Select the environment, then replace GitHub/Cloudflare tokens, a manual AWS credential set, or a saved Pulumi passphrase; change the vault passphrase; or delete the environment's vault. Inputs are hidden. Replacement and passphrase rotation preserve other entries and use the existing encrypted-file replacement mechanism. Rotation requires the current passphrase; deletion requires typing the environment name and works even if the passphrase is lost.
 
 These operations are local. They do not rotate/revoke provider tokens, alter GitHub secrets, change Pulumi stack encryption, or remove AWS CLI session caches. Replacing a saved Pulumi passphrase means saving the stack's current passphrase, not changing that stack's encryption password.
 

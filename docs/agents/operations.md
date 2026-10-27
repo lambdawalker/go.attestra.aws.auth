@@ -3,11 +3,11 @@
 | Intent | Entry point | Authoritative runbook |
 | --- | --- | --- |
 | Create/resume an environment | `setup.bat` / `./setup.sh` | [First deployment](../first-deployment.md) |
-| Build Lambda ZIPs only | `build.bat` / `./build.sh` | [Deployment](../deployment.md) |
+| Build Lambda ZIPs only | `scripts/build.bat` / `./scripts/build.sh` | [Deployment](../deployment.md) |
 | Preview/update existing application | `deploy.bat` / `./deploy.sh` or Deploy AWS action | [GitHub deployment](../github-deployment.md) |
-| Replace tokens/change vault passphrase/delete saved credentials | `credentials.bat` / `./credentials.sh` | [Credential management](../deployment.md) |
-| Remove one environment | `teardown.bat` / `./teardown.sh` | [Environment teardown](../teardown.md) |
-| Remove shared index after all environments | `teardown-index.bat` / `./teardown-index.sh` | [Index teardown](../teardown-index.md) |
+| Replace tokens/change vault passphrase/delete saved credentials | `scripts/credentials.bat` / `./scripts/credentials.sh` | [Credential management](../deployment.md) |
+| Remove one environment | `scripts/teardown.bat` / `./scripts/teardown.sh` | [Environment teardown](../teardown.md) |
+| Remove shared index after all environments | `scripts/teardown-index.bat` / `./scripts/teardown-index.sh` | [Index teardown](../teardown-index.md) |
 
 Setup is resumable, not transactional rollback. An error retains completed resources and private checkpoints in `.attestra/`. Do not delete state to repair a lock. After a process crash, establish that no writer remains before following the receipt-specific recovery procedure. A completed offline setup receipt is not evidence of current remote health; `-force-setup` reconciles services.
 
