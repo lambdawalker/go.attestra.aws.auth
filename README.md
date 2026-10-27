@@ -237,7 +237,7 @@ Run `.\setup.bat` or `./setup.sh` for the complete bootstrap wizard (`setup-gith
 
 ### Interactive deployment with S3 state
 
-The deployment tool is written in Go, using Charm Huh for terminal forms. `deploy.bat` and `deploy.sh` call Go directly. It prompts for AWS access key ID, secret access key, optional session token, and a Pulumi secrets passphrase. It uses S3 for state. Add `-Login -Profile attestra` to use `aws login` instead of entering AWS credentials.
+The deployment tool is written in Go, using Charm Huh for terminal forms. `deploy.bat` and `deploy.sh` call Go directly. Run `.\deploy.bat -Stack dev` after setup: it reuses the saved backend, region, authentication method and profile, asking only for missing values. Explicit command-line flags override saved choices. Secrets are unlocked from the environment’s encrypted local vault; newly entered secrets are saved there after AWS/bucket checks. If no vault exists, you create a separate vault passphrase. See [saved deployment settings](docs/deployment.md#saved-settings-and-encrypted-credentials).
 
 ```powershell
 .\deploy.bat -Backend s3://YOUR-STATE-BUCKET
