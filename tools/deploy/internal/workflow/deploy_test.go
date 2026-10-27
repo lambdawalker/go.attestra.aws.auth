@@ -33,7 +33,7 @@ func (f *fakeRunner) Exec(_ string, _ bool, name string, args ...string) ([]byte
 	}
 }
 func goodRunner() *fakeRunner {
-	return &fakeRunner{state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, config: `{"aws:region":{"value":"us-east-2"}}`}
+	return &fakeRunner{state: `{"deployment":{"secrets_providers":{"type":"passphrase"}}}`, config: `{"aws:region":{"value":"us-east-2"},"attestra-auth-email:runtimeTableName":{"value":"runtime"},"attestra-auth-email:runtimeTableArn":{"value":"arn:aws:dynamodb:us-east-2:123456789012:table/runtime"}}`}
 }
 func testOptions() options {
 	return options{Root: "/repo", Stack: "dev", Region: "us-east-2", Backend: "s3://attestra-state"}
@@ -191,5 +191,39 @@ func TestBucketGuards(t *testing.T) {
 	r.privacy = `{"PublicAccessBlockConfiguration":{"BlockPublicAcls":true}}`
 	if checkBucket(r, testOptions(), "123456789012") == nil {
 		t.Fatal("accepted incomplete public access block")
+	}
+}
+
+func TestLegacyDeploymentStopsBeforeBuildWithSetupCommand(t *testing.T) {
+	for _, mode := range []string{"", "preview", "deploy"} {
+		for _, config := range []string{
+			`{"aws:region":{"value":"us-east-2"}}`,
+			`{"aws:region":{"value":"us-east-2"},"attestra-auth-email:runtimeTableArn":{"value":"arn:aws:dynamodb:us-east-2:123456789012:table/runtime"}}`,
+			`{"aws:region":{"value":"us-east-2"},"attestra-auth-email:runtimeTableName":{"value":"runtime"}}`,
+		} {
+			r := goodRunner()
+			r.config = config
+			o := testOptions()
+			o.CI = mode
+			err := execute(r, o)
+			if err == nil || !strings.Contains(err.Error(), `setup.bat -Stack dev -force-setup`) {
+				t.Fatalf("expected setup guidance, got %v", err)
+			}
+			for _, call := range r.calls {
+				if strings.Contains(call, " -build") || strings.Contains(call, "pulumi preview") || strings.Contains(call, "pulumi up") {
+					t.Fatalf("legacy environment reached build/deploy: %s", call)
+				}
+			}
+		}
+	}
+}
+
+func TestLegacyStateMigrationDoesNotRequireRuntimeUpgrade(t *testing.T) {
+	r := goodRunner()
+	r.config = `{"aws:region":{"value":"us-east-2"}}`
+	o := testOptions()
+	o.MigrateFrom = "isdavid/attestra-auth-email/dev"
+	if err := execute(r, o); err != nil {
+		t.Fatal(err)
 	}
 }

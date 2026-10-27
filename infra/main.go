@@ -27,6 +27,9 @@ import (
 func main() { pulumi.Run(deploy) }
 func deploy(ctx *pulumi.Context) error {
 	cfg := config.New(ctx, "")
+	if cfg.Get("runtimeTableName") == "" || cfg.Get("runtimeTableArn") == "" {
+		return fmt.Errorf("shared admin/runtime setup is incomplete for %s; run .\\setup.bat -Stack %s -force-setup (Windows) or ./setup.sh -stack %s -force-setup (macOS/Linux) to provision the dashboard and write runtimeTableName/runtimeTableArn before deploying this environment", ctx.Stack(), ctx.Stack(), ctx.Stack())
+	}
 	origin := cfg.Require("appOrigin")
 	senderDomain := cfg.Require("senderDomain")
 	senderAddress := cfg.Require("senderAddress")

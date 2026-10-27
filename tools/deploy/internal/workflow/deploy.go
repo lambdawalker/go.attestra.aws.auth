@@ -301,5 +301,8 @@ func checkStack(r commandRunner, o options) error {
 	if config["aws:region"].Value != o.Region {
 		return errors.New("entered AWS region must match the stack's aws:region configuration")
 	}
+	if o.MigrateFrom == "" && (strings.TrimSpace(config["attestra-auth-email:runtimeTableName"].Value) == "" || strings.TrimSpace(config["attestra-auth-email:runtimeTableArn"].Value) == "") {
+		return fmt.Errorf("shared admin/runtime setup is incomplete for %s (runtimeTableName and runtimeTableArn are required); run .\\setup.bat -Stack %s -force-setup on Windows or ./setup.sh -stack %s -force-setup on macOS/Linux, complete the shared dashboard setup and provide your administrator email, then retry deployment; setup writes these values automatically", o.Stack, o.Stack, o.Stack)
+	}
 	return nil
 }

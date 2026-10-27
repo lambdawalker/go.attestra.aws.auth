@@ -4,7 +4,15 @@ After setup, the shared console at `https://admin.attestrabond.com` changes appl
 
 ## Setup and access
 
-Run the full setup wizard with `-force-setup` for each existing environment. Setup reuses the shared state bucket and original shared Pulumi passphrase. It collects the first administrator's lowercase email once, stages both index and admin ACM certificates through the existing Route 53/Cloudflare wizard, waits for validation, then deploys the shared resources and publishes their DNS records. Normal environment deployments reuse the shared resources; they do not deploy the shared stack.
+For the first upgrade of an existing environment, run the full setup wizard:
+
+```powershell
+.\setup.bat -Stack dev -force-setup
+```
+
+On macOS/Linux, use `./setup.sh -stack dev -force-setup`. Repeat for each existing environment, substituting its name. `deploy.bat` updates only the environment stack; it does not provision the shared admin resources. If deployment reports missing `runtimeTableName` or `runtimeTableArn`, complete this setup first. Do not invent those values or create an unrelated table manually: setup writes both from the shared stack outputs. After setup finishes, ordinary updates can use `.\deploy.bat -Stack dev`.
+
+ Setup reuses the shared state bucket and original shared Pulumi passphrase. It collects the first administrator's lowercase email once, stages both index and admin ACM certificates through the existing Route 53/Cloudflare wizard, waits for validation, then deploys the shared resources and publishes their DNS records. Normal environment deployments reuse the shared resources; they do not deploy the shared stack.
 
 The admin pool is separate from the application user pool, permits administrator-created accounts only, and uses Cognito Essentials managed login. Password sign-in requires authenticator TOTP. Setup creates the initial admin with a cryptographically random temporary password and sends the standard Cognito invitation only when the account does not already exist. Managed login handles changing that password and enrolling TOTP. Keep the account's password and authenticator recovery material through your organization's account-recovery process; self-service recovery is disabled.
 
