@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/lambdawalker/go.attestra.aws.auth/capture"
 )
@@ -15,7 +16,7 @@ var ErrInvalid = errors.New("invalid_config")
 var ErrConflict = errors.New("revision_conflict")
 var ErrForbidden = errors.New("environment_forbidden")
 var ErrNotFound = errors.New("not_found")
-var environmentPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+var environmentPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 func ValidEnvironment(v string) bool { return environmentPattern.MatchString(v) }
 
@@ -47,11 +48,11 @@ func (c Config) Validate() error {
 		return ErrInvalid
 	}
 	for _, v := range []string{c.Capture.DocumentType, c.Capture.Purpose, c.Capture.Jurisdiction} {
-		if len(v) > 2000 || strings.TrimSpace(v) != v || strings.ContainsAny(v, "\x00\r") {
+		if len(v) > 1024 || strings.TrimSpace(v) != v || strings.ContainsFunc(v, unicode.IsControl) {
 			return ErrInvalid
 		}
 	}
-	if c.Capture.DocumentType == "" || (c.Features.IDCapture && (c.Capture.DocumentType == "sample_card" || c.Capture.Purpose == "" || c.Capture.Jurisdiction == "")) {
+	if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(c.Capture.DocumentType) || (c.Features.IDCapture && (c.Capture.DocumentType == "sample_card" || c.Capture.Purpose == "" || c.Capture.Jurisdiction == "")) {
 		return ErrInvalid
 	}
 	return nil

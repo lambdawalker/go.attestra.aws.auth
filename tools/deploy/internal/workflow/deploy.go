@@ -42,7 +42,7 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = awsenv.WithoutCredentials(os.Environ())
-	if (name == "aws" || name == "pulumi") && p.env != nil {
+	if (name == "aws" || name == "pulumi" || (name == "go" && len(args) > 1 && args[0] == "run" && args[1] == "./cmd/admin-setup")) && p.env != nil {
 		cmd.Env = p.env
 	}
 	if name == "pulumi" && len(args) > 0 && (args[0] == "preview" || args[0] == "up") && filepath.Base(dir) == "infra" {

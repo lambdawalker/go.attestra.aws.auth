@@ -17,6 +17,7 @@ import (
 	envregistry "github.com/lambdawalker/go.attestra.aws.auth/tools/deploy/internal/registry"
 
 	"github.com/lambdawalker/go.attestra.aws.auth/registry"
+	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 )
 
 func indexClientFromConfig(r *processRunner, dir, stack string) (*envregistry.Client, error) {
@@ -65,6 +66,7 @@ func newIndexClient(env []string, address, region, stack string) (*envregistry.C
 
 type pendingIndex struct {
 	API, Region, Environment string
+	Defaults                 *runtimeconfig.Config
 	Receipt                  registry.Receipt
 	Config                   registry.Configuration
 	Ready                    bool
@@ -75,23 +77,36 @@ func indexPendingPath(root, stack string) string {
 	return filepath.Join(root, ".attestra", "index-publication."+stack+".local.json")
 }
 func publicIndexConfiguration(r commandRunner, o options) (registry.Configuration, error) {
+	c, _, e := publicationConfiguration(r, o)
+	return c, e
+}
+func publicationConfiguration(r commandRunner, o options) (registry.Configuration, *runtimeconfig.Config, error) {
 	data, e := r.Exec(filepath.Join(o.Root, "infra"), true, "pulumi", "stack", "output", "--json", "--stack", o.Stack)
 	var result registry.Configuration
 	if e != nil {
-		return result, e
+		return result, nil, e
 	}
 	var outputs struct {
-		APIURL  string `json:"apiUrl"`
-		Pool    string `json:"userPoolId"`
-		Client  string `json:"clientId"`
-		Capture bool   `json:"captureEnabled"`
+		APIURL   string                `json:"apiUrl"`
+		Pool     string                `json:"userPoolId"`
+		Client   string                `json:"clientId"`
+		Capture  bool                  `json:"captureEnabled"`
+		Defaults *runtimeconfig.Config `json:"runtimeDefaults"`
 	}
 	if json.Unmarshal(data, &outputs) != nil {
-		return result, errors.New("invalid application outputs")
+		return result, nil, errors.New("invalid application outputs")
 	}
 	result.APIURL, result.AWSRegion, result.CognitoUserPoolID, result.CognitoClientID = outputs.APIURL, o.Region, outputs.Pool, outputs.Client
 	result.Features.IDCapture = outputs.Capture
-	return result, registry.Validate(result)
+	if outputs.Defaults != nil {
+		if e := outputs.Defaults.Validate(); e != nil {
+			return result, nil, e
+		}
+		if outputs.Defaults.Environment != o.Stack {
+			return result, nil, errors.New("runtime defaults environment mismatch")
+		}
+	}
+	return result, outputs.Defaults, registry.Validate(result)
 }
 
 func savePendingIndex(path string, p pendingIndex) error {
@@ -160,12 +175,17 @@ func (r *processRunner) withIndexClient(o options, c *envregistry.Client, work f
 			return errors.New("interrupted deployment holds a registry lock; inspect Pulumi and the pending receipt before explicitly releasing it; see docs/environment-index.md")
 		}
 		if !pending.Ready {
-			pending.Config, e = publicIndexConfiguration(r, o)
+			pending.Config, pending.Defaults, e = publicationConfiguration(r, o)
 			if e != nil {
 				return e
 			}
 			pending.Ready = true
 			if e = savePendingIndex(path, pending); e != nil {
+				return e
+			}
+		}
+		if pending.Defaults != nil {
+			if _, e = c.Change(registry.Change{Operation: "defaults", Token: pending.Receipt.Token, Revision: pending.Receipt.Revision, Defaults: pending.Defaults}); e != nil {
 				return e
 			}
 		}
@@ -221,10 +241,13 @@ func (r *processRunner) performIndexWork(o options, c *envregistry.Client, path 
 	if e = savePendingIndex(path, pending); e != nil {
 		return e
 	}
-	pending.Config, e = publicIndexConfiguration(r, o)
+	pending.Config, pending.Defaults, e = publicationConfiguration(r, o)
 	if e == nil {
 		pending.Ready = true
 		e = savePendingIndex(path, pending)
+	}
+	if e == nil && pending.Defaults != nil {
+		_, e = c.Change(registry.Change{Operation: "defaults", Token: receipt.Token, Revision: receipt.Revision, Defaults: pending.Defaults})
 	}
 	if e == nil {
 		_, e = c.Change(registry.Change{Operation: "publish", Token: receipt.Token, Revision: receipt.Revision, Config: pending.Config})

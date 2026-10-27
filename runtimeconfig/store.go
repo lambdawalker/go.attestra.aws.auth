@@ -109,6 +109,7 @@ func (s Store) Publish(ctx context.Context, g Grant, expected int64, v Version) 
 	if e != nil {
 		return e
 	}
+	m["Override"] = &types.AttributeValueMemberBOOL{Value: true}
 	history, e := item("ENV#"+v.Config.Environment, "VERSION#"+fmtRevision(v.Config.Revision), v)
 	if e != nil {
 		return e
@@ -176,4 +177,80 @@ func (s Store) BootstrapGrant(ctx context.Context, sub, env string) error {
 	}
 	_, e = s.DB.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: []types.TransactWriteItem{{Put: &types.Put{TableName: aws.String(s.Table), Item: key("ENV#"+env, "BOOTSTRAP"), ConditionExpression: aws.String("attribute_not_exists(id)")}}, {Put: &types.Put{TableName: aws.String(s.Table), Item: m, ConditionExpression: aws.String("attribute_not_exists(id)")}}}})
 	return conflict(e)
+}
+
+// Fence is the shared registry lease, checked atomically with default synchronization.
+type Fence struct {
+	Table, Environment, Token string
+	Revision                  int64
+}
+type storedConfig struct {
+	Config
+	Override          bool
+	DefaultGeneration int64
+}
+
+func (s Store) SyncDefaults(ctx context.Context, c Config, f Fence) error {
+	if c.Environment != f.Environment || f.Table == "" || f.Token == "" || f.Revision < 1 {
+		return ErrInvalid
+	}
+	if e := c.Validate(); e != nil {
+		return e
+	}
+	var old storedConfig
+	e := s.read(ctx, "ENV#"+c.Environment, "CONFIG", &old)
+	if e != nil && e != ErrNotFound {
+		return e
+	}
+	// Explicit overrides are permanent until an administrator chooses new values.
+	if e == nil && old.Override {
+		return nil
+	}
+	if e == nil && old.DefaultGeneration >= f.Revision {
+		if old.DefaultGeneration == f.Revision && old.Features == c.Features && old.Capture == c.Capture {
+			return nil
+		}
+		return ErrConflict
+	}
+	changed := e == ErrNotFound || old.Features != c.Features || old.Capture != c.Capture
+	if e == nil {
+		c.Revision = old.Revision
+		if changed {
+			c.Revision++
+		}
+	} else {
+		c.Revision = 0
+	}
+	if !changed {
+		c.UpdatedAt = old.UpdatedAt
+	}
+	m, e := item("ENV#"+c.Environment, "CONFIG", storedConfig{Config: c, DefaultGeneration: f.Revision})
+	if e != nil {
+		return e
+	}
+	condition := "attribute_not_exists(id)"
+	var values map[string]types.AttributeValue
+	if old.SchemaVersion != 0 {
+		condition = "Revision = :revision AND (attribute_not_exists(Override) OR Override = :false) AND (attribute_not_exists(DefaultGeneration) OR DefaultGeneration < :generation)"
+		values = map[string]types.AttributeValue{":revision": revision(old.Revision), ":false": &types.AttributeValueMemberBOOL{Value: false}, ":generation": revision(f.Revision)}
+	}
+	writes := []types.TransactWriteItem{{ConditionCheck: &types.ConditionCheck{TableName: aws.String(f.Table), Key: map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: f.Environment}}, ConditionExpression: aws.String("revision = :revision AND #lock = :token"), ExpressionAttributeNames: map[string]string{"#lock": "lock"}, ExpressionAttributeValues: map[string]types.AttributeValue{":revision": revision(f.Revision), ":token": &types.AttributeValueMemberS{Value: f.Token}}}}, {Put: &types.Put{TableName: aws.String(s.Table), Item: m, ConditionExpression: aws.String(condition), ExpressionAttributeValues: values}}}
+	if changed {
+		v, e := item("ENV#"+c.Environment, "VERSION#"+fmtRevision(c.Revision), Version{Config: c, Actor: "deployment:" + strconv.FormatInt(f.Revision, 10), Action: "defaults"})
+		if e != nil {
+			return e
+		}
+		writes = append(writes, types.TransactWriteItem{Put: &types.Put{TableName: aws.String(s.Table), Item: v, ConditionExpression: aws.String("attribute_not_exists(id)")}})
+	}
+	_, e = s.DB.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: writes})
+	return conflict(e)
+}
+
+func (s Store) Bootstrapped(ctx context.Context, env string) (bool, error) {
+	var marker map[string]any
+	e := s.read(ctx, "ENV#"+env, "BOOTSTRAP", &marker)
+	if errors.Is(e, ErrNotFound) {
+		return false, nil
+	}
+	return e == nil, e
 }

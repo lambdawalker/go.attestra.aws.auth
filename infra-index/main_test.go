@@ -50,8 +50,10 @@ func TestIndexInfrastructure(t *testing.T) {
 			entry.Write([]byte("test"))
 			z.Close()
 			f.Close()
+			data, _ := os.ReadFile(filepath.Join(root, "dist/index.zip"))
+			os.WriteFile(filepath.Join(root, "dist/admin.zip"), data, 0600)
 			t.Chdir(filepath.Join(root, "infra-index"))
-			t.Setenv("PULUMI_CONFIG", `{"attestra-index:domain":"index.example.com","attestra-index:sourceHash":"test","attestra-index:route53ZoneId":"`+zone+`"}`)
+			t.Setenv("PULUMI_CONFIG", `{"attestra-index:adminDomain":"admin.example.com","attestra-index:domain":"index.example.com","attestra-index:sourceHash":"test","attestra-index:route53ZoneId":"`+zone+`"}`)
 			m := &indexMocks{resources: map[string]pulumi.MockResourceArgs{}}
 			if e := pulumi.RunErr(deployIndex, pulumi.WithMocks("attestra-index", "shared", m)); e != nil {
 				t.Fatal(e)
@@ -68,6 +70,19 @@ func TestIndexInfrastructure(t *testing.T) {
 			_, dns := m.resources["index-hostname"]
 			if dns != (zone != "") {
 				t.Fatal("wrong DNS provider path")
+			}
+			if !m.resources["admin-runtime"].RegisterRPC.GetProtect() || !m.resources["admin-runtime"].Inputs["deletionProtectionEnabled"].BoolValue() {
+				t.Fatal("runtime data lacks deletion protection")
+			}
+			pool := m.resources["attestra-admins"].Inputs
+			if pool["mfaConfiguration"].StringValue() != "ON" || !pool["adminCreateUserConfig"].ObjectValue()["allowAdminCreateUserOnly"].BoolValue() {
+				t.Fatal("admin identity boundary weakened")
+			}
+			if m.resources["admin-api"].Inputs["corsConfiguration"].HasValue() {
+				t.Fatal("admin API should remain same origin")
+			}
+			if m.resources["admin-publish"].Inputs["authorizerId"].StringValue() != "admin-jwt-id" {
+				t.Fatal("admin publish lacks dedicated authorizer")
 			}
 			if !m.resources["environment-registry"].RegisterRPC.GetProtect() {
 				t.Fatal("shared registry lacks deletion protection")

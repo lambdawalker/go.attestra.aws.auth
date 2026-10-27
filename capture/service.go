@@ -157,7 +157,7 @@ func (s Service) Create(ctx context.Context, owner, key, kind string, expected .
 	next.CurrentID = id
 	now := s.now().Unix()
 	expires := s.now().Add(SessionLifetime).Unix()
-	r := Record{ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: policy.Version, PolicySnapshot: policy, ExpectedPolicyVersion: version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
+	r := Record{ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: policy.Version, PolicySnapshot: &policy, ExpectedPolicyVersion: version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
 	if e = s.Store.Create(ctx, a, next, r); e != nil {
 		return Record{}, e
 	}
