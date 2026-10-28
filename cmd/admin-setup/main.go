@@ -21,18 +21,15 @@ import (
 )
 
 func main() {
+	authOnly := flag.Bool("auth-only", false, "Reconcile admin authentication only; do not invite users or change grants")
 	pool := flag.String("pool", "", "admin pool")
 	login := flag.String("login", "", "managed login origin")
 	table := flag.String("table", "", "runtime table")
 	email := flag.String("email", "", "first administrator email")
 	environment := flag.String("environment", "", "environment grant")
 	flag.Parse()
-	if !runtimeconfig.ValidEnvironment(*environment) || *pool == "" || *table == "" {
-		log.Fatal("pool, table and environment required")
-	}
-	address, e := mail.ParseAddress(*email)
-	if e != nil || address.Address != *email || strings.ToLower(*email) != *email {
-		log.Fatal("valid lowercase bootstrap email required")
+	if e := validateSetupArgs(*authOnly, *pool, *login, *table, *email, *environment); e != nil {
+		log.Fatal(e)
 	}
 	ctx := context.Background()
 	cfg, e := config.LoadDefaultConfig(ctx)
@@ -42,6 +39,10 @@ func main() {
 	c := cognitoidentityprovider.NewFromConfig(cfg)
 	if e = adminsetup.Configure(ctx, c, *pool, *login); e != nil {
 		log.Fatal(e)
+	}
+	if *authOnly {
+		fmt.Println("Admin authentication reconciled; users and grants unchanged.")
+		return
 	}
 	store := runtimeconfig.Store{DB: dynamodb.NewFromConfig(cfg), Table: *table}
 	done, e := store.Bootstrapped(ctx, *environment)
@@ -90,4 +91,24 @@ func main() {
 		log.Fatal("bootstrap grant could not be recorded; existing grants were preserved: ", e)
 	}
 	fmt.Println("Admin MFA verified; first environment grant recorded.")
+}
+
+func validateSetupArgs(authOnly bool, pool, login, table, email, environment string) error {
+	if pool == "" || login == "" {
+		return errors.New("pool and login required")
+	}
+	if authOnly {
+		if table != "" || email != "" || environment != "" {
+			return errors.New("auth-only cannot be combined with invitation or environment grant arguments")
+		}
+		return nil
+	}
+	if !runtimeconfig.ValidEnvironment(environment) || table == "" {
+		return errors.New("table and environment required")
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email || strings.ToLower(email) != email {
+		return errors.New("valid lowercase bootstrap email required")
+	}
+	return nil
 }

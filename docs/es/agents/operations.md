@@ -3,6 +3,7 @@
 | Objetivo | Entrada | Guía autoritativa |
 | --- | --- | --- |
 | Crear/reanudar entorno | `setup.bat` / `./setup.sh` | [Primer despliegue](../../first-deployment.md) |
+| Desplegar solo el índice y la administración compartidos | `deploy.bat -Scope shared` / `./deploy.sh -scope shared` | [Despliegue compartido](../../deployment.md#shared-index-and-admin-deployment) |
 | Compilar ZIP de Lambda | `scripts/build.bat` / `./scripts/build.sh` | [Despliegue](../../deployment.md) |
 | Previsualizar/actualizar aplicación | `deploy.bat` / `./deploy.sh` o acción Deploy AWS | [GitHub](../../github-deployment.md) |
 | Reemplazar tokens, cambiar frase o borrar credenciales | `scripts/credentials.bat` / `./scripts/credentials.sh` | [Credenciales](../../deployment.md) |

@@ -214,3 +214,25 @@ On Unix, use `./deploy.sh` and `./gradlew` with the same flags. Re-export and re
 ## Android domain associations
 
 See [Android association hosting](android-associations.md) for approved public fingerprints, optional S3/CloudFront hosting, staged DNS/certificate readiness, CI updates and teardown.
+
+## Shared index and admin deployment
+
+Use the existing root launcher to update index/admin infrastructure independently:
+
+```powershell
+.\deploy.bat -Scope shared
+# Optional explicit AWS settings:
+.\deploy.bat -Scope shared -Region us-east-2 -Sso -Profile attestra
+```
+
+On Linux/macOS, use `./deploy.sh -scope shared`. The default scope is `app`; `deploy -stack dev` continues to deploy that environment backend. Index and admin remain together in the existing `infra-index` project and `shared` stack.
+
+The shared flow optionally unlocks an existing environment's credential vault solely to reuse credentials and the **shared** Pulumi passphrase. It does not deploy that environment. You may leave the vault prompt blank and authenticate with SSO, AWS browser login, or manual AWS credentials. It uses the account/region-specific `attestra-index-state-<account>-<region>` backend and checks ownership, versioning, and public-access blocking.
+
+The operation acquires the same conditional `bootstrap.lock` used by setup and shared teardown, refuses unfinished teardown, selects the existing shared stack, and refreshes its configuration from state. It builds only `cmd/index` and `cmd/admin`, previews and updates the full shared stack with Pulumi's interactive confirmation, then reconciles admin MFA/passkey configuration. It does not invite users, create environment grants, publish runtime defaults, or apply environment backend resources. Dashboard-published settings remain in their existing table.
+
+This is an **existing-deployment update**, not a bootstrap or domain-migration command. Complete setup first. It does not initialize missing state, edit Cloudflare DNS, or rewrite backend stack configuration. Domain changes and first-time provisioning still use setup. The setup readiness marker is left unchanged; a subsequent setup can reconcile the new source version normally.
+
+`-scope shared` accepts only `-region`, `-profile`, `-sso` or `-login`, and the launcher-provided `-repo-root`. Environment selection (`-stack`), alternate backends, CI modes, setup, teardown, and index-recovery flags cannot be combined with it. Existing GitHub backend deployment actions retain their current behavior; shared deployment is currently interactive/local.
+
+On failure, completed infrastructure changes remain. Retry the shared command after resolving the error. A failed authentication reconciliation is reported separately from a completed Pulumi update. If a process crashes, inspect the shared `bootstrap.lock` and verify no setup/deployment/teardown writer is active before removing that exact lock; never remove stack state.
