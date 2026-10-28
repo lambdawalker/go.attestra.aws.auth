@@ -14,7 +14,10 @@ All application calls use the deployed API origin, not `appOrigin`. Transport ty
 | POST `/auth/passkey/start` | `email` | WebAuthn challenge/session for native provider |
 | POST `/auth/passkey/complete` | `email`, `session`, JSON `credential` | Token result after assertion verification |
 | POST `/auth/refresh` | `refresh_token` | Refreshed tokens or authentication failure |
-| POST `/auth/status` | Bearer access token | `passkey_registered` boolean; 401 without a valid session |
+| POST `/auth/password/set` | Bearer access token; `password` | Verified account and current policy validation; Cognito owns credential |
+| POST `/auth/password/start` | `email` | Cognito PASSWORD challenge/session |
+| POST `/auth/password/complete` | `email`, `session`, `password` | Token result after password verification |
+| POST `/auth/status` | Bearer access token | `passkey_registered`, `password_registered`, `id_captured`, `onboarding_complete` booleans; 401 without a valid session |
 
 [Email handlers](../../api/handler.go), [passkey handlers](../../passkey/handler.go), [sign-in handlers](../../signin/handler.go), and [sign-in service types](../../signin/service.go) define the complete concrete behavior. These Go handlers accept a `context.Context` and API Gateway v2 request and return a v2 response/error; Lambda entry points are in `cmd/`. Consumers should integrate through HTTPS rather than import internal deployment packages as an SDK.
 
@@ -25,3 +28,5 @@ Passkey failures map to 401 `sign_in_required`, 400 `invalid_credential`, or 503
 The [capture API reference](../id-capture.md#http-contract) owns every capture route, body, state, error, checksum, revision and retention limit. Fetch document policy first. Preserve operation keys across uncertain retries; PUT bytes to S3 using the exact returned headers, then finalize the selected front/back upload IDs. Poll real status; cancellation and evidence cleanup are asynchronous. Never upload via a Lambda request body.
 
 The [index contract](../environment-index.md#public-response) exposes public GET `/v1/environments` with `schemaVersion: 1`. POST `/v1/environments/<environment>/changes` requires AWS SigV4 and environment-scoped IAM permission. This is an operator endpoint; mobile clients must not receive AWS deployment credentials. `registry/registry.go` owns the public types and conditional-write behavior.
+
+See [configurable onboarding](../onboarding-policy.md) for defaults, durable completion and client rollout requirements.

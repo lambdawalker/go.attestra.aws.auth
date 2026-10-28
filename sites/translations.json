@@ -11,8 +11,8 @@
   },
   "docs/agents/api.md": {
     "path": "docs/es/agents/api.md",
-    "source_sha256": "20cc2fef700f1cf9c422a5d6c37bbc7c44200af14966ba5697796589a88a8848",
-    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+    "source_sha256": "7b6e9a96119e93d4a9cb866df3dcd9ac3718ea2291712b9d9b82f3ace9d7cc0a",
+    "provenance": "Reviewed Spanish translation, onboarding policy update 2026-10-28"
   },
   "docs/agents/operations.md": {
     "path": "docs/es/agents/operations.md",
@@ -26,7 +26,7 @@
   },
   "docs/agents/limitations.md": {
     "path": "docs/es/agents/limitations.md",
-    "source_sha256": "19e17f449956efc368739e8667af4d1b3dc5b3c6287a3ec821142d46db3418ff",
-    "provenance": "Reviewed Spanish card extraction update 2026-10-28"
+    "source_sha256": "1b63092ffffd059bbad9cc6df601ab89314e152238971ef2b96254cc1871562c",
+    "provenance": "Reviewed Spanish translation, onboarding policy update 2026-10-28"
   }
 }

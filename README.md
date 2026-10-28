@@ -1,6 +1,6 @@
 # Attestra AWS authentication
 
-This repository implements Attestra authentication with Go Lambda handlers and a Pulumi Go stack: email confirmation, passkey registration, email/passkey sign-in, refresh, and authenticated passkey status. Onboarding ID capture adds private S3 uploads, asynchronous file checks, pinned evidence and cancellation. See [capture API and operations](docs/id-capture.md); capture is disabled by default, and cloud extraction and an editable review form are available; extraction does not verify identity.
+This repository implements Attestra authentication with Go Lambda handlers and a Pulumi Go stack: email confirmation, passkey registration, email/passkey/password sign-in, refresh, and authenticated enrollment status. Onboarding ID capture adds private S3 uploads, asynchronous file checks, pinned evidence and cancellation. See [capture API and operations](docs/id-capture.md); new onboarding defaults require capture (legacy settings preserve prior enablement), and cloud extraction and an editable review form are available; extraction does not verify identity.
 
 Runtime settings are published from the invitation-only [admin console](docs/admin-runtime-config.md); Android and capture admission read the same durable configuration.
 
@@ -184,7 +184,7 @@ pulumi config get appOrigin
 
 The Pulumi secret is delivered to the API Lambda environments that consume it; restrict access to Lambda configuration and Pulumi state. Consult `infra/main.go` for the exact resource and environment wiring. Client association setup belongs in each client repository.
 
-**Cognito configuration gotcha:** `infra/main.go` configures `PASSWORD`, `EMAIL_OTP`, and `WEB_AUTHN`. Removing `PASSWORD` previously caused pool creation to fail. User creation omits `TemporaryPassword`, and `admin_only` disables self-service password resets. `ALLOW_USER_AUTH` can still permit password authentication if a user acquires one; a signed-in passwordless user may set one through `ChangePassword`. The resulting system limitation and decision boundary are recorded in [the architecture](https://github.com/lambdawalker/design.attestra/blob/main/architecture.md#identity-provider-limitation).
+Cognito supports PASSWORD, EMAIL_OTP and WEB_AUTHN. Configurable onboarding can enroll passwords after verified authentication; Cognito owns those credentials. Disabled enrollment does not revoke existing credentials. Email OTP remains the recovery path. See [onboarding policy](docs/onboarding-policy.md).
 
 API Gateway sends `POST /signup`, `/resend`, and `/confirm` to separate `email-signup`, `email-resend`, and `email-confirm` Lambdas. They share the same Go service and DynamoDB table, but have separate CloudWatch log groups and IAM roles. A fourth Lambda, `cognito-grant-challenge`, handles Cognito's custom challenge. `pulumi up` replaces the old shared `email-api` Lambda with these three route-specific functions; the `apiUrl` output remains the client-facing base URL.
 
@@ -311,3 +311,7 @@ Linux/macOS: `./deploy.sh -scope shared`. This updates the existing `infra-index
 Run `.\deploy.bat` or `./deploy.sh` to start the guided flow. First-time or incomplete setup runs the full wizard, including shared index/admin infrastructure and the backend. After setup completes, a no-argument launch asks whether to deploy **both**, **index/admin only**, or **backend only**. The backend stack starts at `dev`; you can change it at the stack prompt. `.\setup.bat` / `./setup.sh` use the same menu after completed setup; use `-force-setup` to explicitly reconcile setup.
 
 Explicit commands bypass the menu: `deploy.bat -Stack qa`, `deploy.bat -Scope shared`, or `deploy.bat -Scope both -Stack dev`. Both deploys shared first, then the backend, using one AWS sign-in and separate state passphrases.
+
+## Configurable onboarding
+
+See [policy and HTTP contracts](docs/onboarding-policy.md) and [admin publication](docs/admin-runtime-config.md). New defaults require ID capture and passkey; password enrollment is disabled/hidden. Authentication alone is not onboarding completion. Upgrade backend and Android together before publishing new requirements; existing live settings are not changed by this source update.

@@ -21,7 +21,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 	regional := statement([]string{"apigateway:*", "cognito-idp:*", "lambda:ListEventSourceMappings", "lambda:CreateEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:UpdateEventSourceMapping", "lambda:DeleteEventSourceMapping", "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"}, []string{"arn:aws:apigateway:" + o.Region + "::/*", arn("cognito-idp", "userpool/*"), arn("lambda", "event-source-mapping:*")})
 	regional["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": o.Region}}
 	roles := []string{}
-	for _, name := range []string{"app-config", "signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "capture", "capture-dispatcher", "capture-worker", "environment-reset"} {
+	for _, name := range []string{"app-config", "signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "auth-password-start", "auth-password-complete", "auth-password-set", "capture", "capture-dispatcher", "capture-worker", "environment-reset"} {
 		roles = append(roles, "arn:aws:iam::"+account+":role/"+name+"-role-*")
 	}
 	iam := statement([]string{"iam:CreateRole", "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:ListRolePolicies", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags"}, roles)

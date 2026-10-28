@@ -52,7 +52,7 @@ func providerError(err error) error {
 	return ErrUnavailable
 }
 func (s Service) Start(ctx context.Context, email, method string) (Challenge, error) {
-	if len(email) > 254 || !strings.Contains(email, "@") || (method != "EMAIL_OTP" && method != "WEB_AUTHN") {
+	if len(email) > 254 || !strings.Contains(email, "@") || (method != "EMAIL_OTP" && method != "WEB_AUTHN" && method != "PASSWORD") {
 		return Challenge{}, ErrRejected
 	}
 	out, err := s.Client.InitiateAuth(ctx, &cognito.InitiateAuthInput{ClientId: aws.String(s.ClientID), AuthFlow: types.AuthFlowTypeUserAuth, AuthParameters: map[string]string{"USERNAME": email, "PREFERRED_CHALLENGE": method}})
@@ -82,6 +82,11 @@ func (s Service) Finish(ctx context.Context, email, method, challengeSession, an
 		}
 	} else if method == "WEB_AUTHN" {
 		field = "CREDENTIAL"
+	} else if method == "PASSWORD" {
+		field = "PASSWORD"
+		if len(answer) > 256 {
+			return Session{}, ErrRejected
+		}
 	} else {
 		return Session{}, ErrRejected
 	}

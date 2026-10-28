@@ -21,7 +21,7 @@
         <p class="eyebrow">APPLICATION OPERATIONS</p>
         <h1>Change the experience.<br />Keep the safeguards.</h1>
         <p>
-          Publish capture settings directly to your applications. Every change
+          Publish onboarding settings directly to your applications. Every change
           is versioned, attributed, and reversible.
         </p>
       </section>
@@ -39,15 +39,33 @@
         </div>
         <div class="grid">
           <form id="config">
-            <div class="card-head">
-              <div>
-                <p class="eyebrow">FEATURE ACCESS</p>
-                <h2>Identity document capture</h2>
-              </div>
-              <label class="switch"
-                ><input type="checkbox" id="enabled" /> Enabled</label
-              >
+            <p class="eyebrow">ONBOARDING POLICY</p>
+            <h2>Enrollment requirements</h2>
+            <p class="muted">Required steps must be completed. Optional steps can be skipped. Disabled steps are omitted from onboarding; existing credentials remain usable.</p>
+            <div class="policy-grid">
+              <label>ID capture<select id="idCaptureRequirement" required><option value="required">Required</option><option value="optional">Optional</option><option value="disabled">Disabled</option></select></label>
+              <label>Passkey<select id="passkeyRequirement" required><option value="required">Required</option><option value="optional">Optional</option><option value="disabled">Disabled</option></select></label>
+              <label>Password<select id="passwordRequirement" required><option value="required">Required</option><option value="optional">Optional</option><option value="disabled">Disabled</option></select></label>
             </div>
+            <label>Password placement<select id="passwordPlacement" required>
+              <option value="with_email">With email</option>
+              <option value="after_verification">After email verification</option>
+              <option value="hidden">Hidden</option>
+            </select></label>
+            <p class="muted">Hiding password entry disables password enrollment. Enabling password enrollment selects after email verification by default.</p>
+            <fieldset>
+              <legend>Password policy</legend>
+              <p class="muted">Rules apply to new passwords. ASCII letters, digits and printable punctuation only; no whitespace. Rules remain saved when password enrollment is disabled.</p>
+              <div class="policy-grid">
+                <label>Minimum length<input id="minLength" type="number" min="8" max="128" step="1" required /></label>
+                <label>Maximum length<input id="maxLength" type="number" min="8" max="128" step="1" required /></label>
+              </div>
+              <label class="policy-row">Lowercase (a–z)<select id="lowercase" required><option value="allowed">Allowed</option><option value="required">Required</option><option value="disallowed">Disallowed</option></select></label>
+              <label class="policy-row">Uppercase (A–Z)<select id="uppercase" required><option value="allowed">Allowed</option><option value="required">Required</option><option value="disallowed">Disallowed</option></select></label>
+              <label class="policy-row">Numbers (0–9)<select id="numbers" required><option value="allowed">Allowed</option><option value="required">Required</option><option value="disallowed">Disallowed</option></select></label>
+              <label class="policy-row">Symbols (punctuation)<select id="symbols" required><option value="allowed">Allowed</option><option value="required">Required</option><option value="disallowed">Disallowed</option></select></label>
+            </fieldset>
+            <h2>Identity document capture</h2>
             <p class="muted">
               New capture sessions use these settings. Existing captures retain
               the disclosure the user accepted.

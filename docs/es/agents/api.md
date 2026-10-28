@@ -14,7 +14,10 @@ Las llamadas usan el origen API desplegado, no `appOrigin`. Los tipos de transpo
 | POST `/auth/passkey/start` | `email` | Desafío/sesión WebAuthn para el proveedor nativo |
 | POST `/auth/passkey/complete` | `email`, `session`, JSON `credential` | Tokens tras verificar la aserción |
 | POST `/auth/refresh` | `refresh_token` | Tokens renovados o fallo de autenticación |
-| POST `/auth/status` | Token de acceso Bearer | Booleano `passkey_registered`; 401 sin sesión válida |
+| POST `/auth/password/set` | Token Bearer; `password` | Valida cuenta verificada y política; Cognito conserva la credencial |
+| POST `/auth/password/start` | `email` | Reto PASSWORD y sesión Cognito |
+| POST `/auth/password/complete` | `email`, `session`, `password` | Tokens tras verificar contraseña |
+| POST `/auth/status` | Token de acceso Bearer | Booleanos `passkey_registered`, `password_registered`, `id_captured`, `onboarding_complete`; 401 sin sesión válida |
 
 Los [handlers de correo](../../../api/handler.go), [passkeys](../../../passkey/handler.go), [inicio de sesión](../../../signin/handler.go) y [tipos del servicio](../../../signin/service.go) definen el comportamiento concreto. Reciben `context.Context` y una solicitud API Gateway v2, y devuelven respuesta v2/error; los puntos Lambda están en `cmd/`. Integra mediante HTTPS, sin tratar los paquetes internos de despliegue como SDK.
 
@@ -25,3 +28,5 @@ Los fallos de passkey se traducen en 401 `sign_in_required`, 400 `invalid_creden
 La [referencia de captura](../../id-capture.md#http-contract) define rutas, cuerpos, estados, errores, checksums, revisiones y retención. Obtén primero la política. Conserva las claves de operación ante resultados inciertos; envía bytes a S3 por PUT con las cabeceras exactas y finaliza los identificadores front/back seleccionados. Consulta el estado real; cancelar y borrar evidencia es asíncrono. No cargues imágenes en el cuerpo de una llamada Lambda.
 
 El [contrato del índice](../../environment-index.md#public-response) ofrece GET público `/v1/environments`, `schemaVersion: 1`. POST `/v1/environments/<environment>/changes` requiere AWS SigV4 y permiso IAM del entorno. Es una ruta operativa: no entregues credenciales de despliegue a móviles. `registry/registry.go` define tipos públicos y escrituras condicionales.
+
+Consulta la [política configurable](../../onboarding-policy.md) para valores predeterminados, finalización durable y actualización de clientes.

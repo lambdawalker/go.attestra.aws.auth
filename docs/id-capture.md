@@ -71,3 +71,7 @@ Deploy the **backend** before releasing the updated Android app; shared index/ad
 The client selects `en`, `es` or `fr` from policy `purposes`, falling back to English when unavailable. Creation records `disclosure_language` together with the immutable policy snapshot. Retries must retain that language and expected policy version; changing either conflicts. Changing a translation changes policy identity and requires renewed disclosure for new captures. Legacy records do not invent a historical language or snapshot.
 
 The post-scan review request accepts `origin_country`: `CA`, `US`, `MX`, `GT` or `BZ`. Android requires the user to select it before saving. It is separate from OCR `issuing_country` and is stored in `reviewed.origin_country`. The backend accepts omission for older clients; neither OCR nor locale establishes origin. The form follows document submission and remains editable before confirmation.
+
+## Durable onboarding capture fact
+
+The ready transition atomically sets permanent account `IDCaptured` and increments the account revision. `/auth/status` can therefore report `id_captured` after evidence retention expires, without requiring the client to have polled status before expiry. Legacy ready records are backfilled when discovered; expired pre-upgrade records cannot be reconstructed. This is evidence-capture completion, never identity verification. See [onboarding policy](onboarding-policy.md).

@@ -42,7 +42,15 @@ The table has on-demand capacity, encryption, point-in-time recovery, DynamoDB d
   "environment": "dev",
   "revision": 0,
   "updatedAt": "2026-10-27T12:00:00Z",
-  "features": { "idCapture": false },
+  "features": { "idCapture": true },
+  "onboarding": {
+    "idCapture": "required", "passkey": "required", "password": "disabled",
+    "passwordPlacement": "hidden",
+    "passwordPolicy": {
+      "minLength": 12, "maxLength": 128,
+      "lowercase": "allowed", "uppercase": "allowed", "numbers": "allowed", "symbols": "allowed"
+    }
+  },
   "capture": {
     "documentType": "id_card",
     "jurisdiction": "",
@@ -56,7 +64,7 @@ The table has on-demand capacity, encryption, point-in-time recovery, DynamoDB d
 }
 ```
 
-Only these behavior settings are allowed. There are no credentials, proof keys, identities, routing settings, Cognito identifiers, deployment controls, or build configuration in this document. Environment names match `[a-z][a-z0-9-]{0,31}`; document types match `[a-z][a-z0-9_]{0,63}`. Purpose and jurisdiction are each at most 1024 UTF-8 bytes and contain no control characters. New publications use fixed `id_card`, empty jurisdiction and generic messages in English, Spanish and French. English is required; blank translations fall back to English. Each message is limited to 1024 UTF-8 bytes with no control characters. Legacy fields remain readable; current policy projection uses the generic disclosure and does not request jurisdiction before scanning. Revision is nonnegative and increases on every effective value change; rollback is a new revision. An unavailable or malformed durable configuration returns 503, never an enabled fallback.
+See [onboarding policy](onboarding-policy.md) for mode/placement validation, legacy normalization, password security and coordinated rollout. The example shows new defaults; it does not describe live environment settings. Only these behavior settings are allowed. There are no credentials, proof keys, identities, routing settings, Cognito identifiers, deployment controls, or build configuration in this document. Environment names match `[a-z][a-z0-9-]{0,31}`; document types match `[a-z][a-z0-9_]{0,63}`. Purpose and jurisdiction are each at most 1024 UTF-8 bytes and contain no control characters. New publications use fixed `id_card`, empty jurisdiction and generic messages in English, Spanish and French. English is required; blank translations fall back to English. Each message is limited to 1024 UTF-8 bytes with no control characters. Legacy fields remain readable; current policy projection uses the generic disclosure and does not request jurisdiction before scanning. Revision is nonnegative and increases on every effective value change; rollback is a new revision. An unavailable or malformed durable configuration returns 503, never an enabled fallback.
 
 Android retrieves this environment-bound HTTPS endpoint at launch and foreground, validates the document, and caches only validated data. Transient failures permit at most 15 minutes of stale use; invalid documents fail closed. On expiry, new capture admission stops while existing status and cancellation remain usable. Updating runtime behavior does not reset authentication. Runtime configuration is distinct from the existing environment index and build-time routing/authentication settings.
 

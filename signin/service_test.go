@@ -69,3 +69,17 @@ func TestInvalidCodeRejectedBeforeProvider(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestPasswordSignInUsesCognitoChallengeWithoutEnrollmentRules(t *testing.T) {
+	f := &fake{}
+	s := Service{Client: f, ClientID: "client"}
+	ctx := context.Background()
+	challenge, e := s.Start(ctx, "user@example.com", "PASSWORD")
+	if e != nil {
+		t.Fatal(e)
+	}
+	result, e := s.Finish(ctx, "user@example.com", "PASSWORD", challenge.Session, "existing password")
+	if e != nil || result.AccessToken != "access" || f.completed.ChallengeResponses["PASSWORD"] != "existing password" {
+		t.Fatal(result, e)
+	}
+}

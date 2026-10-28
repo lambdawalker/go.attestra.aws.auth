@@ -53,7 +53,7 @@ func (s Store) Get(ctx context.Context, env string) (Config, error) {
 			e = ErrInvalid
 		}
 	}
-	return c, e
+	return c.Normalized(), e
 }
 func (s Store) query(ctx context.Context, id, prefix string) ([]map[string]types.AttributeValue, error) {
 	r, e := s.DB.Query(ctx, &dynamodb.QueryInput{TableName: aws.String(s.Table), ConsistentRead: aws.Bool(true), KeyConditionExpression: aws.String("id = :id AND begins_with(sk, :prefix)"), ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: id}, ":prefix": &types.AttributeValueMemberS{Value: prefix}}, ScanIndexForward: aws.Bool(false), Limit: aws.Int32(100)})
@@ -230,12 +230,12 @@ func (s Store) SyncDefaults(ctx context.Context, c Config, f Fence) error {
 		return nil
 	}
 	if e == nil && old.DefaultGeneration >= f.Revision {
-		if old.DefaultGeneration == f.Revision && old.Features == c.Features && old.Capture == c.Capture {
+		if old.DefaultGeneration == f.Revision && old.Features == c.Features && old.Capture == c.Capture && old.EffectiveOnboarding() == c.EffectiveOnboarding() {
 			return nil
 		}
 		return ErrConflict
 	}
-	changed := e == ErrNotFound || old.Features != c.Features || old.Capture != c.Capture
+	changed := e == ErrNotFound || old.Features != c.Features || old.Capture != c.Capture || old.EffectiveOnboarding() != c.EffectiveOnboarding()
 	if e == nil {
 		c.Revision = old.Revision
 		if changed {

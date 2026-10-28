@@ -23,7 +23,7 @@ func (h PublicHandler) Handle(ctx context.Context, r events.APIGatewayV2HTTPRequ
 	if e != nil || c.Environment != h.Environment || c.Validate() != nil {
 		return events.APIGatewayV2HTTPResponse{StatusCode: 503, Headers: headers, Body: `{"error":"config_unavailable"}`}, nil
 	}
-	b, e := json.Marshal(c)
+	b, e := json.Marshal(c.Normalized())
 	if e != nil {
 		return events.APIGatewayV2HTTPResponse{StatusCode: 503, Headers: headers, Body: `{"error":"config_unavailable"}`}, nil
 	}

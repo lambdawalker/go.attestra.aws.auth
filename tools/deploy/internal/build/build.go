@@ -50,7 +50,7 @@ func PackageLambda(binary, archive string) (err error) {
 	return os.Rename(out.Name(), archive)
 }
 
-var LambdaNames = []string{"signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "capture", "capture-worker", "capture-dispatcher", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "app-config", "admin", "environment-reset"}
+var LambdaNames = []string{"signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "capture", "capture-worker", "capture-dispatcher", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "auth-password-start", "auth-password-complete", "auth-password-set", "app-config", "admin", "environment-reset"}
 
 type lambdaBuild struct {
 	source string

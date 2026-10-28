@@ -30,18 +30,23 @@ type Capture struct {
 	Purpose      string           `json:"purpose" pulumi:"purpose"`
 }
 type Config struct {
-	SchemaVersion int      `json:"schemaVersion" pulumi:"schemaVersion"`
-	Environment   string   `json:"environment" pulumi:"environment"`
-	Revision      int64    `json:"revision" pulumi:"revision"`
-	UpdatedAt     string   `json:"updatedAt" pulumi:"updatedAt"`
-	Features      Features `json:"features" pulumi:"features"`
-	Capture       Capture  `json:"capture" pulumi:"capture"`
+	SchemaVersion int         `json:"schemaVersion" pulumi:"schemaVersion"`
+	Environment   string      `json:"environment" pulumi:"environment"`
+	Revision      int64       `json:"revision" pulumi:"revision"`
+	UpdatedAt     string      `json:"updatedAt" pulumi:"updatedAt"`
+	Onboarding    *Onboarding `json:"onboarding,omitempty" pulumi:"onboarding"`
+	Features      Features    `json:"features" pulumi:"features"`
+	Capture       Capture     `json:"capture" pulumi:"capture"`
 }
 
 func Default(env string) Config {
-	return Config{SchemaVersion: 1, Environment: env, UpdatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339), Capture: Capture{DocumentType: "id_card", Purpose: capture.DefaultPurposes().EN, Messages: capture.DefaultPurposes()}}
+	policy := DefaultOnboarding()
+	return Config{Onboarding: &policy, Features: Features{IDCapture: true}, SchemaVersion: 1, Environment: env, UpdatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339), Capture: Capture{DocumentType: "id_card", Purpose: capture.DefaultPurposes().EN, Messages: capture.DefaultPurposes()}}
 }
 func (c Config) Validate() error {
+	if c.EffectiveOnboarding().Validate() != nil || (c.Onboarding != nil && c.Features.IDCapture != (c.Onboarding.IDCapture != Disabled)) {
+		return ErrInvalid
+	}
 	if c.SchemaVersion != 1 || !ValidEnvironment(c.Environment) || c.Revision < 0 {
 		return ErrInvalid
 	}
@@ -124,6 +129,8 @@ func (s Service) Publish(ctx context.Context, g Grant, expected int64, c Config,
 		c.Capture.Messages = capture.DefaultPurposes()
 	}
 	c.Capture.Purpose = c.Capture.Messages.EN
+	c = c.Normalized()
+	c.Features.IDCapture = c.Onboarding.IDCapture != Disabled
 	c.SchemaVersion = 1
 	c.Revision = expected + 1
 	c.UpdatedAt = now.UTC().Format(time.RFC3339Nano)
