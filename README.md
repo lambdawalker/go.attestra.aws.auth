@@ -305,3 +305,9 @@ On Windows, use the `.bat` launchers from PowerShell or Command Prompt; Bash is 
 ```
 
 Linux/macOS: `./deploy.sh -scope shared`. This updates the existing `infra-index` shared stack (index, admin dashboard, Cognito, and shared tables) without deploying an environment backend. See [shared deployment](docs/deployment.md#shared-index-and-admin-deployment).
+
+### Run without parameters
+
+Run `.\deploy.bat` or `./deploy.sh` to start the guided flow. First-time or incomplete setup runs the full wizard, including shared index/admin infrastructure and the backend. After setup completes, a no-argument launch asks whether to deploy **both**, **index/admin only**, or **backend only**. The backend stack starts at `dev`; you can change it at the stack prompt. `.\setup.bat` / `./setup.sh` use the same menu after completed setup; use `-force-setup` to explicitly reconcile setup.
+
+Explicit commands bypass the menu: `deploy.bat -Stack qa`, `deploy.bat -Scope shared`, or `deploy.bat -Scope both -Stack dev`. Both deploys shared first, then the backend, using one AWS sign-in and separate state passphrases.

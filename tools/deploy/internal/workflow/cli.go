@@ -25,7 +25,7 @@ func Run() error {
 	}
 	var associations bool
 	var scope string
-	flag.StringVar(&scope, "scope", "app", "Deployment scope: app (environment backend) or shared (index and admin)")
+	flag.StringVar(&scope, "scope", "app", "Deployment scope: app (backend), shared (index/admin), or both")
 	var o options
 	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex bool
 	flag.BoolVar(&associations, "associations", false, "Manage and publish Android signing approvals without a full deployment")
@@ -82,6 +82,22 @@ func Run() error {
 		if err := prepareGeneratedState(root); err != nil {
 			return err
 		}
+	}
+	repo := localRepository(root)
+	if repo == "" {
+		repo = "lambdawalker/go.attestra.aws.auth"
+	}
+	choice, err := deploymentStartup(root, repo, supplied, chooseDeployment)
+	if err != nil {
+		return err
+	}
+	switch choice {
+	case "setup":
+		fmt.Println("Initial setup is not complete. Starting the full wizard for shared infrastructure and the backend (default: dev).")
+		return runGitHubSetup(root, true, false, false)
+	case "app", "shared", "both":
+		scope = choice
+		bootstrap = false
 	}
 	if scope == "shared" {
 		o.Root = root
@@ -253,7 +269,16 @@ func Run() error {
 	if o.HealthCheck {
 		return runEnvironmentHealth(runner, o)
 	}
-	if err := execute(runner, o); err != nil {
+	if err := runDeploymentChoice(scope, func() error {
+		sharedCredentials := c
+		sharedCredentials.Passphrase = saved.secrets.IndexPulumi
+		if sharedCredentials.Passphrase == "" {
+			if err := ui.Input("Existing shared index Pulumi passphrase", &sharedCredentials.Passphrase, true, true).Run(); err != nil {
+				return err
+			}
+		}
+		return deploySharedWithCredentials(o, sharedCredentials, id.Account)
+	}, func() error { return execute(runner, o) }); err != nil {
 		return err
 	}
 	if o.MigrateFrom == "" && !o.ReleaseIndex {

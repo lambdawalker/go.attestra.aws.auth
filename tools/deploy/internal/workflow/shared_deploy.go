@@ -17,13 +17,17 @@ func validateDeployScope(scope string, flags []string) error {
 	if scope == "app" {
 		return nil
 	}
-	if scope != "shared" {
-		return errors.New("-scope must be app or shared")
+	if scope != "shared" && scope != "both" {
+		return errors.New("-scope must be app, shared, or both")
 	}
 	allowed := map[string]bool{"scope": true, "repo-root": true, "region": true, "profile": true, "sso": true, "login": true}
+	if scope == "both" {
+		allowed["stack"] = true
+		allowed["backend"] = true
+	}
 	for _, flag := range flags {
 		if !allowed[flag] {
-			return fmt.Errorf("-%s cannot be combined with -scope shared; shared deployment uses its own existing stack and backend", flag)
+			return fmt.Errorf("-%s cannot be combined with -scope %s", flag, scope)
 		}
 	}
 	return nil
@@ -96,6 +100,13 @@ func runSharedDeploy(o options) error {
 			return err
 		}
 	}
+	return deploySharedWithCredentials(o, c, "")
+}
+
+// Both-scope deployments reuse the authenticated backend identity, but never its
+// state passphrase. Each project keeps its own temporary Pulumi environment.
+func deploySharedWithCredentials(o options, c credentials, expectedAccount string) error {
+	o.Stack = "shared"
 	tmp, err := os.MkdirTemp("", "attestra-shared-deploy-")
 	if err != nil {
 		return err
@@ -117,6 +128,10 @@ func runSharedDeploy(o options) error {
 	if len(identity.Account) != 12 {
 		return errors.New("invalid AWS account response")
 	}
+	if expectedAccount != "" && identity.Account != expectedAccount {
+		return errors.New("AWS account changed before shared deployment; no shared resources were changed")
+	}
+	fmt.Printf("Shared index/admin • account %s • region %s • stack shared\n", identity.Account, o.Region)
 	o.Backend = "s3://attestra-index-state-" + identity.Account + "-" + o.Region
 	if err = o.validate(); err != nil {
 		return err

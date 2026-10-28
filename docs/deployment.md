@@ -225,7 +225,7 @@ Use the existing root launcher to update index/admin infrastructure independentl
 .\deploy.bat -Scope shared -Region us-east-2 -Sso -Profile attestra
 ```
 
-On Linux/macOS, use `./deploy.sh -scope shared`. The default scope is `app`; `deploy -stack dev` continues to deploy that environment backend. Index and admin remain together in the existing `infra-index` project and `shared` stack.
+On Linux/macOS, use `./deploy.sh -scope shared`. Explicit commands default to scope `app`; `deploy -stack dev` continues to deploy that environment backend. With no user parameters, startup follows the guided menu described below. Index and admin remain together in the existing `infra-index` project and `shared` stack.
 
 The shared flow optionally unlocks an existing environment's credential vault solely to reuse credentials and the **shared** Pulumi passphrase. It does not deploy that environment. You may leave the vault prompt blank and authenticate with SSO, AWS browser login, or manual AWS credentials. It uses the account/region-specific `attestra-index-state-<account>-<region>` backend and checks ownership, versioning, and public-access blocking.
 
@@ -236,3 +236,27 @@ This is an **existing-deployment update**, not a bootstrap or domain-migration c
 `-scope shared` accepts only `-region`, `-profile`, `-sso` or `-login`, and the launcher-provided `-repo-root`. Environment selection (`-stack`), alternate backends, CI modes, setup, teardown, and index-recovery flags cannot be combined with it. Existing GitHub backend deployment actions retain their current behavior; shared deployment is currently interactive/local.
 
 On failure, completed infrastructure changes remain. Retry the shared command after resolving the error. A failed authentication reconciliation is reported separately from a completed Pulumi update. If a process crashes, inspect the shared `bootstrap.lock` and verify no setup/deployment/teardown writer is active before removing that exact lock; never remove stack state.
+
+## Parameter-free startup and deploy both
+
+Run `.\deploy.bat` (Windows) or `./deploy.sh` (Linux/macOS) without parameters. If there is no completed setup record for this repository, the full setup wizard starts or resumes: shared index/admin, environment infrastructure, and the existing verification/publication steps. Setup defaults its environment selector to `dev`. Existing state is inspected and reused through the normal setup safeguards.
+
+After a successful setup record exists, the launcher asks:
+
+1. **Deploy both** — shared index/admin first, then the selected backend.
+2. **Deploy the index and admin only** — existing shared-stack deployment.
+3. **Deploy the backend only** — existing environment deployment.
+
+The backend stack prompt defaults to `dev`, even if another environment was used previously; enter `qa`, `prod`, or another stack when needed. The menu initially selects backend-only, and nothing is deployed until the user chooses and completes the existing confirmations. Cancelling exits.
+
+The no-argument `setup` launcher also shows this menu after setup is complete. Use `setup -force-setup` for explicit setup reconciliation. Explicit operation flags bypass the menu and first-run routing, including `-Stack qa`, `-Scope shared`, CI operations, and credential/recovery commands. The launchers' internal `-repo-root` and `-bootstrap` arguments do not count as user parameters.
+
+For an explicit combined deployment:
+
+```powershell
+.\deploy.bat -Scope both -Stack dev
+```
+
+Both uses the selected backend's region and authenticated account, and separately unlocks the shared Pulumi passphrase. It checks the account again before shared work, never passes the backend passphrase to the shared stack, and stops before applying backend resources if shared deployment or authentication reconciliation fails. If shared succeeds and backend fails, shared changes remain; retry the backend or its existing publication recovery as appropriate.
+
+Completion records route the interface only; they are not a remote health check and remain valid for choosing the menu after a Git update. A corrupt record stops with an inspection error. Missing local records on a new checkout lead to the full wizard, which checks existing remote infrastructure rather than assuming it is absent.
