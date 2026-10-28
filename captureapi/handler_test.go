@@ -29,3 +29,14 @@ func TestStrictBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestResetTokenGateRejectsOldAccessToken(t *testing.T) {
+	h := Handler{CheckToken: func(_ context.Context, iat int64) (bool, error) { return iat > 100, nil }}
+	req := events.APIGatewayV2HTTPRequest{RawPath: "/onboarding/id/status"}
+	req.RequestContext.HTTP.Method = "GET"
+	req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{Claims: map[string]string{"sub": "old-user", "token_use": "access", "iat": "100"}}}
+	out, e := h.Handle(context.Background(), req)
+	if e != nil || out.StatusCode != 401 {
+		t.Fatal("pre-reset token accepted", e)
+	}
+}

@@ -73,6 +73,11 @@ func deployAdmin(ctx *pulumi.Context, cfg *config.Config) (*dynamodb.Table, erro
 	if e != nil {
 		return nil, e
 	}
+	account := aws.GetCallerIdentityOutput(ctx, aws.GetCallerIdentityOutputArgs{}).AccountId()
+	_, e = iam.NewRolePolicy(ctx, "admin-reset-invoke", &iam.RolePolicyArgs{Role: role.Name, Policy: pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"lambda:InvokeFunction","Resource":"arn:aws:lambda:%s:%s:function:attestra-reset-*"}]}`, region, account)})
+	if e != nil {
+		return nil, e
+	}
 	archive, _ := filepath.Abs("../dist/admin.zip")
 	fn, e := lambda.NewFunction(ctx, "admin-handler", &lambda.FunctionArgs{Role: role.Arn, Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Code: pulumi.NewFileArchive(archive), Timeout: pulumi.Int(20), MemorySize: pulumi.Int(256), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"RUNTIME_TABLE": table.Name, "ADMIN_ISSUER": issuer, "ADMIN_CLIENT_ID": client.ID(), "ADMIN_ORIGIN": pulumi.String("https://" + domain), "ADMIN_LOGIN_DOMAIN": loginURL}}}, pulumi.DependsOn([]pulumi.Resource{grant}))
 	if e != nil {
@@ -93,7 +98,7 @@ func deployAdmin(ctx *pulumi.Context, cfg *config.Config) (*dynamodb.Table, erro
 	for _, r := range []struct {
 		name, path string
 		protected  bool
-	}{{"home", "GET /", false}, {"callback", "GET /callback", false}, {"script", "GET /app.js", false}, {"style", "GET /style.css", false}, {"settings", "GET /settings", false}, {"passkey-activate", "POST /api/passkey/activate", true}, {"environments", "GET /api/environments", true}, {"read", "GET /api/environments/{environment}", true}, {"history", "GET /api/environments/{environment}/history", true}, {"publish", "POST /api/environments/{environment}", true}, {"grant-read", "GET /api/environments/{environment}/grants", true}, {"grants", "POST /api/environments/{environment}/grants", true}} {
+	}{{"home", "GET /", false}, {"callback", "GET /callback", false}, {"script", "GET /app.js", false}, {"style", "GET /style.css", false}, {"settings", "GET /settings", false}, {"passkey-activate", "POST /api/passkey/activate", true}, {"environments", "GET /api/environments", true}, {"read", "GET /api/environments/{environment}", true}, {"history", "GET /api/environments/{environment}/history", true}, {"publish", "POST /api/environments/{environment}", true}, {"grant-read", "GET /api/environments/{environment}/grants", true}, {"grants", "POST /api/environments/{environment}/grants", true}, {"reset-status", "GET /api/environments/{environment}/reset", true}, {"reset-start", "POST /api/environments/{environment}/reset", true}} {
 		args := &apigatewayv2.RouteArgs{ApiId: api.ID(), RouteKey: pulumi.String(r.path), Target: pulumi.Sprintf("integrations/%s", integration.ID())}
 		if r.protected {
 			args.AuthorizationType = pulumi.String("JWT")

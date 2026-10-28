@@ -124,3 +124,20 @@ func TestExpiredAndCancelledFieldsNeverReturned(t *testing.T) {
 		t.Fatal("cleanup retained fields")
 	}
 }
+
+func TestOriginIsUserProvidedAndSeparateFromIssuer(t *testing.T) {
+	s, m, _, _, r := extractionFixture(t)
+	if e := s.Work(context.Background(), Job{r.Owner, r.ID, r.Generation, r.Work}); e != nil {
+		t.Fatal(e)
+	}
+	r = m.records[r.ID]
+	data := r.Extraction.Data
+	data.IssuingCountry = "Canada"
+	saved, e := s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: r.Revision, Data: data, OriginCountry: "MX"})
+	if e != nil || saved.Reviewed.OriginCountry != "MX" || saved.Reviewed.Data.IssuingCountry != "Canada" {
+		t.Fatal(e)
+	}
+	if _, e = s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: saved.Revision, Data: data, OriginCountry: "invalid"}); e != ErrInvalid {
+		t.Fatal("invalid origin accepted")
+	}
+}

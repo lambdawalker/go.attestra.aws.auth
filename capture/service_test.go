@@ -282,3 +282,31 @@ func TestLegacyRecordDoesNotInventPolicyDisclosure(t *testing.T) {
 		t.Fatal("legacy record contains fabricated or invalid disclosure", string(b))
 	}
 }
+
+func TestDisclosureLanguageSnapshotAndReplay(t *testing.T) {
+	s, _, _, _ := fixture(t)
+	p := s.Policy()
+	p.Purposes = DefaultPurposes()
+	p = p.WithVersion()
+	s.PolicySource = func(context.Context) (Policy, error) { return p, nil }
+	ctx := context.Background()
+	r, err := s.Create(ctx, "owner", "localized_operation_1", p.DocumentType, p.Version, "es")
+	if err != nil || r.DisclosureLanguage != "es" || r.PolicySnapshot.Purposes.ES != DefaultPurposes().ES {
+		t.Fatalf("snapshot: %+v %v", r, err)
+	}
+	original := p.Version
+	p.Purposes.ES = "Updated message"
+	p = p.WithVersion()
+	replay, err := s.Create(ctx, "owner", "localized_operation_1", p.DocumentType, original, "es")
+	if err != nil || replay.PolicySnapshot.Purposes.ES != DefaultPurposes().ES {
+		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	if _, err = s.Create(ctx, "owner", "localized_operation_1", p.DocumentType, original, "fr"); err != ErrConflict {
+		t.Fatal(err)
+	}
+	p.Purposes.FR = ""
+	p = p.WithVersion()
+	if _, err = s.Create(ctx, "other", "localized_operation_2", p.DocumentType, p.Version, "fr"); err != ErrInvalid {
+		t.Fatal("unavailable translation accepted", err)
+	}
+}

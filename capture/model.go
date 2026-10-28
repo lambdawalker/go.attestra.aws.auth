@@ -25,6 +25,7 @@ const SessionLifetime = 24 * time.Hour
 const UploadLifetime = 5 * time.Minute
 
 type Policy struct {
+	Purposes      Purposes `json:"purposes,omitempty"`
 	Enabled       bool     `json:"enabled"`
 	Version       string   `json:"policy_version"`
 	DocumentType  string   `json:"document_type"`
@@ -52,6 +53,7 @@ type Asset struct {
 	Size      int64  `json:"size"`
 }
 type Record struct {
+	DisclosureLanguage    string            `json:"disclosure_language,omitempty"`
 	Extraction            *Extraction       `json:"extraction,omitempty"`
 	Reviewed              *ReviewedCard     `json:"reviewed,omitempty"`
 	ExtractionAttempts    int               `json:"-"`

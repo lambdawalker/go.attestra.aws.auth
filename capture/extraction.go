@@ -38,12 +38,14 @@ type Extraction struct {
 	Error  string   `json:"error,omitempty"`
 }
 type ReviewedCard struct {
-	Data    CardData `json:"data"`
-	SavedAt int64    `json:"saved_at"`
+	OriginCountry string   `json:"origin_country,omitempty"`
+	Data          CardData `json:"data"`
+	SavedAt       int64    `json:"saved_at"`
 }
 type ReviewRequest struct {
-	Revision int64    `json:"expected_revision"`
-	Data     CardData `json:"data"`
+	OriginCountry string   `json:"origin_country,omitempty"`
+	Revision      int64    `json:"expected_revision"`
+	Data          CardData `json:"data"`
 }
 type CardImage struct {
 	Slot string
@@ -54,7 +56,7 @@ type Extractor interface {
 }
 
 func (s Service) Review(ctx context.Context, owner, id string, in ReviewRequest) (Record, error) {
-	if !in.Data.Valid() || in.Data.Empty() {
+	if !in.Data.Valid() || in.Data.Empty() || !ValidOrigin(in.OriginCountry) {
 		return Record{}, ErrInvalid
 	}
 	r, e := s.Get(ctx, owner, id)
@@ -68,7 +70,7 @@ func (s Service) Review(ctx context.Context, owner, id string, in ReviewRequest)
 		return Record{}, ErrConflict
 	}
 	// Identical retry after a lost response is safe, without persisting PII in operation checkpoints.
-	if r.Reviewed != nil && r.Reviewed.Data == in.Data {
+	if r.Reviewed != nil && r.Reviewed.Data == in.Data && r.Reviewed.OriginCountry == in.OriginCountry {
 		return r, nil
 	}
 	if r.Revision != in.Revision {
@@ -76,7 +78,7 @@ func (s Service) Review(ctx context.Context, owner, id string, in ReviewRequest)
 	}
 	before := r
 	r.Revision++
-	r.Reviewed = &ReviewedCard{Data: in.Data, SavedAt: s.now().Unix()}
+	r.Reviewed = &ReviewedCard{OriginCountry: in.OriginCountry, Data: in.Data, SavedAt: s.now().Unix()}
 	if e = s.Store.Swap(ctx, before, r, false); e != nil {
 		return Record{}, e
 	}

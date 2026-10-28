@@ -52,24 +52,35 @@
               New capture sessions use these settings. Existing captures retain
               the disclosure the user accepted.
             </p>
+            <p>
+              Document type: <strong>ID card</strong> (including driver’s
+              licenses and state or federal IDs).
+            </p>
+            <p class="muted">
+              One disclosure per language. Country of origin is collected after
+              scanning. English is the fallback when a translation is
+              unavailable.
+            </p>
             <label
-              >Document type<input
-                id="documentType"
+              >Disclosure — English<textarea
+                id="purposeEn"
                 required
-                maxlength="64"
-                pattern="[a-z][a-z0-9_]{0,63}"
-                placeholder="passport" /></label
-            ><label
-              >Jurisdiction<input
-                id="jurisdiction"
                 maxlength="1024"
-                placeholder="Country or region governing this capture" /></label
-            ><label
-              >Purpose<textarea
-                id="purpose"
+                rows="3"
+              ></textarea>
+            </label>
+            <label
+              >Disclosure — Español<textarea
+                id="purposeEs"
                 maxlength="1024"
-                rows="4"
-                placeholder="Explain exactly why this document is collected"
+                rows="3"
+              ></textarea>
+            </label>
+            <label
+              >Disclosure — Français<textarea
+                id="purposeFr"
+                maxlength="1024"
+                rows="3"
               ></textarea>
             </label>
             <section id="review" hidden class="notice">
@@ -80,12 +91,39 @@
               ><button type="button" id="cancelPublish">Keep editing</button>
             </section>
             <div class="notice">
-              Enabling capture requires a purpose, jurisdiction, and a document
-              type other than sample_card.
+              The disclosure explains the scan. It does not claim the user’s
+              identity has been verified.
             </div>
             <button type="submit" id="publish">Publish revision</button>
           </form>
           <aside>
+            <section id="resetPanel" class="panel" hidden>
+              <p class="eyebrow">DESTRUCTIVE ACTION</p>
+              <h2>Reset environment</h2>
+              <p>
+                Delete all application records, Cognito users, uploaded image
+                versions, extracted/reviewed card data and pending jobs in the
+                selected environment.
+              </p>
+              <p>
+                Infrastructure, admin accounts, published settings and reset
+                history are preserved. Backups and logs retain their existing
+                retention. Do not deploy this environment during a reset.
+              </p>
+              <p id="resetStatus" role="status" aria-live="polite"></p>
+              <label
+                >Type the environment name to confirm<input
+                  id="resetConfirmation"
+                  autocomplete="off"
+                  spellcheck="false"
+              /></label>
+              <button type="button" id="resetEnvironment" disabled>
+                Reset environment
+              </button>
+              <button type="button" id="refreshReset">
+                Refresh reset status
+              </button>
+            </section>
             <section class="panel">
               <p class="eyebrow">AUDIT TRAIL</p>
               <h2>Revision history</h2>

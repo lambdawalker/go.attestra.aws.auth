@@ -2,6 +2,7 @@ package runtimeconfig
 
 import (
 	"context"
+	"github.com/lambdawalker/go.attestra.aws.auth/capture"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestPublicValidationAndPolicyIdentity(t *testing.T) {
 	if e := base.Validate(); e != nil {
 		t.Fatal(e)
 	}
-	for name, change := range map[string]func(*Config){"schema": func(c *Config) { c.SchemaVersion = 2 }, "environment": func(c *Config) { c.Environment = strings.Repeat("a", 33) }, "revision": func(c *Config) { c.Revision = -1 }, "date": func(c *Config) { c.UpdatedAt = "today" }, "sample": func(c *Config) { c.Capture.DocumentType = "sample_card" }, "kind": func(c *Config) { c.Capture.DocumentType = "passport/../secret" }, "long kind": func(c *Config) { c.Capture.DocumentType = strings.Repeat("a", 65) }, "purpose": func(c *Config) { c.Capture.Purpose = "" }, "jurisdiction": func(c *Config) { c.Capture.Jurisdiction = "" }, "control": func(c *Config) { c.Capture.Purpose = "foo\nbar" }, "bytes": func(c *Config) { c.Capture.Jurisdiction = strings.Repeat("é", 513) }} {
+	for name, change := range map[string]func(*Config){"schema": func(c *Config) { c.SchemaVersion = 2 }, "environment": func(c *Config) { c.Environment = strings.Repeat("a", 33) }, "revision": func(c *Config) { c.Revision = -1 }, "date": func(c *Config) { c.UpdatedAt = "today" }, "sample": func(c *Config) { c.Capture.DocumentType = "sample_card" }, "kind": func(c *Config) { c.Capture.DocumentType = "passport/../secret" }, "long kind": func(c *Config) { c.Capture.DocumentType = strings.Repeat("a", 65) }, "purpose": func(c *Config) { c.Capture.Purpose = "" }, "control": func(c *Config) { c.Capture.Purpose = "foo\nbar" }, "bytes": func(c *Config) { c.Capture.Jurisdiction = strings.Repeat("é", 513) }} {
 		t.Run(name, func(t *testing.T) {
 			c := base
 			change(&c)
@@ -34,7 +35,8 @@ func TestPublicValidationAndPolicyIdentity(t *testing.T) {
 	if p.Version != next.Policy().Version {
 		t.Fatal("metadata changed policy identity")
 	}
-	next.Capture.Purpose = "A changed disclosure"
+	next.Capture.Messages = capture.DefaultPurposes()
+	next.Capture.Messages.EN = "A changed disclosure"
 	if p.Version == next.Policy().Version {
 		t.Fatal("content change retained consent identity")
 	}
@@ -104,5 +106,25 @@ func TestPublishConcurrencyRollbackAndRevocation(t *testing.T) {
 	m.grant.Revision++
 	if _, e = s.Publish(ctx, g, 2, c, nil); e != ErrConflict {
 		t.Fatal("revoked grant was reusable")
+	}
+}
+
+func TestGenericLocalizedDisclosure(t *testing.T) {
+	c := Default("dev")
+	c.Features.IDCapture = true
+	if e := c.Validate(); e != nil {
+		t.Fatal(e)
+	}
+	p := c.Policy()
+	if p.DocumentType != "id_card" || p.Jurisdiction != "" || p.Purposes.ES == "" {
+		t.Fatal("missing generic policy")
+	}
+	c.Capture.Messages.ES = "Nuevo texto"
+	if p.Version == c.Policy().Version {
+		t.Fatal("translation must change consent version")
+	}
+	c.Capture.Messages.EN = ""
+	if c.Validate() != ErrInvalid {
+		t.Fatal("English fallback required")
 	}
 }

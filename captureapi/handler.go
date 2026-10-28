@@ -6,13 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/lambdawalker/go.attestra.aws.auth/capture"
 )
 
-type Handler struct{ Service capture.Service }
+type Handler struct {
+	Service    capture.Service
+	CheckToken func(context.Context, int64) (bool, error)
+}
 
 func reply(status int, v any) events.APIGatewayV2HTTPResponse {
 	b, _ := json.Marshal(v)
@@ -78,6 +82,16 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	if owner == "" || claims["token_use"] != "access" {
 		return reply(401, map[string]string{"error": "sign_in_required"}), nil
 	}
+	if h.CheckToken != nil {
+		iat, _ := strconv.ParseInt(claims["iat"], 10, 64)
+		allowed, e := h.CheckToken(ctx, iat)
+		if e != nil {
+			return fail(e), nil
+		}
+		if !allowed {
+			return reply(401, map[string]string{"error": "sign_in_required"}), nil
+		}
+	}
 	method, path := req.RequestContext.HTTP.Method, req.RawPath
 	if method == "GET" && path == "/onboarding/id/document-policy" {
 		p, e := h.Service.CurrentPolicy(ctx)
@@ -96,13 +110,17 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	if method == "POST" && path == "/onboarding/id/captures" {
 		var in struct {
 			ExpectedPolicyVersion string `json:"expected_policy_version"`
+			Language              string `json:"disclosure_language"`
 			OperationKey          string `json:"operation_key"`
 			DocumentType          string `json:"document_type"`
 		}
 		if e := decode(req, &in); e != nil {
 			return fail(e), nil
 		}
-		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType, in.ExpectedPolicyVersion)
+		if in.Language == "" {
+			in.Language = "en"
+		}
+		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType, in.ExpectedPolicyVersion, in.Language)
 		if e != nil {
 			return fail(e), nil
 		}

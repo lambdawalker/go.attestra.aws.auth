@@ -103,15 +103,22 @@ func (s Service) Current(ctx context.Context, owner string) (*Record, error) {
 }
 func (s Service) Create(ctx context.Context, owner, key, kind string, expected ...string) (Record, error) {
 	version := ""
-	if len(expected) == 1 {
+	if len(expected) >= 1 {
 		version = expected[0]
+	}
+	language := "en"
+	if len(expected) >= 2 {
+		language = expected[1]
+	}
+	if language != "en" && language != "es" && language != "fr" {
+		return Record{}, ErrInvalid
 	}
 	if owner == "" || !ValidOperation(key) {
 		return Record{}, ErrInvalid
 	}
 	// Replay precedes current admission; a disabled or changed policy must not destroy an existing intent.
 	if old, e := s.Store.FindCreate(ctx, owner, key); e == nil {
-		if old.DocumentType != kind || old.ExpectedPolicyVersion != version {
+		if old.DocumentType != kind || old.ExpectedPolicyVersion != version || (old.DisclosureLanguage != "" && old.DisclosureLanguage != language) {
 			return Record{}, ErrConflict
 		}
 		return s.Get(ctx, owner, old.ID)
@@ -127,6 +134,9 @@ func (s Service) Create(ctx context.Context, owner, key, kind string, expected .
 	}
 	if !policy.Enabled {
 		return Record{}, ErrDisabled
+	}
+	if language != policy.Purposes.Language(language) {
+		return Record{}, ErrInvalid
 	}
 	if kind != policy.DocumentType {
 		return Record{}, ErrInvalid
@@ -162,7 +172,7 @@ func (s Service) Create(ctx context.Context, owner, key, kind string, expected .
 	next.CurrentID = id
 	now := s.now().Unix()
 	expires := s.now().Add(SessionLifetime).Unix()
-	r := Record{ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: policy.Version, PolicySnapshot: &policy, ExpectedPolicyVersion: version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
+	r := Record{DisclosureLanguage: language, ID: id, Owner: owner, EvidenceVersion: next.Version, Revision: 1, PolicyVersion: policy.Version, PolicySnapshot: &policy, ExpectedPolicyVersion: version, DocumentType: kind, State: "uploading", CreatedAt: now, ExpiresAt: expires, Slots: map[string]string{}, Uploads: []Upload{}, CreateKey: key, Work: "cleanup", Due: expires + int64((UploadLifetime + time.Minute).Seconds()), TTL: now + 90*86400}
 	if e = s.Store.Create(ctx, a, next, r); e != nil {
 		return Record{}, e
 	}
