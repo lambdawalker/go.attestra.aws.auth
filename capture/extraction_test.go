@@ -98,3 +98,29 @@ func TestExtractionFailureRetryAndExpiry(t *testing.T) {
 		t.Fatal("expired extraction retained")
 	}
 }
+
+func TestExpiredAndCancelledFieldsNeverReturned(t *testing.T) {
+	s, m, _, now, r := extractionFixture(t)
+	if e := s.Work(context.Background(), Job{r.Owner, r.ID, r.Generation, r.Work}); e != nil {
+		t.Fatal(e)
+	}
+	r = m.records[r.ID]
+	r, e := s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: r.Revision, Data: CardData{FullName: "Private"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	*now = time.Unix(r.DeleteAfter, 0)
+	got, e := s.Get(context.Background(), r.Owner, r.ID)
+	if e != nil || got.State != "expired" || got.Extraction != nil || got.Reviewed != nil {
+		t.Fatal("expired PII returned", e)
+	}
+	if _, e = s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: r.Revision, Data: CardData{FullName: "Other"}}); e != ErrExpired {
+		t.Fatal("expired edit allowed", e)
+	}
+	if e = s.Work(context.Background(), Job{r.Owner, r.ID, r.Generation, r.Work}); e != nil {
+		t.Fatal(e)
+	}
+	if m.records[r.ID].Reviewed != nil || m.records[r.ID].Extraction != nil {
+		t.Fatal("cleanup retained fields")
+	}
+}

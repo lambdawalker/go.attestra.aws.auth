@@ -103,7 +103,7 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	dbStatement := pulumi.Sprintf(`{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem"],"Resource":%q}`, table.Arn)
 	policies := map[string]pulumi.StringOutput{
 		"capture":            pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,%s,{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":%q}]}`, dbStatement, pulumi.String(runtimeRead), pulumi.Sprintf("%s/uploads/*", bucket.Arn)),
-		"capture-worker":     pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,{"Effect":"Allow","Action":["s3:GetObjectVersion","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":["s3:PutObject","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":%q,"Condition":{"StringLike":{"s3:prefix":["uploads/*","processed/*"]}}},{"Effect":"Allow","Action":["sqs:ReceiveMessage","sqs:DeleteMessage","sqs:GetQueueAttributes"],"Resource":%q}]}`, dbStatement, pulumi.Sprintf("%s/uploads/*", bucket.Arn), pulumi.Sprintf("%s/processed/*", bucket.Arn), bucket.Arn, queue.Arn),
+		"capture-worker":     pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[%s,{"Effect":"Allow","Action":["s3:GetObjectVersion","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":["s3:PutObject","s3:GetObjectVersion","s3:DeleteObjectVersion"],"Resource":%q},{"Effect":"Allow","Action":"s3:ListBucketVersions","Resource":%q,"Condition":{"StringLike":{"s3:prefix":["uploads/*","processed/*"]}}},{"Effect":"Allow","Action":["sqs:ReceiveMessage","sqs:DeleteMessage","sqs:GetQueueAttributes"],"Resource":%q}]}`, dbStatement, pulumi.Sprintf("%s/uploads/*", bucket.Arn), pulumi.Sprintf("%s/processed/*", bucket.Arn), bucket.Arn, queue.Arn),
 		"capture-dispatcher": pulumi.Sprintf(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"dynamodb:Query","Resource":%q},{"Effect":"Allow","Action":"sqs:SendMessage","Resource":%q}]}`, pulumi.Sprintf("%s/index/work-due", table.Arn), queue.Arn),
 	}
 	functions := map[string]*lambda.Function{}
@@ -119,6 +119,12 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 		grant, e := iam.NewRolePolicy(ctx, name+"-grant", &iam.RolePolicyArgs{Role: role.ID(), Policy: policies[name]})
 		if e != nil {
 			return e
+		}
+		if name == "capture-worker" {
+			_, e = iam.NewRolePolicy(ctx, "capture-extraction-grant", &iam.RolePolicyArgs{Role: role.ID(), Policy: pulumi.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"bedrock-mantle:CreateInference","Resource":"*","Condition":{"StringEquals":{"bedrock-mantle:Model":"google.gemma-4-e2b"}}}]}`)})
+			if e != nil {
+				return e
+			}
 		}
 		archive, _ := filepath.Abs("../dist/" + name + ".zip")
 		timeout, memory := 25, 256
@@ -155,7 +161,7 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	if e != nil {
 		return e
 	}
-	for i, route := range []string{"GET /onboarding/id/document-policy", "GET /onboarding/id/status", "POST /onboarding/id/captures", "GET /onboarding/id/captures/{capture_id}", "POST /onboarding/id/captures/{capture_id}/uploads", "POST /onboarding/id/captures/{capture_id}/finalize", "POST /onboarding/id/captures/{capture_id}/retry-finalization", "POST /onboarding/id/captures/{capture_id}/cancel"} {
+	for i, route := range []string{"GET /onboarding/id/document-policy", "GET /onboarding/id/status", "POST /onboarding/id/captures", "GET /onboarding/id/captures/{capture_id}", "POST /onboarding/id/captures/{capture_id}/uploads", "POST /onboarding/id/captures/{capture_id}/finalize", "POST /onboarding/id/captures/{capture_id}/retry-finalization", "POST /onboarding/id/captures/{capture_id}/cancel", "POST /onboarding/id/captures/{capture_id}/review"} {
 		_, e = apigatewayv2.NewRoute(ctx, fmt.Sprintf("capture-route-%d", i), &apigatewayv2.RouteArgs{ApiId: api.ID(), RouteKey: pulumi.String(route), Target: pulumi.Sprintf("integrations/%s", integration.ID()), AuthorizationType: pulumi.String("JWT"), AuthorizerId: authorizer.ID()})
 		if e != nil {
 			return e
