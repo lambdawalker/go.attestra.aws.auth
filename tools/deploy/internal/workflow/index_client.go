@@ -100,7 +100,7 @@ func publicationConfiguration(r commandRunner, o options) (registry.Configuratio
 	result.Features.IDCapture = outputs.Capture
 	if outputs.Defaults != nil {
 		if e := outputs.Defaults.Validate(); e != nil {
-			return result, nil, e
+			return result, nil, fmt.Errorf("stack %s runtimeDefaults output is invalid (schemaVersion=%d); publication receipt retained. An older deployment may have exported an empty object; see docs/environment-index.md for runtime defaults recovery: %w", o.Stack, outputs.Defaults.SchemaVersion, e)
 		}
 		if outputs.Defaults.Environment != o.Stack {
 			return result, nil, errors.New("runtime defaults environment mismatch")

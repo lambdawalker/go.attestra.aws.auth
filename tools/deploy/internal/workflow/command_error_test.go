@@ -37,3 +37,20 @@ func TestPulumiErrorRedactsNormalizedCredentialText(t *testing.T) {
 		t.Fatal("credential exposed after control normalization")
 	}
 }
+
+func TestAWSBucketReadDiagnostics(t *testing.T) {
+	cause := errors.New("exit status 254")
+	for _, operation := range []string{"head-bucket", "get-bucket-versioning", "get-public-access-block"} {
+		err := awsBucketCommandError([]string{"s3api", operation}, "AccessDenied private-session Bearer private-bearer", []string{"AWS_SESSION_TOKEN=private-session"}, cause)
+		if !errors.Is(err, cause) || !strings.Contains(err.Error(), operation) || !strings.Contains(err.Error(), "AccessDenied") {
+			t.Fatal(err)
+		}
+		if strings.Contains(err.Error(), "private-session") || strings.Contains(err.Error(), "private-bearer") {
+			t.Fatal("leaked credential")
+		}
+	}
+	err := awsBucketCommandError([]string{"secretsmanager", "put-secret-value"}, "private-value", nil, cause)
+	if strings.Contains(err.Error(), "private-value") {
+		t.Fatal("exposed unapproved operation diagnostic")
+	}
+}

@@ -178,7 +178,8 @@ func TestBucketGuards(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		r := good()
 		r.fail = i
-		if checkBucket(r, testOptions(), "123456789012") == nil || r.calls != i {
+		err := checkBucket(r, testOptions(), "123456789012")
+		if err == nil || !strings.Contains(err.Error(), "access denied") || strings.Contains(err.Error(), "create a private") || r.calls != i {
 			t.Fatalf("continued after bucket failure %d", i)
 		}
 	}

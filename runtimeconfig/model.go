@@ -21,20 +21,20 @@ var environmentPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 func ValidEnvironment(v string) bool { return environmentPattern.MatchString(v) }
 
 type Features struct {
-	IDCapture bool `json:"idCapture"`
+	IDCapture bool `json:"idCapture" pulumi:"idCapture"`
 }
 type Capture struct {
-	DocumentType string `json:"documentType"`
-	Jurisdiction string `json:"jurisdiction"`
-	Purpose      string `json:"purpose"`
+	DocumentType string `json:"documentType" pulumi:"documentType"`
+	Jurisdiction string `json:"jurisdiction" pulumi:"jurisdiction"`
+	Purpose      string `json:"purpose" pulumi:"purpose"`
 }
 type Config struct {
-	SchemaVersion int      `json:"schemaVersion"`
-	Environment   string   `json:"environment"`
-	Revision      int64    `json:"revision"`
-	UpdatedAt     string   `json:"updatedAt"`
-	Features      Features `json:"features"`
-	Capture       Capture  `json:"capture"`
+	SchemaVersion int      `json:"schemaVersion" pulumi:"schemaVersion"`
+	Environment   string   `json:"environment" pulumi:"environment"`
+	Revision      int64    `json:"revision" pulumi:"revision"`
+	UpdatedAt     string   `json:"updatedAt" pulumi:"updatedAt"`
+	Features      Features `json:"features" pulumi:"features"`
+	Capture       Capture  `json:"capture" pulumi:"capture"`
 }
 
 func Default(env string) Config {

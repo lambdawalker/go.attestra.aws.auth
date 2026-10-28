@@ -142,3 +142,18 @@ do not establish HTTP success. A healthy index returns HTTP 200 with
 `schemaVersion: 1`; an empty environments list is valid before publication.
 
 For permanent removal of the shared infrastructure after retiring every environment, see [shared index teardown](teardown-index.md).
+
+### Invalid runtime defaults after an older deployment
+
+A deployment produced by the initial admin/runtime implementation can have an empty `runtimeDefaults` stack output: the struct had JSON tags but lacked the tags required by Pulumi. Publication rejects this object as `invalid_config`. A later deploy retries that pending publication before building, so pulling the fixed code alone cannot replace the stored output.
+
+Inspect only that public output from the authenticated Pulumi session (`pulumi stack output runtimeDefaults --stack dev` from `infra`, using the existing S3 backend and passphrase). An empty `{}` identifies this serialization defect. Do not share a full stack export or edit the publication receipt.
+
+After updating to the serialization fix, verify that no local deployment, GitHub deployment, or Pulumi update is still running. Use the normal explicit receipt-based release, then deploy again:
+
+```powershell
+.\deploy.bat -Stack dev -release-index-lock
+.\deploy.bat -Stack dev
+```
+
+The release asks for the environment name and abandons only the matching registry lease; it does not delete Pulumi state or infrastructure. The next successful deployment exports the complete defaults and publishes them under a new lease. Existing dashboard overrides are preserved. If `runtimeDefaults` is nonempty, investigate its validation failure before applying this recovery; do not replace it with guessed defaults.

@@ -96,6 +96,9 @@ func (p *processRunner) Exec(dir string, capture bool, name string, args ...stri
 		if renewal := credentialRenewalFailure(cmd.Env, stderr.String()); renewal != nil {
 			return nil, renewal
 		}
+		if capture && name == "aws" {
+			return nil, awsBucketCommandError(args, stderr.String(), cmd.Env, err)
+		}
 		if capture && name == "pulumi" {
 			return nil, pulumiCommandError(args, stderr.String(), cmd.Env, err)
 		}
@@ -155,11 +158,11 @@ func checkBucket(r commandRunner, o options, account string) error {
 	u, _ := url.Parse(o.Backend)
 	_, err := r.Exec(o.Root, true, "aws", "s3api", "head-bucket", "--bucket", u.Host, "--expected-bucket-owner", account)
 	if err != nil {
-		return errors.New("state bucket is unavailable or belongs to another account; create a private, versioned bucket in this account first (see docs/deployment.md)")
+		return fmt.Errorf("could not verify existing state bucket %s for account %s; this does not establish that the bucket is missing. Check AWS access and connectivity before changing the state backend: %w", u.Host, account, err)
 	}
 	data, err := r.Exec(o.Root, true, "aws", "s3api", "get-bucket-versioning", "--bucket", u.Host, "--expected-bucket-owner", account, "--output", "json")
 	if err != nil {
-		return errors.New("could not check state bucket versioning")
+		return fmt.Errorf("could not check state bucket %s versioning: %w", u.Host, err)
 	}
 	var version struct{ Status string }
 	if json.Unmarshal(data, &version) != nil || version.Status != "Enabled" {
@@ -167,7 +170,7 @@ func checkBucket(r commandRunner, o options, account string) error {
 	}
 	data, err = r.Exec(o.Root, true, "aws", "s3api", "get-public-access-block", "--bucket", u.Host, "--expected-bucket-owner", account, "--output", "json")
 	if err != nil {
-		return errors.New("could not check the state bucket's public access block")
+		return fmt.Errorf("could not check state bucket %s public access block: %w", u.Host, err)
 	}
 	var privacy struct {
 		PublicAccessBlockConfiguration struct{ BlockPublicAcls, IgnorePublicAcls, BlockPublicPolicy, RestrictPublicBuckets bool }
