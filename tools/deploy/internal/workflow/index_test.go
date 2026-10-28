@@ -266,3 +266,16 @@ func TestPendingPublicationSynchronizesDefaultsBeforeIndex(t *testing.T) {
 		t.Fatal(operations)
 	}
 }
+
+type publicationOutputRunner string
+
+func (r publicationOutputRunner) Exec(string, bool, string, ...string) ([]byte, error) {
+	return []byte(r), nil
+}
+
+func TestInvalidRuntimeDefaultsIdentifyOutputAndRecovery(t *testing.T) {
+	_, _, err := publicationConfiguration(publicationOutputRunner(`{"runtimeDefaults":{}}`), testOptions())
+	if err == nil || !strings.Contains(err.Error(), "runtimeDefaults") || !strings.Contains(err.Error(), "docs/environment-index.md") {
+		t.Fatalf("missing output/recovery context: %v", err)
+	}
+}
