@@ -295,3 +295,13 @@ See [Android association hosting](docs/android-associations.md) for approved pub
 Keep `setup.bat` / `setup.sh` and `deploy.bat` / `deploy.sh` at the repository root. Supporting launchers live in `scripts/`: `build`, `credentials`, `associations`, `setup-github` (setup alias), `teardown`, and `teardown-index`, each with `.bat` and `.sh` variants. All launchers resolve the repository from their own location and forward arguments, so they can be called from another working directory, including paths containing spaces.
 
 On Windows, use the `.bat` launchers from PowerShell or Command Prompt; Bash is not required. The `.sh` launchers use a POSIX shell on Linux/macOS and can also be run with Git Bash on Windows (for example, `sh scripts/build.sh`). WSL is another option, with Go, AWS CLI, Pulumi, and credentials configured inside WSL. Deployment logic remains shared in `tools/deploy`.
+
+### Deploy shared index and admin independently
+
+```powershell
+.\deploy.bat -Scope shared
+# Backend deployment remains the default:
+.\deploy.bat -Stack dev
+```
+
+Linux/macOS: `./deploy.sh -scope shared`. This updates the existing `infra-index` shared stack (index, admin dashboard, Cognito, and shared tables) without deploying an environment backend. See [shared deployment](docs/deployment.md#shared-index-and-admin-deployment).

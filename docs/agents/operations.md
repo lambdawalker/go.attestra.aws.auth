@@ -3,6 +3,7 @@
 | Intent | Entry point | Authoritative runbook |
 | --- | --- | --- |
 | Create/resume an environment | `setup.bat` / `./setup.sh` | [First deployment](../first-deployment.md) |
+| Deploy shared index and admin only | `deploy.bat -Scope shared` / `./deploy.sh -scope shared` | [Shared deployment](../deployment.md#shared-index-and-admin-deployment) |
 | Build Lambda ZIPs only | `scripts/build.bat` / `./scripts/build.sh` | [Deployment](../deployment.md) |
 | Preview/update existing application | `deploy.bat` / `./deploy.sh` or Deploy AWS action | [GitHub deployment](../github-deployment.md) |
 | Replace tokens/change vault passphrase/delete saved credentials | `scripts/credentials.bat` / `./scripts/credentials.sh` | [Credential management](../deployment.md) |

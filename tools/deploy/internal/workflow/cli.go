@@ -24,6 +24,8 @@ func Run() error {
 		return runCredentialProcess(os.Args[2])
 	}
 	var associations bool
+	var scope string
+	flag.StringVar(&scope, "scope", "app", "Deployment scope: app (environment backend) or shared (index and admin)")
 	var o options
 	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex bool
 	flag.BoolVar(&associations, "associations", false, "Manage and publish Android signing approvals without a full deployment")
@@ -52,6 +54,11 @@ func Run() error {
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
 	}
+	var supplied []string
+	flag.Visit(func(f *flag.Flag) { supplied = append(supplied, f.Name) })
+	if err := validateDeployScope(scope, supplied); err != nil {
+		return err
+	}
 	if associations && (build || bootstrap || setupGitHub || teardown || teardownIndex || manageVault || forceSetup || freshCredentials || o.CI != "" || o.MigrateFrom != "" || o.Pull || o.PublishOnly || o.ReleaseIndex || o.HealthCheck || o.ExportAndroid != "") {
 		return errors.New("-associations cannot be combined with other operations")
 	}
@@ -75,6 +82,10 @@ func Run() error {
 		if err := prepareGeneratedState(root); err != nil {
 			return err
 		}
+	}
+	if scope == "shared" {
+		o.Root = root
+		return runSharedDeploy(o)
 	}
 	if manageVault {
 		unsupported := ""
@@ -254,7 +265,7 @@ func Run() error {
 // Retain the old Windows launcher spellings while all launchers now invoke Go.
 func normalizeArguments(args []string) []string {
 	result := append([]string(nil), args...)
-	names := map[string]string{"stack": "stack", "backend": "backend", "region": "region", "migratefrom": "migrate-from", "pull": "pull", "login": "login", "sso": "sso", "profile": "profile"}
+	names := map[string]string{"scope": "scope", "stack": "stack", "backend": "backend", "region": "region", "migratefrom": "migrate-from", "pull": "pull", "login": "login", "sso": "sso", "profile": "profile"}
 	for i, arg := range result {
 		if strings.HasPrefix(arg, "-") {
 			parts := strings.SplitN(strings.TrimLeft(arg, "-"), "=", 2)
