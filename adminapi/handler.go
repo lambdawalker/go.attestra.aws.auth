@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/lambdawalker/go.attestra.aws.auth/capture"
+	"github.com/lambdawalker/go.attestra.aws.auth/envreset"
 	"github.com/lambdawalker/go.attestra.aws.auth/passkey"
 	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 	"io"
@@ -14,6 +16,7 @@ import (
 )
 
 type Handler struct {
+	Reset                                 ResetClient
 	Passkeys                              *PasskeyMFA
 	Service                               runtimeconfig.Service
 	Issuer, ClientID, Origin, LoginDomain string
@@ -126,6 +129,40 @@ func (h Handler) Handle(ctx context.Context, r events.APIGatewayV2HTTPRequest) (
 	g, e := h.Service.Authorized(ctx, sub, env)
 	if e != nil {
 		return failure(e), nil
+	}
+	if len(p) == 2 && p[1] == "reset" && (method == "GET" || method == "POST") {
+		if !g.ManageGrants {
+			return failure(runtimeconfig.ErrForbidden), nil
+		}
+		if h.Reset == nil {
+			return failure(errors.New("reset_unavailable")), nil
+		}
+		request := envreset.Request{Action: "status", Environment: env, Actor: sub}
+		if method == "POST" {
+			var in struct {
+				Action       string `json:"action"`
+				Confirmation string `json:"confirmation"`
+				Operation    string `json:"operation"`
+			}
+			if e := decode(r, &in); e != nil {
+				return failure(e), nil
+			}
+			if (in.Action != "start" && in.Action != "resume") || in.Confirmation != env || !capture.ValidOperation(in.Operation) {
+				return failure(runtimeconfig.ErrInvalid), nil
+			}
+			request.Action = in.Action
+			request.Confirmation = in.Confirmation
+			request.Operation = in.Operation
+		}
+		result, e := h.Reset.Invoke(ctx, request)
+		if e != nil {
+			return failure(e), nil
+		}
+		status := 200
+		if method == "POST" {
+			status = 202
+		}
+		return reply(status, result), nil
 	}
 	if method == "GET" && len(p) == 1 {
 		config, e := h.Service.Store.Get(ctx, env)

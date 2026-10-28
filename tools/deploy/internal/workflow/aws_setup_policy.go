@@ -21,7 +21,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 	regional := statement([]string{"apigateway:*", "cognito-idp:*", "lambda:ListEventSourceMappings", "lambda:CreateEventSourceMapping", "lambda:GetEventSourceMapping", "lambda:UpdateEventSourceMapping", "lambda:DeleteEventSourceMapping", "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource"}, []string{"arn:aws:apigateway:" + o.Region + "::/*", arn("cognito-idp", "userpool/*"), arn("lambda", "event-source-mapping:*")})
 	regional["Condition"] = map[string]any{"StringEquals": map[string]string{"aws:RequestedRegion": o.Region}}
 	roles := []string{}
-	for _, name := range []string{"app-config", "signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "capture", "capture-dispatcher", "capture-worker"} {
+	for _, name := range []string{"app-config", "signup", "resend", "confirm", "challenge", "passkeyoptions", "passkeycomplete", "auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "capture", "capture-dispatcher", "capture-worker", "environment-reset"} {
 		roles = append(roles, "arn:aws:iam::"+account+":role/"+name+"-role-*")
 	}
 	iam := statement([]string{"iam:CreateRole", "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:ListRolePolicies", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags"}, roles)
@@ -30,7 +30,7 @@ func deploymentPolicies(account string, o options) map[string]any {
 	pass := statement([]string{"iam:PassRole"}, roles)
 	pass["Condition"] = map[string]any{"StringEquals": map[string]string{"iam:PassedToService": "lambda.amazonaws.com"}}
 	functions := []string{}
-	for _, prefix := range []string{"app-config-", "email-", "cognito-grant-challenge-", "passkeyoptions-", "passkeycomplete-", "auth-", "capture-"} {
+	for _, prefix := range []string{"app-config-", "email-", "cognito-grant-challenge-", "passkeyoptions-", "passkeycomplete-", "auth-", "capture-", "attestra-reset-"} {
 		functions = append(functions, arn("lambda", "function:"+prefix+"*"))
 	}
 	u, _ := url.Parse(o.Backend)
@@ -63,9 +63,9 @@ func deploymentPolicies(account string, o options) map[string]any {
 		"attestra-iam":   document(iam, attach, pass, serviceRole),
 		"attestra-services": document(regional,
 			statement([]string{"lambda:*"}, functions),
-			statement([]string{"dynamodb:*"}, []string{arn("dynamodb", "table/email-proofs-*"), arn("dynamodb", "table/id-captures-*")}),
+			statement([]string{"dynamodb:*"}, []string{arn("dynamodb", "table/email-proofs-*"), arn("dynamodb", "table/id-captures-*"), arn("dynamodb", "table/environment-reset-control-*")}),
 			statement([]string{"sqs:*"}, []string{arn("sqs", "capture-validation-*")}),
-			statement([]string{"events:*"}, []string{arn("events", "rule/capture-sweep-*")}),
+			statement([]string{"events:*"}, []string{arn("events", "rule/capture-sweep-*"), arn("events", "rule/environment-reset-sweep-*")}),
 			statement([]string{"cloudwatch:PutMetricAlarm", "cloudwatch:DescribeAlarms", "cloudwatch:DeleteAlarms", "cloudwatch:ListTagsForResource", "cloudwatch:TagResource", "cloudwatch:UntagResource"}, []string{arn("cloudwatch", "alarm:capture-dlq-alarm-*")}),
 			statement([]string{"s3:*"}, []string{"arn:aws:s3:::id-evidence-*", "arn:aws:s3:::id-evidence-*/*"}), ses,
 			// Cognito creation and Lambda mapping creation do not support preexisting resource IDs.

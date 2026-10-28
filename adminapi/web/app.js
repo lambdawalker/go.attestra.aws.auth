@@ -105,11 +105,14 @@ async function callback() {
   );
   return true;
 }
+let resetState = null;
+let resetTimer;
 async function load() {
   const generation = ++loadGeneration,
     env = $("environment").value;
   current = null;
   proposed = null;
+  resetState = null; clearTimeout(resetTimer); $("resetPanel").hidden = true; $("resetConfirmation").value = "";
   $("review").hidden = true;
   $("config").hidden = true;
   $("grant").hidden = true;
@@ -153,6 +156,7 @@ async function load() {
     $("history").append(li);
   }
   tell("Environment " + env + " · Configuration is current.");
+  if (grants.find(g => g.environment === env)?.manageGrants) { $("resetPanel").hidden = false; refreshReset(); }
 }
 function review(body) {
   if (!current) return;
@@ -338,3 +342,45 @@ $("grant").onsubmit = async (event) => {
   tell(e.message);
   $("login").hidden = false;
 });
+
+async function refreshReset() {
+  const env = current?.environment, generation = loadGeneration;
+  if (!env) return;
+  clearTimeout(resetTimer);
+  try {
+    const result = await api("/api/environments/" + env + "/reset");
+    if (generation !== loadGeneration || current?.environment !== env) return;
+    resetState = result;
+    const state = result.state;
+    $("resetStatus").textContent = !result.enabled ? "Reset is disabled for this environment." :
+      state.error ? "Reset paused after an error during " + state.phase + ". Resolve the operational issue, then confirm the environment name to resume." :
+      state.phase && state.phase !== "complete" ? "Reset in progress: " + state.phase + ". The backend is temporarily unavailable. Draining active work takes at least seven minutes." :
+      state.phase === "complete" ? "Reset completed. Users must sign in again." : "No reset has run.";
+    updateResetButton();
+    if (state.phase && state.phase !== "complete" && !state.error) resetTimer = setTimeout(refreshReset, 5000);
+  } catch (e) {
+    if (generation !== loadGeneration) return;
+    resetState = null; updateResetButton();
+    $("resetStatus").textContent = "Reset status unavailable. Deploy backend reset support, or refresh to retry.";
+  }
+}
+function updateResetButton() {
+  const active = resetState?.state.phase && resetState.state.phase !== "complete";
+  $("resetEnvironment").disabled = !resetState?.enabled || $("resetConfirmation").value !== current?.environment || (active && !resetState.state.error);
+  $("resetEnvironment").textContent = resetState?.state.error ? "Resume environment reset" : "Reset environment";
+}
+$("resetConfirmation").oninput = updateResetButton;
+$("refreshReset").onclick = refreshReset;
+$("resetEnvironment").onclick = async () => {
+  if (!current || !resetState || $("resetEnvironment").disabled) return;
+  const env = current.environment, generation = loadGeneration;
+  const request = { action: resetState.state.error ? "resume" : "start", confirmation: $("resetConfirmation").value,
+    operation: resetState.state.error ? resetState.state.operation : crypto.randomUUID() };
+  $("resetEnvironment").disabled = true;
+  try {
+    await api("/api/environments/" + env + "/reset", {method:"POST", body:JSON.stringify(request)});
+    if (generation !== loadGeneration) return;
+    $("resetConfirmation").value = "";
+  } catch (e) { if (generation === loadGeneration) tell("Reset request could not be confirmed. Refresh status before retrying."); }
+  if (generation === loadGeneration) await refreshReset();
+};

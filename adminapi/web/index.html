@@ -70,6 +70,15 @@
             <button type="submit" id="publish">Publish revision</button>
           </form>
           <aside>
+            <section id="resetPanel" class="panel" hidden>
+              <p class="eyebrow">DESTRUCTIVE ACTION</p><h2>Reset environment</h2>
+              <p>Delete all application records, Cognito users, uploaded image versions, extracted/reviewed card data and pending jobs in the selected environment.</p>
+              <p>Infrastructure, admin accounts, published settings and reset history are preserved. Backups and logs retain their existing retention. Do not deploy this environment during a reset.</p>
+              <p id="resetStatus" role="status" aria-live="polite"></p>
+              <label>Type the environment name to confirm<input id="resetConfirmation" autocomplete="off" spellcheck="false" /></label>
+              <button type="button" id="resetEnvironment" disabled>Reset environment</button>
+              <button type="button" id="refreshReset">Refresh reset status</button>
+            </section>
             <section class="panel">
               <p class="eyebrow">AUDIT TRAIL</p>
               <h2>Revision history</h2>

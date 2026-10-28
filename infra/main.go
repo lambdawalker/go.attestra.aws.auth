@@ -80,6 +80,11 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+	control, err := resetControl(ctx)
+	if err != nil {
+		return err
+	}
+	reset := &resetInventory{Control: control, Tables: pulumi.StringArray{table.Name}, TableARNs: pulumi.StringArray{table.Arn}}
 	sender, err := ses.NewDomainIdentity(ctx, "email-sender", &ses.DomainIdentityArgs{Domain: pulumi.String(senderDomain)})
 	if err != nil {
 		return err
@@ -129,6 +134,7 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+	reset.addFunction(trigger)
 	permission, err := lambda.NewPermission(ctx, "allow-cognito-challenge", &lambda.PermissionArgs{Action: pulumi.String("lambda:InvokeFunction"), Function: trigger.Name, Principal: pulumi.String("cognito-idp.amazonaws.com"), SourceAccount: account, SourceArn: pulumi.Sprintf("arn:aws:cognito-idp:%s:%s:userpool/*", region, account)})
 	if err != nil {
 		return err
@@ -157,6 +163,8 @@ func deploy(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+	reset.Pool = pool.ID()
+	reset.PoolARN = pool.Arn
 	client, err := cognito.NewUserPoolClient(ctx, "public-auth-client", &cognito.UserPoolClientArgs{UserPoolId: pool.ID(), GenerateSecret: pulumi.Bool(false), ExplicitAuthFlows: pulumi.StringArray{pulumi.String("ALLOW_CUSTOM_AUTH"), pulumi.String("ALLOW_USER_AUTH"), pulumi.String("ALLOW_REFRESH_TOKEN_AUTH")}, PreventUserExistenceErrors: pulumi.String("ENABLED"), AuthSessionValidity: pulumi.Int(3)})
 	if err != nil {
 		return err
@@ -188,6 +196,7 @@ func deploy(ctx *pulumi.Context) error {
 			return err
 		}
 		functions[name] = fn
+		reset.addFunction(fn)
 	}
 	httpAPI, err := apigatewayv2.NewApi(ctx, "email-http-api", &apigatewayv2.ApiArgs{ProtocolType: pulumi.String("HTTP"), CorsConfiguration: &apigatewayv2.ApiCorsConfigurationArgs{AllowOrigins: pulumi.StringArray{pulumi.String(origin)}, AllowMethods: pulumi.StringArray{pulumi.String("POST"), pulumi.String("GET")}, AllowHeaders: pulumi.StringArray{pulumi.String("content-type"), pulumi.String("authorization")}, MaxAge: pulumi.Int(300)}})
 	if err != nil {
@@ -222,6 +231,7 @@ func deploy(ctx *pulumi.Context) error {
 		if e != nil {
 			return e
 		}
+		reset.addFunction(fn)
 		integration, e := apigatewayv2.NewIntegration(ctx, spec.name+"-integration", &apigatewayv2.IntegrationArgs{ApiId: httpAPI.ID(), IntegrationType: pulumi.String("AWS_PROXY"), IntegrationUri: fn.InvokeArn, PayloadFormatVersion: pulumi.String("2.0")})
 		if e != nil {
 			return e
@@ -248,6 +258,7 @@ func deploy(ctx *pulumi.Context) error {
 		if e != nil {
 			return e
 		}
+		reset.addFunction(fn)
 		integration, e := apigatewayv2.NewIntegration(ctx, spec.name+"-integration", &apigatewayv2.IntegrationArgs{ApiId: httpAPI.ID(), IntegrationType: pulumi.String("AWS_PROXY"), IntegrationUri: fn.InvokeArn, PayloadFormatVersion: pulumi.String("2.0")})
 		if e != nil {
 			return e
@@ -264,7 +275,10 @@ func deploy(ctx *pulumi.Context) error {
 	if err = deployRuntime(ctx, cfg, httpAPI); err != nil {
 		return err
 	}
-	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region); err != nil {
+	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region, reset); err != nil {
+		return err
+	}
+	if err = deployReset(ctx, cfg, reset); err != nil {
 		return err
 	}
 	stage, err := apigatewayv2.NewStage(ctx, "email-stage", &apigatewayv2.StageArgs{ApiId: httpAPI.ID(), Name: pulumi.String("$default"), AutoDeploy: pulumi.Bool(true), DefaultRouteSettings: &apigatewayv2.StageDefaultRouteSettingsArgs{ThrottlingBurstLimit: pulumi.Int(20), ThrottlingRateLimit: pulumi.Float64(10)}})
