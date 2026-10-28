@@ -65,10 +65,14 @@ Shared-index teardown has its own [runbook](../../docs/teardown-index.md) and pr
 ## Export values for the modular deployment wizard
 
 From the repository root, run `./export-wizard.sh --environment dev`, or on
-Windows `export-wizard.bat --environment dev`. Requires Python 3 and Pulumi CLI.
-It reads the selected backend stack and shared stack using `pulumi config --json`
-(without decrypting secrets), plus `.attestra/deploy.<environment>.local.json`
-when available. Run once per environment; exports merge into
+Windows `export-wizard.bat --environment dev`. Requires Python 3 and PyYAML
+(`python -m pip install -r scripts/requirements-export.txt`).
+It reads local `infra/Pulumi.<environment>.yaml` and
+`infra-index/Pulumi.shared.yaml` without contacting a state backend or decrypting
+secrets, plus `.attestra/deploy.<environment>.local.json` when available.
+If a local stack file is absent, it falls back to read-only
+`pulumi config --json --non-interactive` using the current Pulumi backend/session.
+A failed fallback reports Pulumi stderr and recovery guidance instead of a traceback. Run once per environment; exports merge into
 `~/.attestra/legacy-wizard.json` with private file permissions.
 
 Exports include sender domain/address, AWS region/account when available,

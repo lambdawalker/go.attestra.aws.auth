@@ -7,10 +7,32 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
 
 
 def config(root, directory, stack):
-    result = subprocess.run(['pulumi', 'config', '--json', '--cwd', str(root / directory), '--stack', stack], check=True, capture_output=True, text=True)
+    path = root / directory / ('Pulumi.' + stack + '.yaml')
+    if path.exists():
+        try:
+            import yaml
+        except ImportError as error:
+            raise RuntimeError('Reading local Pulumi YAML requires PyYAML. Run: python -m pip install PyYAML') from error
+        try:
+            document = yaml.safe_load(path.read_text(encoding='utf-8-sig'))
+        except (ValueError, yaml.YAMLError) as error:
+            raise RuntimeError('Invalid YAML in ' + str(path)) from error
+        if not isinstance(document, dict) or not isinstance(document.get('config'), dict):
+            raise RuntimeError('Missing config mapping in ' + str(path))
+        # Secure values are mappings, never strings; they are neither decrypted nor exported.
+        return {k.split(':')[-1]: v for k, v in document['config'].items()
+                if isinstance(k, str) and isinstance(v, str)}
+    try:
+        result = subprocess.run(['pulumi', 'config', '--json', '--non-interactive', '--cwd', str(root / directory), '--stack', stack], check=True, capture_output=True, text=True)
+    except FileNotFoundError as error:
+        raise RuntimeError('No local config at ' + str(path) + '; install Pulumi CLI or restore this file from the original checkout') from error
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or '').strip() or 'Pulumi provided no error details'
+        raise RuntimeError('Cannot read ' + directory + '/' + stack + ' (Pulumi exit ' + str(error.returncode) + '):\n' + detail + '\nRestore ' + str(path) + ' or select/login to the original state backend and retry.') from error
     raw = json.loads(result.stdout)
     return {k.split(':')[-1]: v['value'] for k, v in raw.items()
             if isinstance(v, dict) and not v.get('secret') and isinstance(v.get('value'), str)}
@@ -76,4 +98,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (RuntimeError, ValueError, OSError) as error:
+        print('Export failed: ' + str(error), file=sys.stderr)
+        sys.exit(1)

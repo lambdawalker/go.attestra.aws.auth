@@ -28,6 +28,22 @@ class ExportTests(unittest.TestCase):
             self.assertIn('qa', json.loads(data)['Environments'])
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_local_yaml_requires_no_pulumi_or_secret_decryption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'infra').mkdir()
+            (root / 'infra' / 'Pulumi.dev.yaml').write_text('config:\n  aws:region: us-east-2\n  project:senderDomain: dev.info.example.com\n  project:proofKey:\n    secure: ciphertext\n')
+            with patch.object(exporter.subprocess, 'run', side_effect=AssertionError('must not call Pulumi')):
+                result = exporter.config(root, 'infra', 'dev')
+            self.assertEqual(result['senderDomain'], 'dev.info.example.com')
+            self.assertNotIn('proofKey', result)
+
+    def test_pulumi_failure_explains_actual_error(self):
+        failure = exporter.subprocess.CalledProcessError(6, ['pulumi'], stderr='error: no stack selected')
+        with patch.object(exporter.subprocess, 'run', side_effect=failure):
+            with self.assertRaisesRegex(RuntimeError, 'no stack selected'):
+                exporter.config(Path('/missing-repo'), 'infra', 'dev')
+
     def test_config_never_requests_decrypted_secrets(self):
         class Result:
             stdout = json.dumps({'aws:region': {'value': 'us-east-2'}, 'project:senderDomain': {'value': 'example.com', 'secret': False}, 'project:proofKey': {'value': 'secret', 'secret': True}})
