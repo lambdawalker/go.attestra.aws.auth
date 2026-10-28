@@ -24,3 +24,7 @@ Existing verify and Deploy AWS workflows remain application tooling. Deploy AWS 
 The documentation change runs the documentation build/link/raw/translation checks and selected existing Go suites. Unit tests do not send email, exercise platform passkeys or upload real IDs. The Android Gradle example is checked against its source configuration but needs that repository's toolchain and generated configuration to execute. Historical/UI evidence and architecture are linked from [central docs](https://raw.githubusercontent.com/lambdawalker/design.attestra/main/docs/agents/ui.md).
 
 See the [documentation audit](documentation-audit.md) for the checks actually executed and remaining limits.
+
+## AWS resource inventory
+
+The [AWS services reference](agents/aws-services.md) maps application, shared and optional infrastructure to source, documents safe configuration defaults and distinguishes operator authentication from app/admin identities. It is a source review, not live account verification.

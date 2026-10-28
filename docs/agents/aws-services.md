@@ -1,0 +1,59 @@
+# AWS services and configuration
+
+This is a source-based inventory of the Go project, reviewed against `2d82dd9` on 2026-10-28. It describes what the repository provisions or calls, not a live AWS account audit. Stack overrides, optional features and deployment progress can change the actual inventory. Physical resource names, account IDs, pool/client IDs, DNS validation values and secrets are deliberately omitted. The logical names below are code labels, not production identifiers.
+
+## Ownership and deployment
+
+`infra/` owns each environment’s authentication, capture, extraction, public configuration endpoint and reset worker. `infra-index/` owns the shared environment index and admin console, including their separate identity boundary and runtime-settings storage. Setup also manages deployment authentication and private S3 state storage outside those application resources. Use the [deployment guide](../deployment.md) for backend/shared/all scopes; the dashboard cannot change infrastructure settings.
+
+Most regional resources follow the selected stack region. CloudFront’s optional association-site certificate is explicitly created in `us-east-1`. Extraction calls the configured regional Bedrock Mantle endpoint; model access and availability must be verified for that region. No cross-region inference fallback is implemented.
+
+## Product inventory
+
+| AWS product | Use and safe configuration summary | Source |
+| --- | --- | --- |
+| AWS Lambda | Go custom runtime `provided.al2023`, ARM64 ZIPs. Handles authentication, capture processing, extraction, settings, index, admin and reset. Function-specific IAM roles; no VPC configuration is declared. | [Application](../../infra/main.go), [capture](../../infra/capture.go), [shared](../../infra-index/main.go) |
+| Amazon API Gateway | HTTP APIs with Lambda proxy payload v2, auto-deployed default stages. Application and index default throttles: 10 requests/second, burst 20; admin: 5/second, burst 10. Regional custom domains use TLS 1.2. Capture/admin protected routes use Cognito JWT authorizers; index writes use AWS IAM; public policy/config/index reads are intentionally public. | [Application](../../infra/main.go), [admin](../../infra-index/admin.go), [index](../../infra-index/main.go) |
+| Amazon Cognito | Separate application and shared administrator user pools, Essentials tier. Both disable direct self-signup. See the identity configuration below. | [Application pool](../../infra/main.go), [admin pool](../../infra-index/admin.go), [admin setup](../../cmd/admin-setup) |
+| Amazon Simple Email Service (SES) | Application verification and sign-in email. Domain identity and DKIM records; configured sender address. Cognito application email uses the developer SES configuration. Sandbox/production access and delivery readiness are separate setup checks. | [Sender configuration](../../infra/main.go), [first deployment](../first-deployment.md) |
+| Amazon DynamoDB | On-demand tables with server-side encryption and point-in-time recovery. Stores proof state, capture/review state, reset progress, shared index and runtime configuration/grants/history. See the data table below. | [Application](../../infra/main.go), [capture](../../infra/capture.go), [reset](../../infra/reset.go), [shared admin](../../infra-index/admin.go) |
+| Amazon S3 | Private evidence storage, private Pulumi state storage, and optional Android association assets. Evidence uses versioning, SSE-S3 (`AES256`), bucket-owner enforcement, public-access blocking and a deny-insecure-transport policy. | [Evidence](../../infra/capture.go), [associations](../../infra/assetlinks.go), [state setup](../../tools/deploy/internal/workflow) |
+| Amazon SQS | Capture validation/work queue plus dead-letter queue; SQS-managed encryption. Visibility timeout 720 seconds; redrive after five receives; DLQ retention 14 days. Lambda batch size 1 with partial-batch failure reporting. | [Queue configuration](../../infra/capture.go) |
+| Amazon EventBridge | Scheduled rules invoke capture dispatch/cleanup and the reset worker every minute. These are EventBridge rules, not EventBridge Scheduler resources, despite the Pulumi `cloudwatch` package name. | [Capture sweeper](../../infra/capture.go), [reset sweeper](../../infra/reset.go) |
+| Amazon CloudWatch | Lambda execution logs and a DLQ-visible-message alarm: maximum over 60 seconds, threshold greater than zero, one evaluation period. Alarm notification actions and explicit log-group retention are not configured by these stacks. | [Alarm and logging roles](../../infra/capture.go) |
+| Amazon Bedrock Mantle | Cloud card-field extraction using fixed model `google.gemma-4-e2b` through its OpenAI-compatible chat-completions endpoint. AWS SigV4 authentication; no external LLM API key. Worker permission is restricted by model condition. | [Extractor](../../awscapture/extractor.go), [IAM grant](../../infra/capture.go) |
+| AWS Certificate Manager (ACM) | DNS-validated certificates for configured API, index and admin domains; optional CloudFront association certificate in `us-east-1`. Certificate private keys are not exported by this project. | [API domain](../../infra/api_domain.go), [shared domains](../../infra-index/main.go), [associations](../../infra/assetlinks.go) |
+| Amazon Route 53 (optional) | Creates certificate-validation, SES verification/DKIM and hostname records when `route53ZoneId` is supplied. Otherwise the setup workflow supports external DNS, including Cloudflare. DNS is not necessarily hosted in AWS. | [Application DNS](../../infra/main.go), [deployment tooling](../../tools/deploy/internal/workflow) |
+| Amazon CloudFront (optional) | Opt-in Android Digital Asset Links hosting at the app origin, backed by a private S3 bucket with origin access control. Price class 100, HTTPS redirect and minimum viewer TLS `TLSv1.2_2021`. The admin UI is served by its Lambda/API Gateway, not by this distribution. | [Association hosting](../../infra/assetlinks.go), [association guide](../android-associations.md) |
+| AWS IAM and AWS STS | Execution roles and scoped service grants; AWS identity checks and temporary deployment credentials. GitHub Actions uses OIDC role trust constrained to the configured repository/environment. Reset deletion targets come from deployed resource inventory, never browser input. | [Setup trust](../../tools/deploy/internal/workflow/aws_setup.go), [deployment policies](../../tools/deploy/internal/workflow/aws_setup_policy.go), [reset IAM](../../infra/reset.go) |
+| AWS IAM Identity Center (optional operator login) | Existing SSO profiles can authenticate setup/deployment. This is an operator credential source, distinct from Cognito app/admin login; the project does not provision an Identity Center organization. | [Authentication setup](../../tools/deploy/internal/workflow/aws_setup.go), [deployment](../deployment.md) |
+
+## Identity configuration
+
+Application users use email and passkeys. The pool has MFA `OFF`, allows `PASSWORD`, `EMAIL_OTP` and `WEB_AUTHN` factors, and uses custom Lambda challenges. The application flow creates passwordless accounts; the allowed password factor is a Cognito policy requirement, not a password form in Android. WebAuthn requires user verification. The public app client has no client secret, enables custom/user/refresh authentication and suppresses user-existence errors. Recovery is administrator-only at the pool setting; application sign-in recovery uses email OTP.
+
+Administrators use a different invitation-only pool with MFA `ON` and software-token TOTP enabled. Password policy: minimum 14 characters with uppercase, lowercase, number and symbol; temporary passwords expire after seven days. Managed login v2 and an OAuth authorization-code flow with PKCE are used; the public client has no secret and access/ID tokens last 15 minutes. The post-Pulumi admin setup configures the user-verified passkey alternative. Environment grants are checked in the backend; possession of an admin token alone does not grant every environment. See [admin setup and access](../admin-runtime-config.md).
+
+## Data, limits and retention
+
+| Logical data store | Configuration and lifetime |
+| --- | --- |
+| `email-proofs` | String `id` key; `ttl` expiration; on-demand, encryption and PITR. Application expiry checks remain authoritative; TTL is asynchronous. |
+| `id-captures` | String `id` key; `work-due` index on work/due; `ttl` expiration. Includes extraction results and reviewed origin/details. Images are stored separately in S3. |
+| `environment-reset-control` | String `id` key; on-demand, encryption and PITR; no TTL. Retains operation audit, progress and token cutoff. |
+| `environment-registry` | Shared string `id` key; on-demand, encryption, PITR and Pulumi protection. Public discovery data and deployment coordination. |
+| `admin-runtime` | Shared `id`/`sk` keys; on-demand, encryption, PITR, DynamoDB deletion protection and Pulumi protection. Published settings, grants and history survive application reset. |
+| Evidence bucket | Application cleanup targets seven-day evidence retention. Lifecycle is an additional ten-day current/noncurrent-version safety net; incomplete multipart uploads are aborted after one day. Signed uploads are short-lived and do not grant public reads. |
+| Pulumi state buckets | Setup-managed private, versioned deployment state, separate from evidence. Pulumi passphrase-encrypted secrets and local credential handling are described in the deployment guide; never publish state files or passphrases. |
+
+Capture API Lambda is configured for 25 seconds/256 MB; worker and dispatcher for 90 seconds/1024 MB. Public app-config uses 10 seconds/128 MB; shared admin and index use 20 seconds/256 MB; reset uses 60 seconds/256 MB. Other auth handlers have their own settings in source. Capture defaults use shared concurrency (`-1`) and a queue-worker maximum of two; production requires explicit capacity choices and quota checks through the deployment workflow. These are execution limits, not provisioned always-running servers.
+
+Extraction has a 55-second inference budget, maximum 4096 completion tokens, non-streaming responses and `store: false`. It sends processed card images to the regional model API and validates the returned fields. That request flag is not a substitute for checking provider data-handling terms. Extracted data requires user review and does not prove identity. This repository does not provision Textract or SageMaker for OCR.
+
+Environment reset removes application users, table rows, queued work and evidence versions while retaining infrastructure, shared admin/settings/index and reset audit. Backups/PITR and service logs retain their own policies. See [reset scope and recovery](../environment-reset.md).
+
+## Publication boundary and operational gaps
+
+Safe to document: product names, logical responsibilities, runtime versions, authentication flows, encryption modes, default limits and retention rules. Keep secret values, proof keys, AWS credentials, tokens, presigned URLs, user data, state dumps and operational receipts out of documentation. Public-facing identifiers are not generally authentication secrets, but actual account/resource inventories are unnecessary here and remain omitted.
+
+The reviewed stacks do not provision a customer-managed KMS key, Secrets Manager/Parameter Store secret storage, WAF, CloudTrail trail, AWS Backup plan, SNS alarm destination, VPC/NAT, EC2, ECS or RDS. Account-level resources may exist independently; their absence from code does not prove absence from the account. Default AWS-managed encryption is not a claim of customer-managed key control. Review logging retention, alarm delivery, regional model access and SES readiness before production use.

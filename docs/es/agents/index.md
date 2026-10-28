@@ -10,6 +10,7 @@ Alcance: código actual de `main`, revisado en `64f4faea74e71a82795560e4b43e195d
 | Descubrir entornos o exportar configuración Android | [Integración](integration.md) | `registry`, `internal/android` |
 | Recuperar un despliegue o eliminar recursos | [Operación](operations.md) | Desmontaje de entorno frente a índice compartido |
 | Evaluar preparación | [Limitaciones](limitations.md), [cobertura](../../coverage.md) | Pruebas y evidencia explícita |
+| Conocer los recursos y la configuración de AWS | [Servicios de AWS](aws-services.md) | infraestructura y herramientas de despliegue |
 
 Una respuesta genérica de registro no demuestra entrega de correo. Solo el cliente que confirma recibe la sesión. Capture `ready` significa evidencia decodificada y fijada. Consulta `extraction.status` para los campos extraídos y `reviewed` para las correcciones del usuario; ninguno verifica la identidad. Nunca registres pruebas, tokens, imágenes o URL prefirmadas. El índice publica configuración; no autentica usuarios ni supervisa salud.
 
