@@ -52,6 +52,9 @@ type Asset struct {
 	Size      int64  `json:"size"`
 }
 type Record struct {
+	Extraction            *Extraction       `json:"extraction,omitempty"`
+	Reviewed              *ReviewedCard     `json:"reviewed,omitempty"`
+	ExtractionAttempts    int               `json:"-"`
 	ID                    string            `json:"capture_id" dynamodbav:"CaptureID"`
 	Owner                 string            `json:"-"`
 	EvidenceVersion       int64             `json:"evidence_version"`

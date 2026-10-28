@@ -148,7 +148,7 @@ func (s *Store) Swap(ctx context.Context, before, after capture.Record, ready bo
 // Pending is the durable-intent sweep: the record and work index update atomically.
 // A lost queue send/ack cannot lose intent. Duplicate deliveries are fenced by Work.
 func (s *Store) Pending(ctx context.Context, now int64, send func(capture.Job) error) error {
-	for _, work := range []string{"validate", "cleanup"} {
+	for _, work := range []string{"validate", "extract", "cleanup"} {
 		var cursor map[string]types.AttributeValue
 		for pages := 0; pages < 10; pages++ {
 			out, e := s.DB.Query(ctx, &dynamodb.QueryInput{TableName: aws.String(s.Table), IndexName: aws.String("work-due"), KeyConditionExpression: aws.String("#work = :work AND due <= :now"), ExpressionAttributeNames: map[string]string{"#work": "work"}, ExpressionAttributeValues: map[string]types.AttributeValue{":work": &types.AttributeValueMemberS{Value: work}, ":now": &types.AttributeValueMemberN{Value: strconv.FormatInt(now, 10)}}, ExclusiveStartKey: cursor, Limit: aws.Int32(100)})

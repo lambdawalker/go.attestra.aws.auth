@@ -1,8 +1,8 @@
 {
   "docs/agents/index.md": {
     "path": "docs/es/agents/index.md",
-    "source_sha256": "a20f7318b443a9178fcaa1bfd517f1b6a454cdc5477c94e6519ab20b4e42deed",
-    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+    "source_sha256": "83d2890fe6663f29d84d7aa76da563b54650125d31ae3fadf741cb535d81daa1",
+    "provenance": "Reviewed Spanish card extraction update 2026-10-28"
   },
   "docs/agents/quickstart.md": {
     "path": "docs/es/agents/quickstart.md",
@@ -26,7 +26,7 @@
   },
   "docs/agents/limitations.md": {
     "path": "docs/es/agents/limitations.md",
-    "source_sha256": "d5714a2df1062b2610a76f6f920166f8f2ee36f6a57874fc2d7db26590207604",
-    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+    "source_sha256": "19e17f449956efc368739e8667af4d1b3dc5b3c6287a3ec821142d46db3418ff",
+    "provenance": "Reviewed Spanish card extraction update 2026-10-28"
   }
 }

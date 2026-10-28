@@ -11,7 +11,7 @@
 | Old teardown receipt after recreation | Setup archives completed receipts; unfinished teardown requires recovery first |
 | Health passed but email/sign-in fails | Health probes do not create users, deliver mail, exercise platform passkeys or upload IDs |
 
-ID parsing, vision extraction, user review persistence, independent ID validation and address assurance remain designed/deferred features. Capture file safety checks are implemented, but live capture is disabled by default and needs approved policy plus real-device/S3 smoke testing. It supports exactly front/back images under the current policy; do not promise arbitrary document support.
+Vision extraction through Bedrock Gemma 4 E2B and user review persistence are implemented, with live model access and accuracy still requiring smoke tests. Independent ID validation and address assurance remain deferred. Capture file safety checks are implemented, but live capture is disabled by default and needs approved policy plus real-device/S3 smoke testing. It supports exactly front/back images under the current policy; do not promise arbitrary document support.
 
 The shared index supports one AWS account/region per instance. Cross-account production isolation and a central publication role require further design. Direct Pulumi/AWS edits bypass synchronization. Public entries may temporarily show the last successful configuration after an interrupted operation. Cognito's provider configuration permits `PASSWORD` even though the app offers passkeys/email OTP; this is a recorded constraint, not a passwordless-provider guarantee.
 

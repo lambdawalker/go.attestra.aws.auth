@@ -11,7 +11,7 @@
 | Recibo antiguo después de recrear | Setup archiva los completos; recupera primero un teardown inconcluso |
 | Salud correcta, correo/login falla | Las sondas no crean usuarios, entregan correo, usan passkeys ni cargan documentos |
 
-Parsing, extracción visual, persistencia de revisión, validación independiente y verificación de domicilio siguen diseñados/diferidos. Las comprobaciones de archivos existen, pero captura real está deshabilitada por defecto y requiere política aprobada y pruebas S3/dispositivo. La política actual admite exactamente front/back, no documentos arbitrarios.
+La extracción visual con Bedrock Gemma 4 E2B y la persistencia de las correcciones del usuario están implementadas; el acceso al modelo y la precisión requieren pruebas reales. La validación independiente y la verificación de domicilio siguen diferidas. Las comprobaciones de archivos existen, pero captura real está deshabilitada por defecto y requiere política aprobada y pruebas S3/dispositivo. La política actual admite exactamente front/back, no documentos arbitrarios.
 
 El índice admite una cuenta/región por instancia. Aislamiento productivo entre cuentas y rol central de publicación requieren diseño adicional. Cambios directos en Pulumi/AWS evitan la sincronización. Una interrupción puede dejar visible la última configuración publicada. Cognito permite `PASSWORD` aunque la interfaz use passkeys/correo; no existe una garantía de prohibición de contraseña a nivel proveedor.
 

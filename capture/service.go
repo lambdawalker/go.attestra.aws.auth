@@ -30,6 +30,7 @@ func newID() string {
 }
 
 type Service struct {
+	Extractor    Extractor
 	PolicySource func(context.Context) (Policy, error)
 	Store        Store
 	Objects      Objects
@@ -79,6 +80,10 @@ func (s Service) Get(ctx context.Context, owner, id string) (Record, error) {
 	}
 	if (r.State == "uploading" && s.now().Unix() >= r.ExpiresAt) || (r.State == "ready" && r.DeleteAfter > 0 && s.now().Unix() >= r.DeleteAfter) {
 		r.State = "expired"
+	}
+	if r.State == "expired" || r.State == "cancelled" {
+		r.Extraction = nil
+		r.Reviewed = nil
 	}
 	return r, nil
 }
@@ -291,6 +296,8 @@ func (s Service) Cancel(ctx context.Context, owner, id string) (Record, error) {
 	}
 	before := r
 	r.State = "cancelled"
+	r.Extraction = nil
+	r.Reviewed = nil
 	r.Work = "cleanup"
 	r.Due = s.now().Add(UploadLifetime + time.Minute).Unix()
 	r.Generation++
@@ -310,6 +317,21 @@ func (s Service) Retry(ctx context.Context, owner, id, key string) (Record, erro
 		return r, e
 	}
 	if r.RetryKey == key {
+		return r, nil
+	}
+	if r.State == "ready" && r.Extraction != nil && r.Extraction.Status == "failed" {
+		before := r
+		r.Extraction = &Extraction{Status: "pending"}
+		r.ExtractionAttempts = 0
+		r.Work = "extract"
+		r.Due = s.now().Unix()
+		r.RetryKey = key
+		r.Generation++
+		r.Revision++
+		r.LeaseUntil = 0
+		if e = s.Store.Swap(ctx, before, r, false); e != nil {
+			return Record{}, e
+		}
 		return r, nil
 	}
 	if r.State != "failed" || s.now().Unix() >= r.ExpiresAt {

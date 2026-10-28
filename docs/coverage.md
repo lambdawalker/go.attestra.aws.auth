@@ -12,7 +12,8 @@ Current-source audit at `64f4fae`. The API is an HTTPS service, not a published 
 | Setup/credentials/capacity/health/export | [Operations](agents/operations.md), [Android](agents/integration.md) | `go -C tools/deploy test ./...` | Tests use fakes, no cloud mutations |
 | Application/shared-index infrastructure | [Deployment](deployment.md), [index](environment-index.md) | `go -C infra test ./...`; `go -C infra-index test ./...` | Pulumi mocks do not prove a live deploy |
 | Environment and index teardown | [Environment teardown](teardown.md), [index teardown](teardown-index.md) | `go -C tools/deploy test ./internal/workflow` | Destructive commands not run for docs |
-| Parsing/independent validation | [Limitations](agents/limitations.md) | No implemented parser/validation demo | No invented success captures |
+| Card extraction / review | [Capture contract](id-capture.md) | Bedrock adapter, durable retries, separate reviewed data, Android form | Unit/contract tests; live inference/device smoke pending |
+| Independent validation | [Limitations](agents/limitations.md) | Deferred | No invented verification success |
 
 ## Release automation audit
 
