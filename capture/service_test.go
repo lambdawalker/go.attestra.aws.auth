@@ -56,6 +56,7 @@ func (m *memoryStore) Swap(_ context.Context, a, b Record, ready bool) error {
 }
 
 type memoryObjects struct {
+	processed   map[string][]byte
 	data        []byte
 	readVersion string
 	onRead      func()
@@ -73,9 +74,16 @@ func (m *memoryObjects) Read(_ context.Context, a Asset) ([]byte, error) {
 	if m.onRead != nil {
 		m.onRead()
 	}
+	if b, ok := m.processed[a.Key]; ok {
+		return bytes.Clone(b), nil
+	}
 	return bytes.Clone(m.data), nil
 }
 func (m *memoryObjects) Write(_ context.Context, r Record, slot string, b []byte) (Asset, error) {
+	if m.processed == nil {
+		m.processed = map[string][]byte{}
+	}
+	m.processed["processed/"+r.ID+"/"+slot] = bytes.Clone(b)
 	sum := sha256.Sum256(b)
 	return Asset{Slot: slot, Key: "processed/" + r.ID + "/" + slot, VersionID: "processed-version", Size: int64(len(b)), SHA256: base64.StdEncoding.EncodeToString(sum[:])}, nil
 }

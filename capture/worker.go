@@ -43,12 +43,17 @@ func (s Service) Work(ctx context.Context, job Job) error {
 	if r.Due > now || r.LeaseUntil > now {
 		return nil
 	}
+	if r.Work == "extract" {
+		return s.extract(ctx, r)
+	}
 	if r.Work == "cleanup" {
 		// Uploading sessions are expired by time, ready evidence only after its retention deadline.
 		if r.State == "uploading" && now < r.ExpiresAt {
 			return nil
 		}
 		before := r
+		r.Extraction = nil
+		r.Reviewed = nil
 		r.State = "expired"
 		r.Generation++
 		r.Revision++
@@ -77,6 +82,8 @@ func (s Service) Work(ctx context.Context, job Job) error {
 	// evidence retention relative to the bucket's ten-day orphan safety lifecycle.
 	if now >= r.ExpiresAt {
 		before := r
+		r.Extraction = nil
+		r.Reviewed = nil
 		r.State = "expired"
 		r.Work = "cleanup"
 		r.Due = now + int64((UploadLifetime + time.Minute).Seconds())
@@ -147,6 +154,8 @@ func (s Service) Work(ctx context.Context, job Job) error {
 	r.Revision++
 	r.LeaseUntil = 0
 	if validationErr == nil && s.now().Unix() >= r.ExpiresAt {
+		r.Extraction = nil
+		r.Reviewed = nil
 		r.State = "expired"
 		r.Work = "cleanup"
 		r.Due = s.now().Add(UploadLifetime + time.Minute).Unix()
@@ -164,6 +173,11 @@ func (s Service) Work(ctx context.Context, job Job) error {
 		}
 		r.DeleteAfter = s.now().Add(retention).Unix()
 		r.Due = r.DeleteAfter
+		if s.Extractor != nil {
+			r.Extraction = &Extraction{Status: "pending"}
+			r.Work = "extract"
+			r.Due = s.now().Unix()
+		}
 		return s.Store.Swap(ctx, before, r, true)
 	}
 	if validationErr == ErrImage {

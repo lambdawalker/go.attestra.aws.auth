@@ -137,6 +137,12 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 			return fail(e), nil
 		}
 		return reply(200, out), nil
+	case "review":
+		var in capture.ReviewRequest
+		if e = decode(req, &in); e != nil {
+			return fail(e), nil
+		}
+		r, e = h.Service.Review(ctx, owner, id, in)
 	case "finalize":
 		var in capture.FinalizeRequest
 		if e = decode(req, &in); e != nil {
