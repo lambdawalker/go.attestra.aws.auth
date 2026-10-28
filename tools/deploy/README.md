@@ -61,3 +61,21 @@ Their `.bak`, `.tmp` and `.lock` siblings stay alongside them. Stop any running 
 Keep `.attestra/` when resuming interrupted operations. These files contain no credential values but include infrastructure identifiers and recovery metadata; keep them private. The optional encrypted credential vault stays in its existing user-specific location. Build artifacts already live in `dist/`, public Android exports in `android-config/`, and Pulumi configuration stays in `infra/` and `infra-index/`.
 
 Shared-index teardown has its own [runbook](../../docs/teardown-index.md) and private `.attestra/teardown-index.<account>.<region>.local.json` checkpoint. It does not replace environment teardown.
+
+## Export values for the modular deployment wizard
+
+From the repository root, run `./export-wizard.sh --environment dev`, or on
+Windows `export-wizard.bat --environment dev`. Requires Python 3 and Pulumi CLI.
+It reads the selected backend stack and shared stack using `pulumi config --json`
+(without decrypting secrets), plus `.attestra/deploy.<environment>.local.json`
+when available. Run once per environment; exports merge into
+`~/.attestra/legacy-wizard.json` with private file permissions.
+
+Exports include sender domain/address, AWS region/account when available,
+base domain derived from the index domain, Android associations, environment
+class, and saved profile/state base. The new wizard automatically skips questions
+for these values. Missing settings still prompt. Flags and local wizard settings
+win over exports. Legacy domains, certificate ownership, secrets and credential
+vaults are excluded. This does not transfer infrastructure ownership or deploy.
+Use `--output PATH` only to inspect/export elsewhere; the new wizard discovers
+the default home-directory path automatically.
