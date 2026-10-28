@@ -12,8 +12,9 @@ import (
 )
 
 type Handler struct {
-	Service Service
-	Route   string
+	Enrollment *Enrollment
+	Service    Service
+	Route      string
 }
 
 func respond(req events.APIGatewayV2HTTPRequest, code int, v any) (events.APIGatewayV2HTTPResponse, error) {
@@ -24,6 +25,12 @@ func respond(req events.APIGatewayV2HTTPRequest, code int, v any) (events.APIGat
 func failure(req events.APIGatewayV2HTTPRequest, err error) (events.APIGatewayV2HTTPResponse, error) {
 	if errors.Is(err, ErrUnauthenticated) {
 		return respond(req, 401, map[string]string{"error": "sign_in_required"})
+	}
+	if errors.Is(err, ErrPasswordPolicy) {
+		return respond(req, 400, map[string]string{"error": "password_policy"})
+	}
+	if errors.Is(err, ErrEnrollmentDisabled) {
+		return respond(req, 409, map[string]string{"error": "password_disabled"})
 	}
 	if errors.Is(err, ErrRejected) {
 		return respond(req, 400, map[string]string{"error": "authentication_failed"})
@@ -46,6 +53,7 @@ func (h Handler) Serve(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 		body = string(b)
 	}
 	var v struct {
+		Password     string          `json:"password"`
 		Email        string          `json:"email"`
 		Session      string          `json:"session"`
 		Code         string          `json:"code"`
@@ -56,17 +64,20 @@ func (h Handler) Serve(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 		return failure(req, ErrRejected)
 	}
 	switch h.Route {
-	case "email/start", "passkey/start":
+	case "email/start", "passkey/start", "password/start":
 		method := "EMAIL_OTP"
 		if h.Route == "passkey/start" {
 			method = "WEB_AUTHN"
+		}
+		if h.Route == "password/start" {
+			method = "PASSWORD"
 		}
 		result, e := h.Service.Start(ctx, v.Email, method)
 		if e != nil {
 			return failure(req, e)
 		}
 		return respond(req, 200, result)
-	case "email/complete", "passkey/complete":
+	case "email/complete", "passkey/complete", "password/complete":
 		method, answer := "EMAIL_OTP", v.Code
 		if h.Route == "passkey/complete" {
 			method = "WEB_AUTHN"
@@ -74,6 +85,9 @@ func (h Handler) Serve(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 				return failure(req, ErrRejected)
 			}
 			answer = string(v.Credential)
+		}
+		if h.Route == "password/complete" {
+			method, answer = "PASSWORD", v.Password
 		}
 		result, e := h.Service.Finish(ctx, v.Email, method, v.Session, answer)
 		if e != nil {
@@ -86,7 +100,7 @@ func (h Handler) Serve(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 			return failure(req, e)
 		}
 		return respond(req, 200, result)
-	case "status":
+	case "status", "password/set":
 		header := req.Headers["authorization"]
 		if header == "" {
 			header = req.Headers["Authorization"]
@@ -95,11 +109,20 @@ func (h Handler) Serve(ctx context.Context, req events.APIGatewayV2HTTPRequest) 
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			return failure(req, ErrUnauthenticated)
 		}
-		has, e := h.Service.HasPasskey(ctx, parts[1])
+		if h.Enrollment == nil {
+			return failure(req, ErrUnavailable)
+		}
+		if h.Route == "password/set" {
+			if err := h.Enrollment.SetPassword(ctx, parts[1], v.Password); err != nil {
+				return failure(req, err)
+			}
+			return respond(req, 200, map[string]bool{"password_registered": true})
+		}
+		result, e := h.Enrollment.Status(ctx, parts[1])
 		if e != nil {
 			return failure(req, e)
 		}
-		return respond(req, 200, map[string]bool{"passkey_registered": has})
+		return respond(req, 200, result)
 	}
 	return respond(req, 404, map[string]string{"error": "not_found"})
 }

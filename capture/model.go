@@ -86,6 +86,7 @@ type Record struct {
 	TTL                   int64             `json:"-"`
 }
 type Account struct {
+	IDCaptured   bool
 	Owner        string
 	CurrentID    string
 	Revision     int64

@@ -105,6 +105,28 @@ async function callback() {
   );
   return true;
 }
+const passwordClasses = ["lowercase", "uppercase", "numbers", "symbols"];
+function onboardingFor(config) {
+  // Historical revisions predate onboarding. Never mutate them while reviewing.
+  return config.onboarding || {
+    idCapture: config.features.idCapture ? "optional" : "disabled",
+    passkey: "required",
+    password: "disabled",
+    passwordPlacement: "hidden",
+    passwordPolicy: {
+      minLength: 12, maxLength: 128,
+      lowercase: "allowed", uppercase: "allowed", numbers: "allowed", symbols: "allowed",
+    },
+  };
+}
+$("passwordRequirement").onchange = () => {
+  if ($("passwordRequirement").value === "disabled") $("passwordPlacement").value = "hidden";
+  else if ($("passwordPlacement").value === "hidden") $("passwordPlacement").value = "after_verification";
+};
+$("passwordPlacement").onchange = () => {
+  if ($("passwordPlacement").value === "hidden") $("passwordRequirement").value = "disabled";
+  else if ($("passwordRequirement").value === "disabled") $("passwordRequirement").value = "optional";
+};
 let resetState = null;
 let resetTimer;
 async function load() {
@@ -127,7 +149,10 @@ async function load() {
   current = config;
   $("revision").textContent = current.revision;
   $("updated").textContent = new Date(current.updatedAt).toLocaleString();
-  $("enabled").checked = current.features.idCapture;
+  const onboarding = onboardingFor(current);
+  for (const key of ["idCapture", "passkey", "password"]) $(key + "Requirement").value = onboarding[key];
+  $("passwordPlacement").value = onboarding.passwordPlacement;
+  for (const key of ["minLength", "maxLength", ...passwordClasses]) $(key).value = onboarding.passwordPolicy[key];
   const messages = current.capture.messages || {};
   $("purposeEn").value =
     messages.en ||
@@ -175,11 +200,8 @@ function review(body) {
   proposed = body;
   const changes = [];
   for (const [name, before, after] of [
-    [
-      "Capture enabled",
-      current.features.idCapture,
-      body.config.features.idCapture,
-    ],
+    ...[ ["ID capture", "idCapture"], ["Passkey", "passkey"], ["Password requirement", "password"], ["Password placement", "passwordPlacement"] ].map(([label, key]) => [label, onboardingFor(current)[key], onboardingFor(body.config)[key]]),
+    ...[ ["Minimum length", "minLength"], ["Maximum length", "maxLength"], ["Lowercase", "lowercase"], ["Uppercase", "uppercase"], ["Numbers", "numbers"], ["Symbols", "symbols"] ].map(([label, key]) => [label, onboardingFor(current).passwordPolicy[key], onboardingFor(body.config).passwordPolicy[key]]),
     ...["en", "es", "fr"].map((n) => [
       "Disclosure " + n,
       current.capture.messages?.[n] || "",
@@ -283,9 +305,31 @@ $("environment").onchange = () => load().catch((e) => tell(e.message));
 $("config").onsubmit = (event) => {
   event.preventDefault();
   if (!current) return;
+  const onboarding = {
+    idCapture: $("idCaptureRequirement").value,
+    passkey: $("passkeyRequirement").value,
+    password: $("passwordRequirement").value,
+    passwordPlacement: $("passwordPlacement").value,
+    passwordPolicy: {
+      minLength: Number($("minLength").value),
+      maxLength: Number($("maxLength").value),
+      ...Object.fromEntries(passwordClasses.map((key) => [key, $(key).value])),
+    },
+  };
+  const policy = onboarding.passwordPolicy;
+  if (!Number.isInteger(policy.minLength) || !Number.isInteger(policy.maxLength) ||
+      policy.minLength < 8 || policy.maxLength > 128 || policy.minLength > policy.maxLength) {
+    tell("Password length must use whole numbers from 8 to 128, with minimum no greater than maximum.");
+    return;
+  }
+  if (passwordClasses.every((key) => policy[key] === "disallowed")) {
+    tell("At least one password character class must be allowed or required.");
+    return;
+  }
   const config = {
     ...current,
-    features: { idCapture: $("enabled").checked },
+    onboarding,
+    features: { ...current.features, idCapture: onboarding.idCapture !== "disabled" },
     capture: {
       documentType: "id_card",
       jurisdiction: "",

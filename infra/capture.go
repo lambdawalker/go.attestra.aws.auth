@@ -45,7 +45,7 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 		ctx.Log.Warn(fmt.Sprintf("Capture reserved concurrency %d per function exceeds available capacity; deploying with shared concurrency. Stack configuration is unchanged.", requested), nil)
 	}
 	ctx.Export("captureEffectiveReservedConcurrency", pulumi.Int(reserved))
-	enabled := cfg.GetBool("captureEnabled")
+	enabled := deploymentRuntimeDefaults(ctx.Stack(), cfg.Get("captureEnabled")).Features.IDCapture
 	kind := "id_card"
 	bucket, e := s3.NewBucketV2(ctx, "id-evidence", &s3.BucketV2Args{ForceDestroy: pulumi.Bool(false)})
 	if e != nil {
@@ -91,6 +91,8 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	if e != nil {
 		return e
 	}
+	reset.CaptureTable = table.Name
+	reset.CaptureTableARN = table.Arn
 	reset.Tables = append(reset.Tables, table.Name)
 	reset.TableARNs = append(reset.TableARNs, table.Arn)
 	reset.Bucket = bucket.ID()

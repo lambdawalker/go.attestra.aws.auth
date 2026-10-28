@@ -53,6 +53,15 @@ jobs:
       - name: Compile capture infrastructure
         working-directory: infra
         run: go build ./...
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check dashboard interactions
+        run: node --test adminapi/web_test.cjs
   formatting:
     runs-on: ubuntu-latest
     steps:

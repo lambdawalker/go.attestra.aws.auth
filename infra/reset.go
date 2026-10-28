@@ -13,17 +13,19 @@ import (
 )
 
 type resetInventory struct {
-	Control      *dynamodb.Table
-	Functions    pulumi.StringArray
-	FunctionARNs pulumi.StringArray
-	Tables       pulumi.StringArray
-	TableARNs    pulumi.StringArray
-	Pool         pulumi.StringInput
-	PoolARN      pulumi.StringInput
-	Bucket       pulumi.StringInput
-	BucketARN    pulumi.StringInput
-	Queues       pulumi.StringArray
-	QueueARNs    pulumi.StringArray
+	CaptureTable    pulumi.StringInput
+	CaptureTableARN pulumi.StringInput
+	Control         *dynamodb.Table
+	Functions       pulumi.StringArray
+	FunctionARNs    pulumi.StringArray
+	Tables          pulumi.StringArray
+	TableARNs       pulumi.StringArray
+	Pool            pulumi.StringInput
+	PoolARN         pulumi.StringInput
+	Bucket          pulumi.StringInput
+	BucketARN       pulumi.StringInput
+	Queues          pulumi.StringArray
+	QueueARNs       pulumi.StringArray
 }
 
 func (i *resetInventory) addFunction(fn *lambda.Function) {

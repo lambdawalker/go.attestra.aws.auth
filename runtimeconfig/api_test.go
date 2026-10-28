@@ -23,7 +23,7 @@ func TestPublicHandlerNarrowEnvironmentBoundAndFailsClosed(t *testing.T) {
 		t.Fatal(out)
 	}
 	var body map[string]any
-	if e := json.Unmarshal([]byte(out.Body), &body); e != nil || len(body) != 6 {
+	if e := json.Unmarshal([]byte(out.Body), &body); e != nil || len(body) != 7 {
 		t.Fatal("public contract leaked fields", body, e)
 	}
 	for _, r := range []readResult{{err: errors.New("db unavailable")}, {config: Default("prod")}, {config: Config{SchemaVersion: 2, Environment: "dev"}}} {

@@ -265,3 +265,15 @@ footer span {
     margin-top: 12px;
   }
 }
+fieldset {
+  border: 1px solid #d9e0d6;
+  border-radius: 5px;
+  padding: 16px;
+  margin: 28px 0;
+  min-width: 0;
+}
+legend { font-weight: 600; padding: 0 8px; }
+.policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; }
+.policy-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 1fr); align-items: center; gap: 16px; }
+.policy-row select { margin-top: 0; }
+#diff { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -12,7 +12,7 @@ func TestLambdaBuildsDeduplicatesSignin(t *testing.T) {
 	jobs := lambdaBuilds()
 	seen := map[string]bool{}
 	for _, job := range jobs {
-		if job.source == "./cmd/signin" && len(job.names) != 6 {
+		if job.source == "./cmd/signin" && len(job.names) != 9 {
 			t.Fatal(job)
 		}
 		for _, name := range job.names {
@@ -22,7 +22,7 @@ func TestLambdaBuildsDeduplicatesSignin(t *testing.T) {
 			seen[name] = true
 		}
 	}
-	if len(jobs) != 13 || len(seen) != 18 {
+	if len(jobs) != 13 || len(seen) != 21 {
 		t.Fatal(len(jobs), len(seen))
 	}
 }

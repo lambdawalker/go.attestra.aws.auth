@@ -124,22 +124,42 @@ func (s *Store) Create(ctx context.Context, before, after capture.Account, r cap
 	}})
 	return conditional(e)
 }
-func (s *Store) Swap(ctx context.Context, before, after capture.Record, ready bool) error {
+func swapWrites(before, after capture.Record, ready bool) ([]types.TransactWriteItem, error) {
 	m, e := recordItem(after)
 	if e != nil {
-		return e
+		return nil, e
 	}
-	writes := []types.TransactWriteItem{{Put: &types.Put{TableName: aws.String(s.Table), Item: m, ConditionExpression: aws.String("Revision = :revision"), ExpressionAttributeValues: map[string]types.AttributeValue{":revision": &types.AttributeValueMemberN{Value: strconv.FormatInt(before.Revision, 10)}}}}}
+	writes := []types.TransactWriteItem{{Put: &types.Put{Item: m, ConditionExpression: aws.String("Revision = :revision"), ExpressionAttributeValues: map[string]types.AttributeValue{":revision": &types.AttributeValueMemberN{Value: strconv.FormatInt(before.Revision, 10)}}}}}
 	if ready {
 		event, e := item("READY#"+ownerKey(after.Owner)+"#"+after.ID, struct {
 			Kind     string
 			Manifest capture.Record
 		}{"capture.ready", after})
 		if e != nil {
-			return e
+			return nil, e
 		}
 		event["ttl"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(after.TTL, 10)}
-		writes = append(writes, types.TransactWriteItem{Put: &types.Put{TableName: aws.String(s.Table), Item: event, ConditionExpression: aws.String("attribute_not_exists(id)")}})
+		writes = append(writes, types.TransactWriteItem{Put: &types.Put{Item: event, ConditionExpression: aws.String("attribute_not_exists(id)")}})
+	}
+	if ready {
+		// Update rather than replace the account. Incrementing its revision prevents a
+		// concurrent Create based on an older snapshot from erasing the permanent fact.
+		writes = append(writes, types.TransactWriteItem{Update: &types.Update{Key: key("ACCOUNT#" + ownerKey(after.Owner)), UpdateExpression: aws.String("SET IDCaptured = :yes ADD Revision :one"), ExpressionAttributeValues: map[string]types.AttributeValue{":yes": &types.AttributeValueMemberBOOL{Value: true}, ":one": &types.AttributeValueMemberN{Value: "1"}}}})
+	}
+	return writes, nil
+}
+func (s *Store) Swap(ctx context.Context, before, after capture.Record, ready bool) error {
+	writes, e := swapWrites(before, after, ready)
+	if e != nil {
+		return e
+	}
+	for i := range writes {
+		if writes[i].Put != nil {
+			writes[i].Put.TableName = aws.String(s.Table)
+		}
+		if writes[i].Update != nil {
+			writes[i].Update.TableName = aws.String(s.Table)
+		}
 	}
 	_, e = s.DB.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: writes})
 	return conditional(e)

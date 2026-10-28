@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lambdawalker/go.attestra.aws.auth/assetlinks"
-	"github.com/lambdawalker/go.attestra.aws.auth/runtimeconfig"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -62,14 +61,14 @@ func deploy(ctx *pulumi.Context) error {
 	}
 	challengeArchive, _ := filepath.Abs("../dist/challenge.zip")
 	authArchives := map[string]string{}
-	for _, name := range []string{"auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status"} {
+	for _, name := range []string{"auth-email-start", "auth-email-complete", "auth-passkey-start", "auth-passkey-complete", "auth-refresh", "auth-status", "auth-password-start", "auth-password-complete", "auth-password-set"} {
 		authArchives[name], _ = filepath.Abs("../dist/" + name + ".zip")
 	}
 	archives := map[string]string{}
 	for _, name := range []string{"signup", "resend", "confirm", "passkeyoptions", "passkeycomplete"} {
 		archives[name], _ = filepath.Abs("../dist/" + name + ".zip")
 	}
-	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive, authArchives["auth-email-start"], authArchives["auth-email-complete"], authArchives["auth-passkey-start"], authArchives["auth-passkey-complete"], authArchives["auth-refresh"], authArchives["auth-status"]} {
+	for _, path := range []string{archives["signup"], archives["resend"], archives["confirm"], archives["passkeyoptions"], archives["passkeycomplete"], challengeArchive, authArchives["auth-email-start"], authArchives["auth-email-complete"], authArchives["auth-passkey-start"], authArchives["auth-passkey-complete"], authArchives["auth-refresh"], authArchives["auth-status"], authArchives["auth-password-start"], authArchives["auth-password-complete"], authArchives["auth-password-set"]} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("build Lambda archives with scripts/build.sh or scripts/build.bat first: %s: %w", path, err)
 		}
@@ -145,7 +144,8 @@ func deploy(ctx *pulumi.Context) error {
 		return err
 	}
 	pool, err := cognito.NewUserPool(ctx, "attesta-users", &cognito.UserPoolArgs{
-		UserPoolTier: pulumi.String("ESSENTIALS"), UsernameAttributes: pulumi.StringArray{pulumi.String("email")}, AutoVerifiedAttributes: pulumi.StringArray{pulumi.String("email")}, MfaConfiguration: pulumi.String("OFF"),
+		PasswordPolicy: &cognito.UserPoolPasswordPolicyArgs{MinimumLength: pulumi.Int(8), RequireLowercase: pulumi.Bool(false), RequireUppercase: pulumi.Bool(false), RequireNumbers: pulumi.Bool(false), RequireSymbols: pulumi.Bool(false)},
+		UserPoolTier:   pulumi.String("ESSENTIALS"), UsernameAttributes: pulumi.StringArray{pulumi.String("email")}, AutoVerifiedAttributes: pulumi.StringArray{pulumi.String("email")}, MfaConfiguration: pulumi.String("OFF"),
 		// Cognito requires PASSWORD in this policy even when users are created
 		// without passwords. EMAIL_OTP permits passwordless account recovery.
 		SignInPolicy:          &cognito.UserPoolSignInPolicyArgs{AllowedFirstAuthFactors: pulumi.StringArray{pulumi.String("PASSWORD"), pulumi.String("EMAIL_OTP"), pulumi.String("WEB_AUTHN")}},
@@ -245,7 +245,10 @@ func deploy(ctx *pulumi.Context) error {
 			return e
 		}
 	}
-	for _, spec := range []struct{ name, path string }{{"auth-email-start", "email/start"}, {"auth-email-complete", "email/complete"}, {"auth-passkey-start", "passkey/start"}, {"auth-passkey-complete", "passkey/complete"}, {"auth-refresh", "refresh"}, {"auth-status", "status"}} {
+	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region, reset); err != nil {
+		return err
+	}
+	for _, spec := range []struct{ name, path string }{{"auth-email-start", "email/start"}, {"auth-email-complete", "email/complete"}, {"auth-passkey-start", "passkey/start"}, {"auth-passkey-complete", "passkey/complete"}, {"auth-refresh", "refresh"}, {"auth-status", "status"}, {"auth-password-start", "password/start"}, {"auth-password-complete", "password/complete"}, {"auth-password-set", "password/set"}} {
 		role, e := iam.NewRole(ctx, spec.name+"-role", &iam.RoleArgs{AssumeRolePolicy: trust})
 		if e != nil {
 			return e
@@ -254,7 +257,27 @@ func deploy(ctx *pulumi.Context) error {
 		if e != nil {
 			return e
 		}
-		fn, e := lambda.NewFunction(ctx, spec.name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(authArchives[spec.name]), Timeout: pulumi.Int(20), Environment: &lambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"CLIENT_ID": client.ID(), "AUTH_ROUTE": pulumi.String(spec.path)}}})
+		variables := pulumi.StringMap{"CLIENT_ID": client.ID(), "AUTH_ROUTE": pulumi.String(spec.path)}
+		dependencies := []pulumi.Resource{}
+		if spec.path == "status" || spec.path == "password/set" {
+			variables["POOL_ID"] = pool.ID()
+			variables["ISSUER"] = pulumi.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", region, pool.ID())
+			variables["ENVIRONMENT"] = pulumi.String(ctx.Stack())
+			variables["RUNTIME_TABLE"] = pulumi.String(cfg.Require("runtimeTableName"))
+			variables["TABLE_NAME"] = table.Name
+			if spec.path == "status" {
+				variables["CAPTURE_TABLE"] = reset.CaptureTable
+			}
+			policy := pulumi.All(table.Arn, reset.CaptureTableARN, pool.Arn).ApplyT(func(v []interface{}) string {
+				return enrollmentPolicy(spec.path, ctx.Stack(), cfg.Require("runtimeTableArn"), v[0].(string), v[1].(string), v[2].(string))
+			}).(pulumi.StringOutput)
+			grant, e := iam.NewRolePolicy(ctx, spec.name+"-enrollment", &iam.RolePolicyArgs{Role: role.Name, Policy: policy})
+			if e != nil {
+				return e
+			}
+			dependencies = append(dependencies, grant)
+		}
+		fn, e := lambda.NewFunction(ctx, spec.name, &lambda.FunctionArgs{Runtime: pulumi.String("provided.al2023"), Handler: pulumi.String("bootstrap"), Architectures: pulumi.StringArray{pulumi.String("arm64")}, Role: role.Arn, Code: pulumi.NewFileArchive(authArchives[spec.name]), Timeout: pulumi.Int(20), Environment: &lambda.FunctionEnvironmentArgs{Variables: variables}}, pulumi.DependsOn(dependencies))
 		if e != nil {
 			return e
 		}
@@ -275,9 +298,6 @@ func deploy(ctx *pulumi.Context) error {
 	if err = deployRuntime(ctx, cfg, httpAPI); err != nil {
 		return err
 	}
-	if err = deployCapture(ctx, cfg, httpAPI, pool, client, region, reset); err != nil {
-		return err
-	}
 	if err = deployReset(ctx, cfg, reset); err != nil {
 		return err
 	}
@@ -288,8 +308,7 @@ func deploy(ctx *pulumi.Context) error {
 	if indexURL := cfg.Get("indexUrl"); indexURL != "" {
 		ctx.Export("indexUrl", pulumi.String(indexURL))
 	}
-	defaults := runtimeconfig.Default(ctx.Stack())
-	defaults.Features.IDCapture = cfg.GetBool("captureEnabled")
+	defaults := deploymentRuntimeDefaults(ctx.Stack(), cfg.Get("captureEnabled"))
 	// New defaults use generic localized disclosure; admin overrides remain revisioned.
 	defaults.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if e := defaults.Validate(); e != nil {

@@ -41,8 +41,8 @@ func TestPublicValidationAndPolicyIdentity(t *testing.T) {
 		t.Fatal("content change retained consent identity")
 	}
 	disabled := Default("dev")
-	if disabled.Validate() != nil || disabled.Features.IDCapture {
-		t.Fatal("unsafe default")
+	if disabled.Validate() != nil || !disabled.Features.IDCapture {
+		t.Fatal("required capture default missing")
 	}
 }
 
