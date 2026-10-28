@@ -1,8 +1,8 @@
 {
   "docs/agents/index.md": {
     "path": "docs/es/agents/index.md",
-    "source_sha256": "83d2890fe6663f29d84d7aa76da563b54650125d31ae3fadf741cb535d81daa1",
-    "provenance": "Reviewed Spanish card extraction update 2026-10-28"
+    "source_sha256": "e41416faab5a0a748fec9df5d0de0e73960509b35c36a9d41a4b7b179a4d2bd4",
+    "provenance": "Reviewed Spanish AWS inventory navigation update 2026-10-28"
   },
   "docs/agents/quickstart.md": {
     "path": "docs/es/agents/quickstart.md",
