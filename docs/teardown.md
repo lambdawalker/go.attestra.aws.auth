@@ -6,16 +6,16 @@ From the repository root:
 
 ```text
 git pull
-.\teardown.bat
+.\scripts\teardown.bat
 ```
 
-Linux/macOS: `./teardown.sh`. Direct Go: `go -C tools/deploy run . -teardown`.
+Linux/macOS: `./scripts/teardown.sh`. Direct Go: `go -C tools/deploy run . -teardown`.
 
 The **first question is Environment to tear down**, with dev, qa, prod, locally known environments, and a custom-name option. Local teardown checkpoints are included so interrupted custom-environment removals remain selectable. Repository and credentials are requested only afterward; a saved teardown/setup repository is used as the default.
 
 ## Credentials and prerequisites
 
-Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. Cloudflare cleanup is optional: choose **Skip Cloudflare** before the token prompt to leave SES DNS records in place and continue tearing down AWS and GitHub. No Cloudflare token or API requests are needed when skipped. To clean up DNS automatically, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint. If the selected repository/environment has a credential vault, you can unlock it and reuse its GitHub/Cloudflare tokens, manual AWS credentials, and application Pulumi passphrase. SSO/browser credentials still use the refreshable AWS profile provider. Expired saved credentials can be replaced separately with `credentials.bat` or `credentials.sh`.
+Use the same GitHub token permissions as setup: Administration and Environments write, Actions read, Metadata read. Supply an AWS administrator identity through SSO, browser login, or access-key credentials. It needs permission to delete the stack resources and deployment role; the script refuses to use the deployment role itself. Enter the original stack passphrase. Cloudflare cleanup is optional: choose **Skip Cloudflare** before the token prompt to leave SES DNS records in place and continue tearing down AWS and GitHub. No Cloudflare token or API requests are needed when skipped. To clean up DNS automatically, use a zone-scoped token with Zone Read and DNS Edit. Tokens and passphrases are never saved in the teardown checkpoint. If the selected repository/environment has a credential vault, you can unlock it and reuse its GitHub/Cloudflare tokens, manual AWS credentials, and application Pulumi passphrase. SSO/browser credentials still use the refreshable AWS profile provider. Expired saved credentials can be replaced separately with `scripts/credentials.bat` or `scripts/credentials.sh`.
 
 Stop all local deployments and finish/cancel pending GitHub deployment runs first. The wizard checks for active/waiting Deploy workflow runs across the repository, but cannot prevent someone starting a new run afterward. Keep the environment in a maintenance window until teardown finishes.
 
@@ -71,7 +71,7 @@ The final report checks:
 - Route53 record names/types and matching Cloudflare SES/API record values. Recreating a matching Cloudflare record under a different ID does not pass verification. Checks use provider APIs, not potentially cached public DNS responses.
 - The Pulumi stack and GitHub environment, the public index entry, setup checkpoint files, stack YAML, default Android export, and the credential vault when its deletion was requested.
 
-Each row reports **DELETED**, **REMAINS**, **FAILED**, **RETAINED**, or **SKIPPED**. Resource absence requires an authoritative provider response: access denial, expired sessions, network failures, malformed responses, and unsupported resource types never count as deletion. Resources still visible are checked up to three times, with five seconds between passes. Other failures stop verification without marking teardown complete. The latest report and its UTC timestamp remain in the checkpoint; rerun `teardown.bat` / `teardown.sh` after resolving the reported issue. Validation does not automatically delete newly discovered or recreated resources.
+Each row reports **DELETED**, **REMAINS**, **FAILED**, **RETAINED**, or **SKIPPED**. Resource absence requires an authoritative provider response: access denial, expired sessions, network failures, malformed responses, and unsupported resource types never count as deletion. Resources still visible are checked up to three times, with five seconds between passes. Other failures stop verification without marking teardown complete. The latest report and its UTC timestamp remain in the checkpoint; rerun `scripts/teardown.bat` / `scripts/teardown.sh` after resolving the reported issue. Validation does not automatically delete newly discovered or recreated resources.
 
 Validation runs while the index teardown lock is still held. Once the public entry is confirmed absent and all required checks pass, the wizard releases the lock and marks teardown complete. A failure to release the lock also prevents completion.
 

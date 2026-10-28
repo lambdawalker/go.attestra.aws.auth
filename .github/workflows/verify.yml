@@ -15,7 +15,7 @@ jobs:
           go mod tidy
           go test ./...
           go vet ./...
-          bash build.sh
+          bash scripts/build.sh
           python3 scripts/check_lambda_archives.py
       - name: Test and compile Pulumi stack
         working-directory: infra
@@ -37,7 +37,7 @@ jobs:
           go-version: '1.26.6'
       - name: Build Windows-hosted Lambda archives
         run: |
-          ./build.bat
+          ./scripts/build.bat
           python scripts/check_lambda_archives.py
   capture:
     runs-on: ubuntu-latest

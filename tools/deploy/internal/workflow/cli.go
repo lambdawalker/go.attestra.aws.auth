@@ -138,7 +138,7 @@ func Run() error {
 		return errors.New("run in an interactive terminal; credentials are entered using hidden prompts")
 	}
 	o.Root = root
-	for _, file := range []string{"infra/Pulumi.yaml", "build.bat", "build.sh"} {
+	for _, file := range []string{"infra/Pulumi.yaml", "scripts/build.bat", "scripts/build.sh"} {
 		if _, err := os.Stat(filepath.Join(root, file)); err != nil {
 			return fmt.Errorf("invalid repository root: missing %s", file)
 		}
@@ -195,7 +195,7 @@ func Run() error {
 	runner := &processRunner{env: env}
 	identity, err := runner.Exec(o.Root, true, "aws", "sts", "get-caller-identity", "--output", "json", "--no-cli-pager")
 	if err != nil {
-		return errors.New("AWS credentials could not be verified; check their expiry and use credentials.bat/credentials.sh to replace saved manual credentials, or retry with -Sso/-Login")
+		return errors.New("AWS credentials could not be verified; check their expiry and use scripts/credentials.bat or scripts/credentials.sh to replace saved manual credentials, or retry with -Sso/-Login")
 	}
 	var id struct {
 		Account string

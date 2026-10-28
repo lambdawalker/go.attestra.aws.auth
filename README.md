@@ -80,7 +80,7 @@ On Windows PowerShell, run:
 
 ```powershell
 cd D:\dev\go.attestra.aws.auth
-.\build.bat
+.\scripts\build.bat
 python scripts/check_lambda_archives.py
 cd infra
 pulumi preview
@@ -95,8 +95,8 @@ On macOS/Linux, run:
 
 ```bash
 go mod tidy
-chmod +x build.sh
-./build.sh
+chmod +x scripts/build.sh
+./scripts/build.sh
 cd infra
 go mod tidy
 pulumi stack init dev
@@ -192,7 +192,7 @@ SES can evaluate `ses:SendEmail` against a verified recipient identity as well a
 
 ### Diagnosing email delivery
 
-For the current confirmation/session investigation, rebuild the Lambda archives from the repository root (`./build.bat` on Windows or `./build.sh` elsewhere), then run `pulumi up` in `infra`. In CloudWatch, inspect both the `email-confirm` and `cognito-grant-challenge` Lambda log groups. The temporary `confirm_*`, `cognito_session_*`, and `challenge_*` events show whether the proof was claimed, Cognito created a user, the grant challenge ran, and tokens were issued. Match the Android `EmailDebugX` `trace_id` with the `email-confirm` endpoint log. Test with a **fresh signup and link**, because an already confirmed proof is one-use. These temporary logs include test email addresses, identifiers, and raw provider errors; remove them after diagnosing the failure.
+For the current confirmation/session investigation, rebuild the Lambda archives from the repository root (`./scripts/build.bat` on Windows or `./scripts/build.sh` elsewhere), then run `pulumi up` in `infra`. In CloudWatch, inspect both the `email-confirm` and `cognito-grant-challenge` Lambda log groups. The temporary `confirm_*`, `cognito_session_*`, and `challenge_*` events show whether the proof was claimed, Cognito created a user, the grant challenge ran, and tokens were issued. Match the Android `EmailDebugX` `trace_id` with the `email-confirm` endpoint log. Test with a **fresh signup and link**, because an already confirmed proof is one-use. These temporary logs include test email addresses, identifiers, and raw provider errors; remove them after diagnosing the failure.
 
 **Custom challenge response gotcha:** Cognito expects its complete trigger event returned with the `response` section updated. Dropping common fields such as `version`, `region`, `userPoolId`, `userName`, or `callerContext` can make `AdminInitiateAuth` fail with `InvalidLambdaResponseException: Unrecognizable lambda output`. The challenge handler preserves the original event, including fields added by Cognito in the future, while changing only its response. A confirmation that already created its Cognito user cannot be replayed for tokens; after deploying this fix, test with a new email signup or use email OTP recovery.
 
@@ -211,7 +211,7 @@ Both scripts default to profile `attestra` and region `us-east-2`; override with
 To expose dependency failures in a **restricted development stack**, build from the repository root, then configure `diagnosticMode` and redeploy from `infra`:
 
 ```sh
-./build.sh # use ./build.bat on Windows
+./scripts/build.sh # use ./scripts/build.bat on Windows
 cd infra
 pulumi config set diagnosticMode true
 pulumi up
@@ -229,13 +229,13 @@ Run `go test ./...` and `go vet ./...` in the root, then `go build ./...` in `in
 
 After email confirmation issues an access token, the Android app calls `POST /passkeys/options` with `Authorization: Bearer <access_token>`. The response is `{"creation_options": {...}}`. Android Credential Manager creates the credential, then the app sends `POST /passkeys/complete` with the same bearer token and `{"credential": <registration response object>}`. Only `{"registered": true}` confirms completion. A `401 sign_in_required` means the user must obtain a new signed-in session; a `400 invalid_credential` allows a fresh attempt. Cognito stores and verifies the credential. These Lambdas do not log access tokens, challenges, or credentials.
 
-The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `build.bat` (Windows) or `./build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey and email sign-in endpoints are documented under [HTTP integration reference](docs/agents/api.md).
+The Pulumi stack enables `WEB_AUTHN` as an allowed first factor, configures Cognito's relying party ID from the hostname of `appOrigin`, and creates one Lambda for each passkey endpoint. Run `scripts/build.bat` (Windows) or `./scripts/build.sh` (Unix) before `pulumi up`. The existing pool updates in place; inspect the preview. The user's access token must include `aws.cognito.signin.user.admin`; if it does not, use a compatible Cognito sign-in flow to issue it. Passkey and email sign-in endpoints are documented under [HTTP integration reference](docs/agents/api.md).
 
 For Android setup and device validation, follow the [Credential Manager and association guide](https://github.com/lambdawalker/android.attestra.auth/blob/main/README.md#passkey-registration-in-the-live-onboarding-flow). Registration endpoints use the same `apiUrl` output as email confirmation.
 
 ### GitHub Actions deployment
 
-Run `.\setup.bat` or `./setup.sh` for the complete bootstrap wizard (`setup-github.bat` / `.sh` are aliases). For IAM/GitHub maintenance only, use `go -C tools/deploy run . -setup-github`. See [GitHub deployment setup](docs/github-deployment.md) for the manual preview/deploy workflow, AWS OIDC role, and `dev` environment variables and passphrase secret. No stored AWS access keys or Pulumi Cloud token are needed.
+Run `.\setup.bat` or `./setup.sh` for the complete bootstrap wizard (`scripts/setup-github.bat` / `.sh` are aliases). For IAM/GitHub maintenance only, use `go -C tools/deploy run . -setup-github`. See [GitHub deployment setup](docs/github-deployment.md) for the manual preview/deploy workflow, AWS OIDC role, and `dev` environment variables and passphrase secret. No stored AWS access keys or Pulumi Cloud token are needed.
 
 ### Interactive deployment with S3 state
 
@@ -276,7 +276,7 @@ Run `setup.bat` (Windows) or `./setup.sh` (Linux/macOS). Choose `dev`, `qa`, `pr
 
 ## Remove an environment
 
-Use `teardown.bat` or `./teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](docs/teardown.md). The state bucket and shared OIDC provider are retained.
+Use `scripts/teardown.bat` or `./scripts/teardown.sh` for a reviewed, resumable teardown of the selected stack, GitHub environment, deployment role, and SES Cloudflare records. See [teardown and recovery](docs/teardown.md). The state bucket and shared OIDC provider are retained.
 
 ## Shared environment discovery
 
@@ -284,8 +284,14 @@ Setup provisions an independent `infra-index/` Pulumi project for `https://index
 
 For existing environments, pull `main` and run `setup.bat -force-setup` (or `./setup.sh -force-setup`) once per environment, then commit the generated application and shared-stack YAML. See [environment index setup, concurrency, and recovery](docs/environment-index.md). GitHub's **publish** operation retries a saved index publication after a successful deployment.
 
-To remove the shared index itself after all environments are torn down, use `teardown-index.bat` or `./teardown-index.sh`. This is separate from environment teardown and includes registry, DNS, and deletion checks. See [shared index teardown](docs/teardown-index.md).
+To remove the shared index itself after all environments are torn down, use `scripts/teardown-index.bat` or `./scripts/teardown-index.sh`. This is separate from environment teardown and includes registry, DNS, and deletion checks. See [shared index teardown](docs/teardown-index.md).
 
 ## Android domain associations
 
 See [Android association hosting](docs/android-associations.md) for approved public fingerprints, optional S3/CloudFront hosting, staged DNS/certificate readiness, CI updates and teardown.
+
+### Local launchers
+
+Keep `setup.bat` / `setup.sh` and `deploy.bat` / `deploy.sh` at the repository root. Supporting launchers live in `scripts/`: `build`, `credentials`, `associations`, `setup-github` (setup alias), `teardown`, and `teardown-index`, each with `.bat` and `.sh` variants. All launchers resolve the repository from their own location and forward arguments, so they can be called from another working directory, including paths containing spaces.
+
+On Windows, use the `.bat` launchers from PowerShell or Command Prompt; Bash is not required. The `.sh` launchers use a POSIX shell on Linux/macOS and can also be run with Git Bash on Windows (for example, `sh scripts/build.sh`). WSL is another option, with Go, AWS CLI, Pulumi, and credentials configured inside WSL. Deployment logic remains shared in `tools/deploy`.

@@ -39,7 +39,7 @@ States: `uploading`, `finalizing`, `ready`, `requires_recapture`, `failed`, `can
 
 ## Deployment and operations
 
-`build.sh` / `build.bat` package all three new Lambdas. `infra/capture.go` provisions a private versioned, owner-enforced SSE-S3 bucket; TLS-only policy; encrypted DynamoDB with PITR and a `work-due` GSI; encrypted SQS + DLQ; worker mapping; minute sweeper; JWT routes; scoped roles; and a DLQ alarm. Capture reservations and worker queue concurrency are [configured per stack](github-deployment.md#capture-concurrency-per-environment); dev uses shared capacity and a queue maximum of two. No resources were deployed during implementation.
+`scripts/build.sh` / `scripts/build.bat` package all three new Lambdas. `infra/capture.go` provisions a private versioned, owner-enforced SSE-S3 bucket; TLS-only policy; encrypted DynamoDB with PITR and a `work-due` GSI; encrypted SQS + DLQ; worker mapping; minute sweeper; JWT routes; scoped roles; and a DLQ alarm. Capture reservations and worker queue concurrency are [configured per stack](github-deployment.md#capture-concurrency-per-environment); dev uses shared capacity and a queue maximum of two. No resources were deployed during implementation.
 
 Capture defaults **disabled**. Before enabling, choose and evaluate a two-sided document type and jurisdiction, approve the purpose and seven-day image retention, verify the AWS region, connect alarm notifications, and complete the real-device/S3 smoke checks below. Publish the approved settings through the [admin console](admin-runtime-config.md). Pulumi `captureDocumentType`, `captureJurisdiction`, `capturePurpose` and `captureEnabled` provide defaults until an admin override; fenced synchronization preserves overrides. `sample_card` cannot be enabled in live infrastructure. This release supports exactly `front`/`back`; passports and additional policies require another implementation/policy version. SSE-KMS is not configured by this release.
 
@@ -49,6 +49,6 @@ The API role needs `GetObject` for HEAD metadata (S3 has no HEAD-only IAM action
 
 ## Verification
 
-Unit tests cover create replay/ownership, immutable version reads, stale finalize rejection, cancellation during work, invalid JPEGs, expiration/deletion, strict request bodies, JWT context, signed headers, bounded reads, XML version deletion, and DynamoDB ID round trips. Run `go test -race ./...`, `go vet ./...`, `bash build.sh`, `python3 scripts/check_lambda_archives.py`, and `(cd infra && go build ./...)`.
+Unit tests cover create replay/ownership, immutable version reads, stale finalize rejection, cancellation during work, invalid JPEGs, expiration/deletion, strict request bodies, JWT context, signed headers, bounded reads, XML version deletion, and DynamoDB ID round trips. Run `go test -race ./...`, `go vet ./...`, `bash scripts/build.sh`, `python3 scripts/check_lambda_archives.py`, and `(cd infra && go build ./...)`.
 
 Deployment smoke gate: real Cognito access vs ID/expired tokens; cross-account IDs; real PUT with exact/changed checksum/type; missing side; late overwrites after finalize; duplicate SQS deliveries; terminate a leased worker; cancel during validation; wait for URL expiry and check all version deletion; DLQ/sweep recovery; inspect pinned metadata-free derivatives and ready event. No AWS integration result is implied by unit tests.

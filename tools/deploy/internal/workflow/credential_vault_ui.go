@@ -47,10 +47,10 @@ func (w *bootstrapWizard) loadCredentialsPrompt(repo string, fresh, ask bool) er
 	}
 	vault, values, err := credentialvault.Unlock(path, scope, phrase)
 	if err != nil {
-		return fmt.Errorf("%w; use credentials.bat/credentials.sh to replace credentials, change the passphrase or delete the vault", err)
+		return fmt.Errorf("%w; use scripts/credentials.bat or scripts/credentials.sh to replace credentials, change the passphrase or delete the vault", err)
 	}
 	w.vault, w.secrets = vault, values
-	fmt.Println("✓ Credentials unlocked locally. Saved tokens may expire; use credentials.bat/credentials.sh to replace them. AWS SSO/browser sessions remain managed by the AWS CLI.")
+	fmt.Println("✓ Credentials unlocked locally. Saved tokens may expire; use scripts/credentials.bat or scripts/credentials.sh to replace them. AWS SSO/browser sessions remain managed by the AWS CLI.")
 	return nil
 }
 func (w *bootstrapWizard) ensureCloudflare() error {
