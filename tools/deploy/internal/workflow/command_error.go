@@ -31,6 +31,22 @@ func pulumiCommandError(args []string, diagnostic string, env []string, cause er
 	if len(args) > 1 && args[0] == "config" && args[1] == "set" {
 		return fmt.Errorf("%s failed: %w (configuration-write diagnostics suppressed to protect secret values)", operation, cause)
 	}
+	return sanitizedCommandError(operation, diagnostic, env, cause)
+}
+
+// Only these read-only S3 operations may expose sanitized stderr. Other AWS
+// commands can echo submitted secrets and retain the generic error.
+func awsBucketCommandError(args []string, diagnostic string, env []string, cause error) error {
+	if len(args) >= 2 && args[0] == "s3api" {
+		switch args[1] {
+		case "head-bucket", "get-bucket-versioning", "get-public-access-block":
+			return sanitizedCommandError("aws s3api "+args[1], diagnostic, env, cause)
+		}
+	}
+	return fmt.Errorf("aws failed: %w", cause)
+}
+
+func sanitizedCommandError(operation, diagnostic string, env []string, cause error) error {
 	// Remove terminal escape sequences before matching redaction values.
 	clean := func(text string) string {
 		text = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`).ReplaceAllString(text, "")
