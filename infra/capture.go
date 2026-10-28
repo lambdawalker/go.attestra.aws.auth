@@ -46,13 +46,7 @@ func deployCapture(ctx *pulumi.Context, cfg *config.Config, api *apigatewayv2.Ap
 	}
 	ctx.Export("captureEffectiveReservedConcurrency", pulumi.Int(reserved))
 	enabled := cfg.GetBool("captureEnabled")
-	kind := cfg.Get("captureDocumentType")
-	if kind == "" {
-		kind = "sample_card"
-	}
-	if enabled && (kind == "sample_card" || cfg.Get("capturePurpose") == "" || cfg.Get("captureJurisdiction") == "") {
-		return fmt.Errorf("capture requires document type, purpose and jurisdiction before enabling")
-	}
+	kind := "id_card"
 	bucket, e := s3.NewBucketV2(ctx, "id-evidence", &s3.BucketV2Args{ForceDestroy: pulumi.Bool(false)})
 	if e != nil {
 		return e

@@ -24,9 +24,10 @@ type Features struct {
 	IDCapture bool `json:"idCapture" pulumi:"idCapture"`
 }
 type Capture struct {
-	DocumentType string `json:"documentType" pulumi:"documentType"`
-	Jurisdiction string `json:"jurisdiction" pulumi:"jurisdiction"`
-	Purpose      string `json:"purpose" pulumi:"purpose"`
+	Messages     capture.Purposes `json:"messages" pulumi:"messages"`
+	DocumentType string           `json:"documentType" pulumi:"documentType"`
+	Jurisdiction string           `json:"jurisdiction" pulumi:"jurisdiction"`
+	Purpose      string           `json:"purpose" pulumi:"purpose"`
 }
 type Config struct {
 	SchemaVersion int      `json:"schemaVersion" pulumi:"schemaVersion"`
@@ -38,7 +39,7 @@ type Config struct {
 }
 
 func Default(env string) Config {
-	return Config{SchemaVersion: 1, Environment: env, UpdatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339), Capture: Capture{DocumentType: "sample_card"}}
+	return Config{SchemaVersion: 1, Environment: env, UpdatedAt: time.Unix(0, 0).UTC().Format(time.RFC3339), Capture: Capture{DocumentType: "id_card", Purpose: capture.DefaultPurposes().EN, Messages: capture.DefaultPurposes()}}
 }
 func (c Config) Validate() error {
 	if c.SchemaVersion != 1 || !ValidEnvironment(c.Environment) || c.Revision < 0 {
@@ -47,18 +48,25 @@ func (c Config) Validate() error {
 	if _, e := time.Parse(time.RFC3339, c.UpdatedAt); e != nil {
 		return ErrInvalid
 	}
-	for _, v := range []string{c.Capture.DocumentType, c.Capture.Purpose, c.Capture.Jurisdiction} {
+	for _, v := range []string{c.Capture.DocumentType, c.Capture.Purpose, c.Capture.Jurisdiction, c.Capture.Messages.EN, c.Capture.Messages.ES, c.Capture.Messages.FR} {
 		if len(v) > 1024 || strings.TrimSpace(v) != v || strings.ContainsFunc(v, unicode.IsControl) {
 			return ErrInvalid
 		}
 	}
-	if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(c.Capture.DocumentType) || (c.Features.IDCapture && (c.Capture.DocumentType == "sample_card" || c.Capture.Purpose == "" || c.Capture.Jurisdiction == "")) {
+	if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(c.Capture.DocumentType) || (c.Features.IDCapture && (c.Capture.DocumentType == "sample_card" || c.Capture.Purpose == "")) {
+		return ErrInvalid
+	}
+	if c.Capture.Messages != (capture.Purposes{}) && c.Capture.Messages.EN == "" {
 		return ErrInvalid
 	}
 	return nil
 }
 func (c Config) Policy() capture.Policy {
-	return capture.Policy{Enabled: c.Features.IDCapture, DocumentType: c.Capture.DocumentType, Jurisdiction: c.Capture.Jurisdiction, Purpose: c.Capture.Purpose, Slots: []string{"front", "back"}, ContentType: "image/jpeg", MaxBytes: capture.MaxBytes, RetentionDays: 7}.WithVersion()
+	messages := c.Capture.Messages
+	if messages.EN == "" {
+		messages = capture.DefaultPurposes()
+	}
+	return capture.Policy{Enabled: c.Features.IDCapture, DocumentType: "id_card", Purpose: messages.EN, Purposes: messages, Slots: []string{"front", "back"}, ContentType: "image/jpeg", MaxBytes: capture.MaxBytes, RetentionDays: 7}.WithVersion()
 }
 
 type Version struct {
@@ -110,6 +118,12 @@ func (s Service) Publish(ctx context.Context, g Grant, expected int64, c Config,
 	if s.Now != nil {
 		now = s.Now()
 	}
+	c.Capture.DocumentType = "id_card"
+	c.Capture.Jurisdiction = ""
+	if c.Capture.Messages == (capture.Purposes{}) {
+		c.Capture.Messages = capture.DefaultPurposes()
+	}
+	c.Capture.Purpose = c.Capture.Messages.EN
 	c.SchemaVersion = 1
 	c.Revision = expected + 1
 	c.UpdatedAt = now.UTC().Format(time.RFC3339Nano)

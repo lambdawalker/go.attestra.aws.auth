@@ -52,26 +52,11 @@
               New capture sessions use these settings. Existing captures retain
               the disclosure the user accepted.
             </p>
-            <label
-              >Document type<input
-                id="documentType"
-                required
-                maxlength="64"
-                pattern="[a-z][a-z0-9_]{0,63}"
-                placeholder="passport" /></label
-            ><label
-              >Jurisdiction<input
-                id="jurisdiction"
-                maxlength="1024"
-                placeholder="Country or region governing this capture" /></label
-            ><label
-              >Purpose<textarea
-                id="purpose"
-                maxlength="1024"
-                rows="4"
-                placeholder="Explain exactly why this document is collected"
-              ></textarea>
-            </label>
+            <p>Document type: <strong>ID card</strong> (including driver’s licenses and state or federal IDs).</p>
+            <p class="muted">One disclosure per language. Country of origin is collected after scanning. English is the fallback when a translation is unavailable.</p>
+            <label>Disclosure — English<textarea id="purposeEn" required maxlength="1024" rows="3"></textarea></label>
+            <label>Disclosure — Español<textarea id="purposeEs" maxlength="1024" rows="3"></textarea></label>
+            <label>Disclosure — Français<textarea id="purposeFr" maxlength="1024" rows="3"></textarea></label>
             <section id="review" hidden class="notice">
               <strong>Review changes</strong>
               <pre id="diff"></pre>
@@ -80,8 +65,7 @@
               ><button type="button" id="cancelPublish">Keep editing</button>
             </section>
             <div class="notice">
-              Enabling capture requires a purpose, jurisdiction, and a document
-              type other than sample_card.
+              The disclosure explains the scan. It does not claim the user’s identity has been verified.
             </div>
             <button type="submit" id="publish">Publish revision</button>
           </form>

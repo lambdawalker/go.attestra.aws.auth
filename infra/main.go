@@ -276,11 +276,7 @@ func deploy(ctx *pulumi.Context) error {
 	}
 	defaults := runtimeconfig.Default(ctx.Stack())
 	defaults.Features.IDCapture = cfg.GetBool("captureEnabled")
-	defaults.Capture.Purpose = cfg.Get("capturePurpose")
-	defaults.Capture.Jurisdiction = cfg.Get("captureJurisdiction")
-	if v := cfg.Get("captureDocumentType"); v != "" {
-		defaults.Capture.DocumentType = v
-	}
+	// New defaults use generic localized disclosure; admin overrides remain revisioned.
 	defaults.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if e := defaults.Validate(); e != nil {
 		return e

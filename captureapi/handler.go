@@ -96,13 +96,17 @@ func (h Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest)
 	if method == "POST" && path == "/onboarding/id/captures" {
 		var in struct {
 			ExpectedPolicyVersion string `json:"expected_policy_version"`
+			Language              string `json:"disclosure_language"`
 			OperationKey          string `json:"operation_key"`
 			DocumentType          string `json:"document_type"`
 		}
 		if e := decode(req, &in); e != nil {
 			return fail(e), nil
 		}
-		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType, in.ExpectedPolicyVersion)
+		if in.Language == "" {
+			in.Language = "en"
+		}
+		r, e := h.Service.Create(ctx, owner, in.OperationKey, in.DocumentType, in.ExpectedPolicyVersion, in.Language)
 		if e != nil {
 			return fail(e), nil
 		}

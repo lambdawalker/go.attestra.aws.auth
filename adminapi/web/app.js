@@ -122,8 +122,10 @@ async function load() {
   $("revision").textContent = current.revision;
   $("updated").textContent = new Date(current.updatedAt).toLocaleString();
   $("enabled").checked = current.features.idCapture;
-  for (const name of ["documentType", "jurisdiction", "purpose"])
-    $(name).value = current.capture[name];
+  const messages = current.capture.messages || {};
+  $("purposeEn").value = messages.en || "Scan your ID to provide your identity details. You'll review and confirm the information afterward.";
+  $("purposeEs").value = messages.es ?? "Escanea tu identificación para proporcionar tus datos de identidad. Después podrás revisar y confirmar la información.";
+  $("purposeFr").value = messages.fr ?? "Numérisez votre pièce d’identité pour fournir vos renseignements d’identité. Vous pourrez ensuite les vérifier et les confirmer.";
   $("grant").hidden = !grants.find((g) => g.environment === env)?.manageGrants;
   $("config").hidden = false;
   for (const version of versions) {
@@ -162,11 +164,7 @@ function review(body) {
       current.features.idCapture,
       body.config.features.idCapture,
     ],
-    ...["documentType", "jurisdiction", "purpose"].map((n) => [
-      n,
-      current.capture[n],
-      body.config.capture[n],
-    ]),
+    ...["en", "es", "fr"].map((n) => ["Disclosure " + n, current.capture.messages?.[n] || "", body.config.capture.messages?.[n] || ""]),
   ]) {
     if (before !== after)
       changes.push(
@@ -269,27 +267,14 @@ $("config").onsubmit = (event) => {
     ...current,
     features: { idCapture: $("enabled").checked },
     capture: {
-      documentType: $("documentType").value.trim(),
-      jurisdiction: $("jurisdiction").value.trim(),
-      purpose: $("purpose").value.trim(),
+      documentType: "id_card",
+      jurisdiction: "",
+      purpose: $("purposeEn").value.trim(),
+      messages: { en: $("purposeEn").value.trim(), es: $("purposeEs").value.trim(), fr: $("purposeFr").value.trim() },
     },
   };
-  if (
-    new TextEncoder().encode(config.capture.purpose).length > 1024 ||
-    new TextEncoder().encode(config.capture.jurisdiction).length > 1024
-  ) {
-    tell("Purpose and jurisdiction must each be at most 1024 UTF-8 bytes.");
-    return;
-  }
-  if (
-    config.features.idCapture &&
-    (config.capture.documentType === "sample_card" ||
-      !config.capture.purpose ||
-      !config.capture.jurisdiction)
-  ) {
-    tell(
-      "Complete the document type, jurisdiction, and purpose before enabling capture.",
-    );
+  if (!config.capture.messages.en || Object.values(config.capture.messages).some(v => new TextEncoder().encode(v).length > 1024)) {
+    tell("English disclosure is required. Each translation must be at most 1024 UTF-8 bytes.");
     return;
   }
   review({ expectedRevision: current.revision, config });
