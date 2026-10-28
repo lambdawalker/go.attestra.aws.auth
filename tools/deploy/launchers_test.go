@@ -17,7 +17,7 @@ func TestDirectLaunchers(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(t.TempDir(), "repo with spaces")
-	if err = os.Mkdir(dir, 0700); err != nil {
+	if err = os.MkdirAll(filepath.Join(dir, "scripts"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	trace := filepath.Join(dir, "trace.txt")
@@ -30,7 +30,7 @@ func TestDirectLaunchers(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, goName), []byte(stub), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for name, flag := range map[string]string{"deploy": "-backend", "setup": "-bootstrap", "setup-github": "-bootstrap", "build": "-build", "teardown": "-teardown"} {
+	for name, flag := range map[string]string{"deploy": "-backend", "setup": "-bootstrap", "scripts/setup-github": "-bootstrap", "scripts/build": "-build", "scripts/teardown": "-teardown"} {
 		data, e := os.ReadFile(filepath.Join(root, name+ext))
 		if e != nil {
 			t.Fatal(e)

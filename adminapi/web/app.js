@@ -112,7 +112,10 @@ async function load() {
     env = $("environment").value;
   current = null;
   proposed = null;
-  resetState = null; clearTimeout(resetTimer); $("resetPanel").hidden = true; $("resetConfirmation").value = "";
+  resetState = null;
+  clearTimeout(resetTimer);
+  $("resetPanel").hidden = true;
+  $("resetConfirmation").value = "";
   $("review").hidden = true;
   $("config").hidden = true;
   $("grant").hidden = true;
@@ -126,9 +129,15 @@ async function load() {
   $("updated").textContent = new Date(current.updatedAt).toLocaleString();
   $("enabled").checked = current.features.idCapture;
   const messages = current.capture.messages || {};
-  $("purposeEn").value = messages.en || "Scan your ID to provide your identity details. You'll review and confirm the information afterward.";
-  $("purposeEs").value = messages.es ?? "Escanea tu identificación para proporcionar tus datos de identidad. Después podrás revisar y confirmar la información.";
-  $("purposeFr").value = messages.fr ?? "Numérisez votre pièce d’identité pour fournir vos renseignements d’identité. Vous pourrez ensuite les vérifier et les confirmer.";
+  $("purposeEn").value =
+    messages.en ||
+    "Scan your ID to provide your identity details. You'll review and confirm the information afterward.";
+  $("purposeEs").value =
+    messages.es ??
+    "Escanea tu identificación para proporcionar tus datos de identidad. Después podrás revisar y confirmar la información.";
+  $("purposeFr").value =
+    messages.fr ??
+    "Numérisez votre pièce d’identité pour fournir vos renseignements d’identité. Vous pourrez ensuite les vérifier et les confirmer.";
   $("grant").hidden = !grants.find((g) => g.environment === env)?.manageGrants;
   $("config").hidden = false;
   for (const version of versions) {
@@ -156,7 +165,10 @@ async function load() {
     $("history").append(li);
   }
   tell("Environment " + env + " · Configuration is current.");
-  if (grants.find(g => g.environment === env)?.manageGrants) { $("resetPanel").hidden = false; refreshReset(); }
+  if (grants.find((g) => g.environment === env)?.manageGrants) {
+    $("resetPanel").hidden = false;
+    refreshReset();
+  }
 }
 function review(body) {
   if (!current) return;
@@ -168,7 +180,11 @@ function review(body) {
       current.features.idCapture,
       body.config.features.idCapture,
     ],
-    ...["en", "es", "fr"].map((n) => ["Disclosure " + n, current.capture.messages?.[n] || "", body.config.capture.messages?.[n] || ""]),
+    ...["en", "es", "fr"].map((n) => [
+      "Disclosure " + n,
+      current.capture.messages?.[n] || "",
+      body.config.capture.messages?.[n] || "",
+    ]),
   ]) {
     if (before !== after)
       changes.push(
@@ -274,11 +290,22 @@ $("config").onsubmit = (event) => {
       documentType: "id_card",
       jurisdiction: "",
       purpose: $("purposeEn").value.trim(),
-      messages: { en: $("purposeEn").value.trim(), es: $("purposeEs").value.trim(), fr: $("purposeFr").value.trim() },
+      messages: {
+        en: $("purposeEn").value.trim(),
+        es: $("purposeEs").value.trim(),
+        fr: $("purposeFr").value.trim(),
+      },
     },
   };
-  if (!config.capture.messages.en || Object.values(config.capture.messages).some(v => new TextEncoder().encode(v).length > 1024)) {
-    tell("English disclosure is required. Each translation must be at most 1024 UTF-8 bytes.");
+  if (
+    !config.capture.messages.en ||
+    Object.values(config.capture.messages).some(
+      (v) => new TextEncoder().encode(v).length > 1024,
+    )
+  ) {
+    tell(
+      "English disclosure is required. Each translation must be at most 1024 UTF-8 bytes.",
+    );
     return;
   }
   review({ expectedRevision: current.revision, config });
@@ -344,7 +371,8 @@ $("grant").onsubmit = async (event) => {
 });
 
 async function refreshReset() {
-  const env = current?.environment, generation = loadGeneration;
+  const env = current?.environment,
+    generation = loadGeneration;
   if (!env) return;
   clearTimeout(resetTimer);
   try {
@@ -352,35 +380,67 @@ async function refreshReset() {
     if (generation !== loadGeneration || current?.environment !== env) return;
     resetState = result;
     const state = result.state;
-    $("resetStatus").textContent = !result.enabled ? "Reset is disabled for this environment." :
-      state.error ? "Reset paused after an error during " + state.phase + ". Resolve the operational issue, then confirm the environment name to resume." :
-      state.phase && state.phase !== "complete" ? "Reset in progress: " + state.phase + ". The backend is temporarily unavailable. Draining active work takes at least seven minutes." :
-      state.phase === "complete" ? "Reset completed. Users must sign in again." : "No reset has run.";
+    $("resetStatus").textContent = !result.enabled
+      ? "Reset is disabled for this environment."
+      : state.error
+        ? "Reset paused after an error during " +
+          state.phase +
+          ". Resolve the operational issue, then confirm the environment name to resume."
+        : state.phase && state.phase !== "complete"
+          ? "Reset in progress: " +
+            state.phase +
+            ". The backend is temporarily unavailable. Draining active work takes at least seven minutes."
+          : state.phase === "complete"
+            ? "Reset completed. Users must sign in again."
+            : "No reset has run.";
     updateResetButton();
-    if (state.phase && state.phase !== "complete" && !state.error) resetTimer = setTimeout(refreshReset, 5000);
+    if (state.phase && state.phase !== "complete" && !state.error)
+      resetTimer = setTimeout(refreshReset, 5000);
   } catch (e) {
     if (generation !== loadGeneration) return;
-    resetState = null; updateResetButton();
-    $("resetStatus").textContent = "Reset status unavailable. Deploy backend reset support, or refresh to retry.";
+    resetState = null;
+    updateResetButton();
+    $("resetStatus").textContent =
+      "Reset status unavailable. Deploy backend reset support, or refresh to retry.";
   }
 }
 function updateResetButton() {
-  const active = resetState?.state.phase && resetState.state.phase !== "complete";
-  $("resetEnvironment").disabled = !resetState?.enabled || $("resetConfirmation").value !== current?.environment || (active && !resetState.state.error);
-  $("resetEnvironment").textContent = resetState?.state.error ? "Resume environment reset" : "Reset environment";
+  const active =
+    resetState?.state.phase && resetState.state.phase !== "complete";
+  $("resetEnvironment").disabled =
+    !resetState?.enabled ||
+    $("resetConfirmation").value !== current?.environment ||
+    (active && !resetState.state.error);
+  $("resetEnvironment").textContent = resetState?.state.error
+    ? "Resume environment reset"
+    : "Reset environment";
 }
 $("resetConfirmation").oninput = updateResetButton;
 $("refreshReset").onclick = refreshReset;
 $("resetEnvironment").onclick = async () => {
   if (!current || !resetState || $("resetEnvironment").disabled) return;
-  const env = current.environment, generation = loadGeneration;
-  const request = { action: resetState.state.error ? "resume" : "start", confirmation: $("resetConfirmation").value,
-    operation: resetState.state.error ? resetState.state.operation : crypto.randomUUID() };
+  const env = current.environment,
+    generation = loadGeneration;
+  const request = {
+    action: resetState.state.error ? "resume" : "start",
+    confirmation: $("resetConfirmation").value,
+    operation: resetState.state.error
+      ? resetState.state.operation
+      : crypto.randomUUID(),
+  };
   $("resetEnvironment").disabled = true;
   try {
-    await api("/api/environments/" + env + "/reset", {method:"POST", body:JSON.stringify(request)});
+    await api("/api/environments/" + env + "/reset", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
     if (generation !== loadGeneration) return;
     $("resetConfirmation").value = "";
-  } catch (e) { if (generation === loadGeneration) tell("Reset request could not be confirmed. Refresh status before retrying."); }
+  } catch (e) {
+    if (generation === loadGeneration)
+      tell(
+        "Reset request could not be confirmed. Refresh status before retrying.",
+      );
+  }
   if (generation === loadGeneration) await refreshReset();
 };

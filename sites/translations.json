@@ -16,8 +16,8 @@
   },
   "docs/agents/operations.md": {
     "path": "docs/es/agents/operations.md",
-    "source_sha256": "264705a7261fc5c0b587cc115c0495856eb94b3f77479ac35c79f0dd9d5fc24f",
-    "provenance": "Reviewed Spanish translation, documentation update 2026-10-11"
+    "source_sha256": "6d844497c8f498ee3eb0fbf0fa0d9a5da9bee1418579e4a52539b819d5142b69",
+    "provenance": "Reviewed Spanish environment reset update 2026-10-28"
   },
   "docs/agents/integration.md": {
     "path": "docs/es/agents/integration.md",

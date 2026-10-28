@@ -22,7 +22,7 @@ func TestLambdaBuildsDeduplicatesSignin(t *testing.T) {
 			seen[name] = true
 		}
 	}
-	if len(jobs) != 12 || len(seen) != 17 {
+	if len(jobs) != 13 || len(seen) != 18 {
 		t.Fatal(len(jobs), len(seen))
 	}
 }

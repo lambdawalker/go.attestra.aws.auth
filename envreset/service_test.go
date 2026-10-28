@@ -19,8 +19,9 @@ func (m *mem) Save(_ context.Context, old, next State) error {
 }
 
 type fake struct {
-	calls []string
-	fail  bool
+	calls       []string
+	fail        bool
+	restoreFail bool
 }
 
 func (f *fake) Snapshot(context.Context) (map[string]int, error) {
@@ -41,6 +42,9 @@ func (f *fake) Clear(_ context.Context, kind string) (bool, error) {
 }
 func (f *fake) Restore(context.Context, map[string]int) error {
 	f.calls = append(f.calls, "restore")
+	if f.restoreFail {
+		return errors.New("restore failed")
+	}
 	return nil
 }
 func TestResetFencesDrainAndCompletes(t *testing.T) {
@@ -122,5 +126,32 @@ func TestResetRequiresExactConfirmationAndFailureStaysPaused(t *testing.T) {
 	q.Operation = "another_operation_123"
 	if _, e := s.Start(context.Background(), q); e != ErrConflict {
 		t.Fatal("replaced active operation", e)
+	}
+}
+
+func TestPartialRestoreRepausesAndResumeDrainsAgain(t *testing.T) {
+	m := &mem{state: State{Revision: 1, Operation: "reset_operation_123", Phase: "restore", Concurrency: map[string]int{"app": -1}}}
+	f := &fake{restoreFail: true}
+	s := Service{Store: m, Backend: f, Enabled: true, Environment: "dev"}
+	if err := s.Work(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m.state.Phase != "pause" || m.state.Error == "" || len(f.calls) != 2 || f.calls[1] != "pause" {
+		t.Fatal(m.state, f.calls)
+	}
+	_, err := s.Resume(context.Background(), Request{Environment: "dev", Confirmation: "dev", Operation: m.state.Operation, Actor: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Work(context.Background()); err != nil || m.state.Phase != "drain" {
+		t.Fatal(m.state, err)
+	}
+}
+func TestActiveLeasePreventsConcurrentWork(t *testing.T) {
+	m := &mem{state: State{Revision: 1, Phase: "tables", LeaseUntil: 200}}
+	f := &fake{}
+	s := Service{Store: m, Backend: f, Now: func() time.Time { return time.Unix(100, 0) }}
+	if err := s.Work(context.Background()); err != nil || len(f.calls) != 0 {
+		t.Fatal(err, f.calls)
 	}
 }

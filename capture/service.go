@@ -135,6 +135,9 @@ func (s Service) Create(ctx context.Context, owner, key, kind string, expected .
 	if !policy.Enabled {
 		return Record{}, ErrDisabled
 	}
+	if language != policy.Purposes.Language(language) {
+		return Record{}, ErrInvalid
+	}
 	if kind != policy.DocumentType {
 		return Record{}, ErrInvalid
 	}

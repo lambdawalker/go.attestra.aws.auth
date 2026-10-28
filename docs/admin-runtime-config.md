@@ -44,14 +44,19 @@ The table has on-demand capacity, encryption, point-in-time recovery, DynamoDB d
   "updatedAt": "2026-10-27T12:00:00Z",
   "features": { "idCapture": false },
   "capture": {
-    "documentType": "sample_card",
+    "documentType": "id_card",
     "jurisdiction": "",
-    "purpose": ""
+    "purpose": "Scan your ID to provide your identity details. You'll review and confirm the information afterward.",
+    "messages": {
+      "en": "Scan your ID to provide your identity details. You'll review and confirm the information afterward.",
+      "es": "Escanea tu identificación para proporcionar tus datos de identidad. Después podrás revisar y confirmar la información.",
+      "fr": "Numérisez votre pièce d’identité pour fournir vos renseignements d’identité. Vous pourrez ensuite les vérifier et les confirmer."
+    }
   }
 }
 ```
 
-Only these behavior settings are allowed. There are no credentials, proof keys, identities, routing settings, Cognito identifiers, deployment controls, or build configuration in this document. Environment names match `[a-z][a-z0-9-]{0,31}`; document types match `[a-z][a-z0-9_]{0,63}`. Purpose and jurisdiction are each at most 1024 UTF-8 bytes and contain no control characters. Enabling capture requires nonempty purpose/jurisdiction and a document type other than `sample_card`. Revision is nonnegative and increases on every effective value change; rollback is a new revision. An unavailable or malformed durable configuration returns 503, never an enabled fallback.
+Only these behavior settings are allowed. There are no credentials, proof keys, identities, routing settings, Cognito identifiers, deployment controls, or build configuration in this document. Environment names match `[a-z][a-z0-9-]{0,31}`; document types match `[a-z][a-z0-9_]{0,63}`. Purpose and jurisdiction are each at most 1024 UTF-8 bytes and contain no control characters. New publications use fixed `id_card`, empty jurisdiction and generic messages in English, Spanish and French. English is required; blank translations fall back to English. Each message is limited to 1024 UTF-8 bytes with no control characters. Legacy fields remain readable; current policy projection uses the generic disclosure and does not request jurisdiction before scanning. Revision is nonnegative and increases on every effective value change; rollback is a new revision. An unavailable or malformed durable configuration returns 503, never an enabled fallback.
 
 Android retrieves this environment-bound HTTPS endpoint at launch and foreground, validates the document, and caches only validated data. Transient failures permit at most 15 minutes of stale use; invalid documents fail closed. On expiry, new capture admission stops while existing status and cancellation remain usable. Updating runtime behavior does not reset authentication. Runtime configuration is distinct from the existing environment index and build-time routing/authentication settings.
 
@@ -59,7 +64,7 @@ Android retrieves this environment-bound HTTPS endpoint at launch and foreground
 
 Pulumi capture settings are defaults until the first administrator publication. Under the existing signed registry deployment lease, the deployment tool synchronizes defaults before publishing the environment index. The registry lease token/revision is checked atomically with the runtime write, and a monotonic deployment generation rejects stale synchronization. Unchanged defaults retain the public revision and timestamp; changed defaults append an audit revision. A racing admin override wins its revision condition, and all later deployments preserve the override. A failed synchronization retains the existing publication receipt for `-publish-index` recovery. Direct Pulumi/AWS changes bypass this workflow.
 
-Capture policy identity is `capture-sha256-<hash>` over the complete consent-relevant policy, including enabled state, document type, purpose, jurisdiction, slots, type/size limits, and retention. Metadata-only revision changes do not change that identity. Both deployment defaults and admin overrides use this rule.
+Capture policy identity is `capture-sha256-<hash>` over the complete consent-relevant policy, including all localized messages, enabled state, document type, purpose, jurisdiction, slots, type/size limits, and retention. Metadata-only revision changes do not change that identity. Both deployment defaults and admin overrides use this rule.
 
 New capture creation requires `expected_policy_version`, equal to the policy the user reviewed. The backend reads one current policy snapshot before admission, validates the expected identity, and persists that exact snapshot and expected identity with the create intent. A mismatch returns `409 policy_changed`; Android refreshes the disclosure and requires another explicit start. A replay of an existing operation key returns the original record and snapshot even if capture has since been disabled or policy changed. Reusing a key with a different expected identity conflicts. Legacy records omit `policy` because the old policy snapshot cannot be reconstructed truthfully.
 
@@ -70,3 +75,7 @@ The console uses authorization-code PKCE S256, a short-lived access token kept o
 Unit tests, race tests, infrastructure mocks, ARM64 package inspection and a DOM smoke test provide local evidence. They do not certify real Cognito managed login, browser passkeys/TOTP, invitation delivery, ACM/DNS propagation, deployed IAM, live DynamoDB transactions, or Android device behavior. Those remain deployment smoke checks.
 
 Current AWS references: [WebAuthn pool configuration](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_WebAuthnConfigurationType.html), [per-user WebAuthn MFA](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_WebAuthnMfaSettingsType.html), [SetUserMFAPreference](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_SetUserMFAPreference.html), and [managed-login endpoints](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login-endpoints.html).
+
+## Environment reset
+
+Managers can reset a selected environment from the dashboard using its exact name as confirmation. This is separate from publishing runtime settings. See [reset scope and recovery](environment-reset.md). Deploy both backend and shared infrastructure to install the worker, permissions, routes and controls. Existing deployment roles may require setup reconciliation to grant the new resource prefixes.
