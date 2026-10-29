@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -164,6 +165,7 @@ func (s Service) expireExtraction(ctx context.Context, r Record) error {
 	return s.Store.Swap(ctx, before, r, false)
 }
 func (s Service) finishExtraction(ctx context.Context, r Record, data CardData, err error) error {
+	slog.Info("capture.extraction_result", "capture_id", r.ID, "attempt", r.ExtractionAttempts, "failed", err != nil)
 	before := r
 	r.Revision++
 	r.LeaseUntil = 0
