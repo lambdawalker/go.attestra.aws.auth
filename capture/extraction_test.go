@@ -141,3 +141,55 @@ func TestOriginIsUserProvidedAndSeparateFromIssuer(t *testing.T) {
 		t.Fatal("invalid origin accepted")
 	}
 }
+
+func TestFailedExtractionAllowsManualReview(t *testing.T) {
+	s, m, _, _, r := extractionFixture(t)
+	r.Extraction = &Extraction{Status: "failed", Error: "extraction_unavailable"}
+	m.records[r.ID] = r
+	input := ReviewRequest{Revision: r.Revision, Data: CardData{FullName: "Entered Manually", DocumentNumber: "000045"}, OriginCountry: "MX"}
+	saved, err := s.Review(context.Background(), r.Owner, r.ID, input)
+	if err != nil {
+		t.Fatal("manual review rejected", err)
+	}
+	if saved.Reviewed == nil || saved.Reviewed.Data != input.Data || saved.Reviewed.OriginCountry != "MX" || saved.Extraction.Status != "failed" || !saved.Extraction.Data.Empty() {
+		t.Fatal("manual review did not preserve extraction outcome")
+	}
+	replay, err := s.Review(context.Background(), r.Owner, r.ID, input)
+	if err != nil || replay.Revision != saved.Revision {
+		t.Fatal("lost response retry changed review", err)
+	}
+	input.Data.FullName = "Stale edit"
+	if _, err = s.Review(context.Background(), r.Owner, r.ID, input); err != ErrConflict {
+		t.Fatal("stale edit accepted", err)
+	}
+	if _, err = s.Review(context.Background(), "other", r.ID, input); err != ErrNotFound {
+		t.Fatal("cross-owner review accepted", err)
+	}
+}
+
+func TestManualReviewRequiresRetainedValidatedImagesAndTerminalExtraction(t *testing.T) {
+	for _, tc := range []struct{ state, extraction string }{
+		{"ready", "pending"}, {"ready", ""}, {"ready", "unknown"}, {"uploading", "failed"}, {"finalizing", "failed"}, {"failed", "failed"}, {"requires_recapture", "failed"}, {"cancelled", "failed"},
+	} {
+		t.Run(tc.state+"/"+tc.extraction, func(t *testing.T) {
+			s, m, _, _, r := extractionFixture(t)
+			r.State = tc.state
+			r.Extraction = nil
+			if tc.extraction != "" {
+				r.Extraction = &Extraction{Status: tc.extraction}
+			}
+			m.records[r.ID] = r
+			_, err := s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: r.Revision, Data: CardData{FullName: "Manual"}})
+			if err != ErrConflict {
+				t.Fatal("review should be blocked", err)
+			}
+		})
+	}
+	s, m, _, now, r := extractionFixture(t)
+	r.Extraction = &Extraction{Status: "failed"}
+	m.records[r.ID] = r
+	*now = time.Unix(r.DeleteAfter, 0)
+	if _, err := s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: r.Revision, Data: CardData{FullName: "Manual"}}); err != ErrExpired {
+		t.Fatal("expired manual review accepted", err)
+	}
+}

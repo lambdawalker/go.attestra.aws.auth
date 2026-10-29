@@ -66,7 +66,7 @@ func (s Service) Review(ctx context.Context, owner, id string, in ReviewRequest)
 	if r.State == "expired" {
 		return Record{}, ErrExpired
 	}
-	if r.State != "ready" || r.Extraction == nil || r.Extraction.Status != "complete" {
+	if r.State != "ready" || r.Extraction == nil || (r.Extraction.Status != "complete" && r.Extraction.Status != "failed") {
 		return Record{}, ErrConflict
 	}
 	// Identical retry after a lost response is safe, without persisting PII in operation checkpoints.
