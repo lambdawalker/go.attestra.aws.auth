@@ -193,3 +193,49 @@ func TestManualReviewRequiresRetainedValidatedImagesAndTerminalExtraction(t *tes
 		t.Fatal("expired manual review accepted", err)
 	}
 }
+
+func TestReadyWithoutExtractionCanBeReviewedManually(t *testing.T) {
+	s, m, _, _, r := extractionFixture(t)
+	r.Extraction = nil
+	r.Work = "cleanup"
+	r.Due = r.DeleteAfter
+	m.records[r.ID] = r
+	got, err := s.Get(context.Background(), r.Owner, r.ID)
+	if err != nil || got.Extraction == nil || got.Extraction.Status != "failed" {
+		t.Fatalf("ready evidence without an extraction job must open manual review: %+v %v", got.Extraction, err)
+	}
+	_, err = s.Review(context.Background(), r.Owner, r.ID, ReviewRequest{Revision: got.Revision, OriginCountry: "MX", Data: CardData{FullName: "Manual Person"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOverdueExtractionBecomesManualReviewAndFencesWorker(t *testing.T) {
+	s, m, _, now, r := extractionFixture(t)
+	before := r
+	*now = time.Unix(r.Due+301, 0)
+	got, err := s.Get(context.Background(), r.Owner, r.ID)
+	if err != nil || got.Extraction == nil || got.Extraction.Status != "failed" {
+		t.Fatalf("abandoned extraction must terminate: %+v %v", got.Extraction, err)
+	}
+	if got.Work != "cleanup" || got.LeaseUntil != 0 || got.Revision <= before.Revision {
+		t.Fatal("missing durable recovery/fence")
+	}
+	if err := s.finishExtraction(context.Background(), before, CardData{FullName: "Late"}, nil); err != ErrConflict {
+		t.Fatal("late worker overwrote manual entry state", err)
+	}
+	if m.records[r.ID].Extraction.Status != "failed" {
+		t.Fatal("not persisted")
+	}
+}
+
+func TestActiveExtractionLeaseIsNotFailedByRead(t *testing.T) {
+	s, m, _, now, r := extractionFixture(t)
+	r.Due = now.Unix() - 400
+	r.LeaseUntil = now.Unix() + 60
+	m.records[r.ID] = r
+	got, err := s.Get(context.Background(), r.Owner, r.ID)
+	if err != nil || got.Extraction.Status != "pending" {
+		t.Fatal("active extraction interrupted", err)
+	}
+}
