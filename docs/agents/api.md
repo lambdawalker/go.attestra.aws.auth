@@ -30,3 +30,7 @@ The [capture API reference](../id-capture.md#http-contract) owns every capture r
 The [index contract](../environment-index.md#public-response) exposes public GET `/v1/environments` with `schemaVersion: 1`. POST `/v1/environments/<environment>/changes` requires AWS SigV4 and environment-scoped IAM permission. This is an operator endpoint; mobile clients must not receive AWS deployment credentials. `registry/registry.go` owns the public types and conditional-write behavior.
 
 See [configurable onboarding](../onboarding-policy.md) for defaults, durable completion and client rollout requirements.
+
+## Reviewed card data
+
+`POST /onboarding/id/captures/{id}/review` stores edited `data` and `origin_country` against the capture revision. A ready capture with complete or failed extraction is eligible. Use the returned `reviewed` record (or an exact status reconciliation after a lost response) before showing a saved/finish screen. Keep drafts on errors; conflicting revisions require reconciliation. `id_captured` and `onboarding_complete` are not review-save acknowledgements. See [save and finish](../id-capture.md#client-save-and-finish).
