@@ -30,3 +30,7 @@ La [referencia de captura](../../id-capture.md#http-contract) define rutas, cuer
 El [contrato del índice](../../environment-index.md#public-response) ofrece GET público `/v1/environments`, `schemaVersion: 1`. POST `/v1/environments/<environment>/changes` requiere AWS SigV4 y permiso IAM del entorno. Es una ruta operativa: no entregues credenciales de despliegue a móviles. `registry/registry.go` define tipos públicos y escrituras condicionales.
 
 Consulta la [política configurable](../../onboarding-policy.md) para valores predeterminados, finalización durable y actualización de clientes.
+
+## Datos revisados de la identificación
+
+`POST /onboarding/id/captures/{id}/review` guarda `data` editado y `origin_country` con la revisión de la captura. Se permite una captura ready con extracción completa o fallida. Usa el registro `reviewed` devuelto (o una reconciliación exacta del estado tras perder la respuesta) antes de mostrar la pantalla de datos guardados/finalización. Conserva el borrador ante errores; los conflictos de revisión requieren reconciliación. `id_captured` y `onboarding_complete` no confirman el guardado del formulario. Consulta [guardar y finalizar](../../id-capture.md#client-save-and-finish).

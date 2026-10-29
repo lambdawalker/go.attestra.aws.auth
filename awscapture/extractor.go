@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -57,9 +58,11 @@ func (x BedrockExtractor) Extract(ctx context.Context, images []capture.CardImag
 	target := "https://bedrock-mantle." + transport.Config.Region + ".api.aws/openai/v1/chat/completions"
 	r, e := transport.request(bounded, "bedrock-mantle", http.MethodPost, target, body, map[string]string{"Content-Type": "application/json"})
 	if e != nil {
+		slog.Warn("capture.inference_failed", "stage", "request", "deadline_exceeded", bounded.Err() != nil)
 		return capture.CardData{}, errExtraction
 	}
 	defer r.Body.Close()
+	slog.Info("capture.inference_response", "http_status", r.StatusCode, "model", ExtractionModel)
 	if r.StatusCode != 200 {
 		return capture.CardData{}, errExtraction
 	}
@@ -77,6 +80,7 @@ func (x BedrockExtractor) Extract(ctx context.Context, images []capture.CardImag
 		} `json:"choices"`
 	}
 	if json.Unmarshal(response, &out) != nil || len(out.Choices) != 1 || out.Choices[0].FinishReason != "stop" {
+		slog.Warn("capture.inference_failed", "stage", "response_envelope")
 		return capture.CardData{}, errExtraction
 	}
 	text := strings.TrimSpace(out.Choices[0].Message.Content)
@@ -90,6 +94,7 @@ func (x BedrockExtractor) Extract(ctx context.Context, images []capture.CardImag
 	decoder.DisallowUnknownFields()
 	var data capture.CardData
 	if decoder.Decode(&data) != nil || !data.Valid() {
+		slog.Warn("capture.inference_failed", "stage", "card_json")
 		return capture.CardData{}, errExtraction
 	}
 	var extra any

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"reflect"
 	"regexp"
 	"time"
@@ -80,6 +81,24 @@ func (s Service) Get(ctx context.Context, owner, id string) (Record, error) {
 	}
 	if (r.State == "uploading" && s.now().Unix() >= r.ExpiresAt) || (r.State == "ready" && r.DeleteAfter > 0 && s.now().Unix() >= r.DeleteAfter) {
 		r.State = "expired"
+	}
+	// A ready record with no extraction job cannot ever leave the client's loading screen.
+	// Recover overdue durable intent as well, even when the dispatcher/worker is unavailable.
+	// Allow five minutes past the scheduled attempt, without interrupting a live lease.
+	// The revision fence rejects late worker publication.
+	if r.State == "ready" && (r.Extraction == nil ||
+		(r.Extraction.Status == "pending" && r.LeaseUntil <= s.now().Unix() &&
+			(r.Work != "extract" || s.now().Unix() >= r.Due+300))) {
+		before := r
+		r.Revision++
+		r.LeaseUntil = 0
+		r.Extraction = &Extraction{Status: "failed", Error: "extraction_unavailable"}
+		r.Work = "cleanup"
+		r.Due = r.DeleteAfter
+		if e = s.Store.Swap(ctx, before, r, false); e != nil {
+			return Record{}, e
+		}
+		slog.Warn("capture.extraction_recovered", "capture_id", r.ID, "revision", r.Revision)
 	}
 	if r.State == "expired" || r.State == "cancelled" {
 		r.Extraction = nil

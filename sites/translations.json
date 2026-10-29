@@ -11,8 +11,8 @@
   },
   "docs/agents/api.md": {
     "path": "docs/es/agents/api.md",
-    "source_sha256": "7b6e9a96119e93d4a9cb866df3dcd9ac3718ea2291712b9d9b82f3ace9d7cc0a",
-    "provenance": "Reviewed Spanish translation, onboarding policy update 2026-10-28"
+    "source_sha256": "42bb678f98d997c3bd0a99c4dc7d690783b32405750e0216bc7839ba77b12fc8",
+    "provenance": "Reviewed Spanish translation, capture/review update 2026-10-28"
   },
   "docs/agents/operations.md": {
     "path": "docs/es/agents/operations.md",

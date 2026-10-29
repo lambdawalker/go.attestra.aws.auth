@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/smithy-go"
 	"github.com/lambdawalker/go.attestra.aws.auth/capture"
 )
 
@@ -162,6 +164,15 @@ func (s *Store) Swap(ctx context.Context, before, after capture.Record, ready bo
 		}
 	}
 	_, e = s.DB.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: writes})
+	if e != nil {
+		code := "unknown"
+		var apiError smithy.APIError
+		if errors.As(e, &apiError) {
+			code = apiError.ErrorCode()
+		}
+		// Messages and transaction items can expose card data. Log only AWS error codes.
+		slog.Error("capture.store_swap_failed", "capture_id", after.ID, "ready_transaction", ready, "aws_error_code", code)
+	}
 	return conditional(e)
 }
 

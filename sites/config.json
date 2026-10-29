@@ -1,7 +1,7 @@
 {
   "repository": "lambdawalker/go.attestra.aws.auth",
   "title": "Backend & operations",
-  "source_ref": "2d82dd962ef4b15ba86327ad8834b948b9bcfd45",
+  "source_ref": "9d9f87685589a1cf307341c8b788221a1b45535c",
   "sources": [
     "README.md",
     "IMPORT.md",
