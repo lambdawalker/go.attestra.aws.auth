@@ -1,5 +1,9 @@
 # Attestra AWS authentication
 
+## Composable extraction
+
+The reusable authentication feature is being extracted into [go.apexfission.aws.auth](https://github.com/lambdawalker/go.apexfission.aws.auth/pull/1). [go.attestra.aws](https://github.com/lambdawalker/go.attestra.aws/pull/1) composes it with the application-owned admin/index control plane through go.infra.composer. These pull requests preserve this repository as the legacy deployment source during review; they do not migrate existing AWS resources, users or state. Read the application’s [migration guide](https://github.com/lambdawalker/go.attestra.aws/blob/feat/authentication-composition/docs/migration.md) before planning a cutover.
+
 This repository implements Attestra authentication with Go Lambda handlers and a Pulumi Go stack: email confirmation, passkey registration, email/passkey/password sign-in, refresh, and authenticated enrollment status. Onboarding ID capture adds private S3 uploads, asynchronous file checks, pinned evidence and cancellation. See [capture API and operations](docs/id-capture.md); new onboarding defaults require capture (legacy settings preserve prior enablement), and cloud extraction and an editable review form are available; extraction does not verify identity.
 
 Runtime settings are published from the invitation-only [admin console](docs/admin-runtime-config.md); Android and capture admission read the same durable configuration.
