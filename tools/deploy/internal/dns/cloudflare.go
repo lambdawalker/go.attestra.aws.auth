@@ -165,6 +165,9 @@ func (c *Client) Records(zone, name string) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
+		if batch == nil {
+			return nil, errors.New("incomplete Cloudflare DNS record listing")
+		}
 		for _, record := range batch {
 			if Name(record.Name) != Name(name) {
 				return nil, errors.New("Cloudflare returned a record outside the requested name")

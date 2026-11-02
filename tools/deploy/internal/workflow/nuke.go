@@ -32,6 +32,8 @@ type nukeReceipt struct {
 	Keys                           []nukeKey
 	Results                        []nukeResult
 	Environments                   []string
+	CheckedAt                      string       `json:",omitempty"`
+	CheckResults                   []nukeResult `json:",omitempty"`
 }
 
 type nukeWorkflow struct {
@@ -122,14 +124,24 @@ func (n *nukeWorkflow) dir(t nukeTarget) string {
 }
 
 func runNukeTeardown(root string) error {
+	return runNukeMode(root, false)
+}
+
+func runNukeMode(root string, check bool) error {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("nuke teardown requires an interactive terminal")
 	}
-	if err := (&bootstrapWizard{root: root}).preflight(); err != nil {
-		return err
+	if !check {
+		if err := (&bootstrapWizard{root: root}).preflight(); err != nil {
+			return err
+		}
 	}
-	fmt.Println("Attestra • Nuke all environments and shared index/admin")
-	fmt.Println("Stop ALL local and GitHub deployments. This removes application data and all S3 object versions. Recovery state buckets and customer-managed KMS keys are processed LAST, only if every earlier cleanup is verified. Missing items are success. Shared OIDC providers and DNS zones are outside this project's ownership.")
+	if check {
+		fmt.Println("Attestra • Post-nuke check of the last report (no deletions)")
+	} else {
+		fmt.Println("Attestra • Nuke all environments and shared index/admin")
+		fmt.Println("Stop ALL local and GitHub deployments. This removes application data and all S3 object versions. Recovery state buckets and customer-managed KMS keys are processed LAST, only if every earlier cleanup is verified. Missing items are success. Shared OIDC providers and DNS zones are outside this project's ownership.")
+	}
 	repo := localRepository(root)
 	if repo == "" {
 		repo = "lambdawalker/go.attestra.aws.auth"
@@ -156,21 +168,31 @@ func runNukeTeardown(root string) error {
 	}
 	token := w.secrets.GitHub
 	if token == "" {
-		if err := ui.Input("GitHub token (Administration/Environments write, Actions read)", &token, true, true).Run(); err != nil {
+		prompt := "GitHub token (Administration/Environments write, Actions read)"
+		if check {
+			prompt = "GitHub read token (blank leaves GitHub artifacts unverifiable)"
+		}
+		if err := ui.Input(prompt, &token, true, !check).Run(); err != nil {
 			return err
 		}
 	}
-	g := github.NewClient(strings.TrimSpace(token))
+	var g *github.Client
+	if strings.TrimSpace(token) != "" {
+		g = github.NewClient(strings.TrimSpace(token))
+	}
 	var metadata repositoryMetadata
-	found, err := g.Request("GET", "/repos/"+repo, nil, &metadata)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return errors.New("repository unavailable")
-	}
-	if err = ensureNoNukeDeployments(g, repo); err != nil {
-		return err
+	var err error
+	if !check {
+		found, e := g.Request("GET", "/repos/"+repo, nil, &metadata)
+		if e != nil {
+			return e
+		}
+		if !found {
+			return errors.New("repository unavailable")
+		}
+		if err = ensureNoNukeDeployments(g, repo); err != nil {
+			return err
+		}
 	}
 	o := options{Root: root, Stack: "nuke", Backend: "s3://attestra-nuke-discovery", Region: "us-east-2", Profile: "attestra"}
 	mode := "sso"
@@ -231,19 +253,31 @@ func runNukeTeardown(root string) error {
 		if json.Unmarshal(b, &n.receipt) != nil || n.receipt.Repository != repo || n.receipt.Account != identity.Account {
 			return errors.New("nuke report identity mismatch")
 		}
-		n.receipt.Results = nil // Re-read every result; preserve inventories on retry.
+		if !check {
+			n.receipt.Results = nil // Re-read every result; preserve inventories on retry.
+			n.receipt.CheckResults, n.receipt.CheckedAt = nil, ""
+		}
 	} else if !os.IsNotExist(e) {
 		return e
+	} else if check {
+		return fmt.Errorf("no previous nuke report at %s", n.path)
 	}
 	if _, e := os.Stat(n.path + ".bak"); e == nil {
 		return errors.New("restore interrupted nuke report from .bak before retrying")
 	}
 	cfToken := w.secrets.Cloudflare
-	if err = ui.Input("Cloudflare DNS edit token (blank records DNS as unverifiable if needed)", &cfToken, true, false).Run(); err != nil {
+	cfPrompt := "Cloudflare DNS edit token (blank records DNS as unverifiable if needed)"
+	if check {
+		cfPrompt = "Cloudflare DNS read token (blank records DNS as unverifiable if needed)"
+	}
+	if err = ui.Input(cfPrompt, &cfToken, true, false).Run(); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cfToken) != "" {
 		n.cf = dns.NewClient(strings.TrimSpace(cfToken))
+	}
+	if check {
+		return n.checkLastNuke()
 	}
 	n.discover()
 	fmt.Printf("\nRepository: %s\nAWS account: %s\nIdentity: %s\n", repo, identity.Account, identity.Arn)
