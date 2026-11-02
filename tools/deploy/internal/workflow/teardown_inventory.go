@@ -51,6 +51,10 @@ func teardownResourceProbe(kind, urn, id string, out map[string]json.RawMessage)
 		p.Kind = "pool"
 	case "aws:cognito/userPoolClient:UserPoolClient":
 		parent("pool", "userPoolId")
+	case "aws:cognito/managedLoginBranding:ManagedLoginBranding":
+		parent("pool", "userPoolId")
+	case "aws:cognito/userPoolDomain:UserPoolDomain":
+		p.Kind = "cognito-domain"
 	case "aws:ses/domainIdentity:DomainIdentity":
 		p.Kind = "ses"
 	case "aws:ses/domainDkim:DomainDkim":
@@ -112,6 +116,9 @@ func verifyTeardownProbe(a awsenv.API, p teardownProbe) error {
 		missing = "AWS.SimpleQueueService.NonExistentQueue"
 	case "pool":
 		args = []string{"cognito-idp", "describe-user-pool", "--user-pool-id", p.ID}
+	case "cognito-domain":
+		args = []string{"cognito-idp", "describe-user-pool-domain", "--domain", p.ID}
+		field = "DomainDescription"
 	case "ses":
 		args = []string{"ses", "get-identity-verification-attributes", "--identities", p.ID}
 		field = "VerificationAttributes"
@@ -169,6 +176,16 @@ func verifyTeardownProbe(a awsenv.API, p teardownProbe) error {
 	raw, ok := body[field]
 	if !ok || string(raw) == "null" {
 		return errors.New("incomplete AWS verification response")
+	}
+	if p.Kind == "cognito-domain" {
+		var domain map[string]json.RawMessage
+		if json.Unmarshal(raw, &domain) != nil {
+			return errors.New("invalid Cognito domain response")
+		}
+		if len(domain) == 0 {
+			return nil
+		}
+		return errTeardownResourceRemains
 	}
 	if p.Kind == "ses" {
 		var identities map[string]json.RawMessage

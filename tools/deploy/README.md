@@ -5,6 +5,7 @@ This Go module contains the setup, deployment, credential management, health-che
 ```sh
 go -C tools/deploy run . -bootstrap
 go -C tools/deploy run . -teardown
+go -C tools/deploy run . -teardown -nuke
 go -C tools/deploy run . -teardown-index
 go -C tools/deploy run . -manage-credentials
 ```
@@ -62,6 +63,31 @@ Keep `.attestra/` when resuming interrupted operations. These files contain no c
 
 Shared-index teardown has its own [runbook](../../docs/teardown-index.md) and private `.attestra/teardown-index.<account>.<region>.local.json` checkpoint. It does not replace environment teardown.
 
+## Nuke all environments and index/admin
+
+Run `./deploy.sh -teardown -nuke` or `deploy.bat -teardown -nuke` from the repository root. The existing `scripts/teardown.sh -nuke` / `scripts/teardown.bat -nuke` launchers work too. Running ordinary teardown also offers a **Nuke ALL environments** scope. Nuke requires an interactive administrator session and typed confirmation of the repository and AWS account; it has no unattended mode.
+
+Nuke discovers application environments from GitHub variables, local setup/deployment/teardown records, the saved nuke report, and project stacks in owned `attestra-state-*` / `attestra-index-state-<account>-*` buckets. It reviews the complete discovered scope, then destroys application stacks followed by the shared **index and admin** stack. It captures resource IDs before refreshing missing resources, removes managed Pulumi protection/retain-on-delete guards, purges application bucket versions, disables table deletion protection, and uses Pulumi's continue-on-error destroy. Independent targets, DNS, deployment-role and GitHub cleanup continue after failures. It also cleans up Lambda log groups and backups of the captured DynamoDB tables. AWS Backup recovery points are reported for manual cleanup through AWS Backup.
+
+Stop all local and GitHub deployments until cleanup finishes. The script checks active deployment workflow runs and never steals Pulumi locks. It does not sweep unrelated account resources. It retains shared GitHub OIDC providers, DNS zones, provider credentials/vaults and local reports. External resources, foreign projects, provider account/endpoint overrides, unfamiliar recovery-bucket contents and prefixed backends require manual review and block recovery deletion.
+
+**State buckets and KMS keys are the final phase.** Every earlier resource/cleanup result must be successful first. The script preflights all recovery buckets and keys, persists discovered key IDs, deletes and verifies all state buckets, and only then schedules exclusive customer-managed KMS keys with a seven-day waiting period. It discovers keys from bucket encryption and Pulumi `awskms://` secrets providers. Each customer key requires explicit confirmation that it is exclusive to this project. AWS-managed keys remain under AWS ownership. A failed or unverifiable earlier step preserves recovery buckets and keys; a bucket-deletion failure prevents subsequent bucket deletion and all KMS scheduling. Scheduling failure after bucket deletion is reported and can be retried using the saved key inventory.
+
+The console prints each result plus totals. The private `.attestra/nuke.<account>.local.json` file contains the detailed report and inventories needed for retry:
+
+| Status | Meaning | Successful? |
+| --- | --- | --- |
+| `DELETED` | Present before deletion; absence verified afterward | Yes |
+| `ABSENT` | Already missing, with an authoritative read-back | **Yes** |
+| `SCHEDULED` | KMS reports `PendingDeletion`; deletion date included | Yes, pending AWS's waiting period |
+| `INFO` | Command diagnostic or explicitly excluded shared/AWS-owned infrastructure | Informational |
+| `REMAINS` | Resource is still present after cleanup | No |
+| `FAILED` | Operation or scope validation failed | No |
+| `UNVERIFIED` | Permissions, connectivity, unsupported type or missing evidence prevents verification | No |
+| `RETAINED` | Identified artifact was deliberately left behind; reason included | No for in-scope artifacts |
+
+Confirmed absence is never a failure. A missing stack with no surviving pre-destroy inventory is different: the stack itself is `ABSENT`, but orphan AWS resources cannot be certified, so inventory is `UNVERIFIED` and recovery deletion stays blocked. Command errors during refresh/destroy remain visible as diagnostics; the final AWS and Pulumi read-backs determine the result. Rerun the same command with the same `.attestra/` directory to retry; completed/missing items are checked again rather than treated as errors. Do not delete the report until all cleanup and any KMS waiting period have been reviewed.
+
 ## Export values for the modular deployment wizard
 
 From the repository root, run `./export-wizard.sh --environment dev`, or on
@@ -83,3 +109,4 @@ win over exports. Legacy domains, certificate ownership, secrets and credential
 vaults are excluded. This does not transfer infrastructure ownership or deploy.
 Use `--output PATH` only to inspect/export elsewhere; the new wizard discovers
 the default home-directory path automatically.
+
