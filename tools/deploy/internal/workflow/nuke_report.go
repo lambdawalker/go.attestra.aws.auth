@@ -3,6 +3,11 @@ package workflow
 import "fmt"
 
 func validateNukeFlags(nuke, teardown bool, supplied []string) error {
+	for _, name := range supplied {
+		if name == "check" && (!nuke || !teardown) {
+			return fmt.Errorf("-check requires -teardown -nuke")
+		}
+	}
 	if !nuke {
 		return nil
 	}
@@ -10,7 +15,7 @@ func validateNukeFlags(nuke, teardown bool, supplied []string) error {
 		return fmt.Errorf("-nuke requires -teardown")
 	}
 	for _, name := range supplied {
-		if name != "nuke" && name != "teardown" && name != "repo-root" {
+		if name != "nuke" && name != "teardown" && name != "repo-root" && name != "check" {
 			return fmt.Errorf("-%s cannot be combined with -teardown -nuke", name)
 		}
 	}

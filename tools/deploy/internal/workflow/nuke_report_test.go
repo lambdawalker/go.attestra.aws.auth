@@ -6,6 +6,14 @@ import (
 )
 
 func TestNukeCLIRequiresExclusiveTeardown(t *testing.T) {
+	for _, pair := range [][2]bool{{false, false}, {false, true}, {true, false}} {
+		if validateNukeFlags(pair[0], pair[1], []string{"check"}) == nil {
+			t.Fatal("check accepted without teardown and nuke")
+		}
+	}
+	if err := validateNukeFlags(true, true, []string{"teardown", "nuke", "check"}); err != nil {
+		t.Fatal(err)
+	}
 	if validateNukeFlags(true, false, []string{"nuke"}) == nil {
 		t.Fatal("standalone nuke accepted")
 	}
