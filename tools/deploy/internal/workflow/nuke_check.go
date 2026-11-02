@@ -62,6 +62,7 @@ func (n *nukeWorkflow) checkLastNuke() error {
 }
 
 func (n *nukeWorkflow) checkNukeArtifact(name string) error {
+	var dnsChecks []func() error
 	for i := range n.receipt.Targets {
 		t := &n.receipt.Targets[i]
 		for _, p := range t.Evidence.Inventory {
@@ -74,9 +75,12 @@ func (n *nukeWorkflow) checkNukeArtifact(name string) error {
 		}
 		for _, want := range t.Evidence.Desired {
 			if name == "DNS "+want.Type+" "+want.Name {
-				return n.checkNukeDNS(want)
+				dnsChecks = append(dnsChecks, func() error { return n.checkNukeDNS(want) })
 			}
 		}
+	}
+	if len(dnsChecks) > 0 {
+		return nukeCheckAll(dnsChecks)
 	}
 	for _, b := range n.receipt.Backends {
 		if name == "State bucket "+b.Bucket {
@@ -303,6 +307,9 @@ func (n *nukeWorkflow) checkNukeLog(region, name string) error {
 		return errors.New("incomplete log group listing")
 	}
 	for _, g := range *body.LogGroups {
+		if g.LogGroupName == "" {
+			return errors.New("incomplete log group identity")
+		}
 		if g.LogGroupName == name {
 			return errTeardownResourceRemains
 		}

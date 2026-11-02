@@ -273,3 +273,34 @@ func TestPostNukeCheckChecksEveryRegionForLegacyLabels(t *testing.T) {
 		})
 	}
 }
+
+func TestPostNukeCheckVerifiesEverySavedTXTValue(t *testing.T) {
+	zone := strings.Repeat("a", 32)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/zones" {
+			fmt.Fprintf(w, `{"success":true,"result":[{"id":%q,"name":"example.com","status":"active"}]}`, zone)
+		} else {
+			fmt.Fprintf(w, `{"success":true,"result":[{"id":%q,"type":"TXT","name":"dev.example.com","content":"second"}]}`, strings.Repeat("b", 32))
+		}
+	}))
+	defer s.Close()
+	n := &nukeWorkflow{cf: dns.NewClient("test")}
+	n.cf.BaseURL = s.URL
+	for _, content := range []string{"first", "second"} {
+		n.receipt.Targets = append(n.receipt.Targets, nukeTarget{Evidence: teardownProgress{Desired: []dns.Record{{Type: "TXT", Name: "dev.example.com", Content: content}}}})
+	}
+	if err := n.checkNukeArtifact("DNS TXT dev.example.com"); !errors.Is(err, errTeardownResourceRemains) {
+		t.Fatal(err)
+	}
+}
+
+func TestPostNukeCheckRejectsIncompleteLogIdentity(t *testing.T) {
+	n := &nukeWorkflow{awsForRegion: func(string) awsenv.API {
+		return nukeFakeAWS{func(result any, _ ...string) (bool, error) {
+			return true, json.Unmarshal([]byte(`{"logGroups":[{}]}`), result)
+		}}
+	}}
+	if n.checkNukeLog("us-east-2", "/aws/lambda/fn") == nil {
+		t.Fatal("incomplete log identity accepted as absent")
+	}
+}
