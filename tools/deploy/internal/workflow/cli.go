@@ -27,7 +27,7 @@ func Run() error {
 	var scope string
 	flag.StringVar(&scope, "scope", "app", "Deployment scope: app (backend), shared (index/admin), or both")
 	var o options
-	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex bool
+	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex, nuke bool
 	flag.BoolVar(&associations, "associations", false, "Manage and publish Android signing approvals without a full deployment")
 	flag.StringVar(&o.ExportAndroid, "export-android", "", "Export deployed public Android settings to a properties file without deployment")
 	flag.BoolVar(&manageVault, "manage-credentials", false, "Manage the local credential vault without running setup")
@@ -50,12 +50,16 @@ func Run() error {
 	flag.BoolVar(&bootstrap, "bootstrap", false, "Guide a fresh environment deployment, or resume setup")
 	flag.BoolVar(&teardownIndex, "teardown-index", false, "Interactively remove the shared index after all environments are torn down")
 	flag.BoolVar(&teardown, "teardown", false, "Interactively tear down an environment and its GitHub/Cloudflare configuration")
+	flag.BoolVar(&nuke, "nuke", false, "With -teardown: remove ALL environments and shared index/admin; recovery state and KMS are deleted last, only after verified cleanup")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
 	}
 	var supplied []string
 	flag.Visit(func(f *flag.Flag) { supplied = append(supplied, f.Name) })
+	if err := validateNukeFlags(nuke, teardown, supplied); err != nil {
+		return err
+	}
 	if err := validateDeployScope(scope, supplied); err != nil {
 		return err
 	}
@@ -82,6 +86,9 @@ func Run() error {
 		if err := prepareGeneratedState(root); err != nil {
 			return err
 		}
+	}
+	if nuke {
+		return runNukeTeardown(root)
 	}
 	repo := localRepository(root)
 	if repo == "" {

@@ -163,6 +163,16 @@ func runTeardown(root string) error {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("teardown requires an interactive terminal; there is no unattended destroy mode")
 	}
+	teardownScope := "environment"
+	if err := huh.NewSelect[string]().Title("Teardown scope").Options(
+		huh.NewOption("One environment (retain shared index/admin and recovery state)", "environment"),
+		huh.NewOption("Nuke ALL environments, shared index/admin and project data", "nuke"),
+	).Value(&teardownScope).Run(); err != nil {
+		return err
+	}
+	if teardownScope == "nuke" {
+		return runNukeTeardown(root)
+	}
 	fmt.Println("Attestra • Teardown environment")
 	environment, err := chooseTeardownEnvironment(root, func() (string, error) {
 		return ui.ChooseEnvironmentFor(teardownEnvironments(root), "Environment to tear down")
