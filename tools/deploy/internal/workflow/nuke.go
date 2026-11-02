@@ -34,6 +34,8 @@ type nukeReceipt struct {
 	Environments                   []string
 	CheckedAt                      string       `json:",omitempty"`
 	CheckResults                   []nukeResult `json:",omitempty"`
+	CheckScope                     string       `json:",omitempty"`
+	CheckedArtifacts               []string     `json:",omitempty"`
 }
 
 type nukeWorkflow struct {
@@ -124,10 +126,10 @@ func (n *nukeWorkflow) dir(t nukeTarget) string {
 }
 
 func runNukeTeardown(root string) error {
-	return runNukeMode(root, false)
+	return runNukeMode(root, false, false)
 }
 
-func runNukeMode(root string, check bool) error {
+func runNukeMode(root string, check, fastCheck bool) error {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return errors.New("nuke teardown requires an interactive terminal")
 	}
@@ -138,6 +140,9 @@ func runNukeMode(root string, check bool) error {
 	}
 	if check {
 		fmt.Println("Attestra • Post-nuke check of the last report (no deletions)")
+		if fastCheck {
+			fmt.Println("Fast check: only artifacts marked REMAINS by the previous check")
+		}
 	} else {
 		fmt.Println("Attestra • Nuke all environments and shared index/admin")
 		fmt.Println("Stop ALL local and GitHub deployments. This removes application data and all S3 object versions. Recovery state buckets and customer-managed KMS keys are processed LAST, only if every earlier cleanup is verified. Missing items are success. Shared OIDC providers and DNS zones are outside this project's ownership.")
@@ -256,6 +261,7 @@ func runNukeMode(root string, check bool) error {
 		if !check {
 			n.receipt.Results = nil // Re-read every result; preserve inventories on retry.
 			n.receipt.CheckResults, n.receipt.CheckedAt = nil, ""
+			n.receipt.CheckScope, n.receipt.CheckedArtifacts = "", nil
 		}
 	} else if !os.IsNotExist(e) {
 		return e
@@ -277,7 +283,7 @@ func runNukeMode(root string, check bool) error {
 		n.cf = dns.NewClient(strings.TrimSpace(cfToken))
 	}
 	if check {
-		return n.checkLastNuke()
+		return n.checkLastNukeMode(fastCheck)
 	}
 	n.discover()
 	fmt.Printf("\nRepository: %s\nAWS account: %s\nIdentity: %s\n", repo, identity.Account, identity.Arn)

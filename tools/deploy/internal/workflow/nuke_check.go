@@ -19,23 +19,45 @@ func nukeProbeLabel(t *nukeTarget, p teardownProbe) string {
 // The original teardown results remain intact. CheckResults are fresh evidence,
 // not deletion authorization: this path never calls cleanup or recovery methods.
 func (n *nukeWorkflow) checkLastNuke() error {
-	if len(n.receipt.Results) == 0 {
+	return n.checkLastNukeMode(false)
+}
+
+func (n *nukeWorkflow) checkLastNukeMode(fast bool) error {
+	source := n.receipt.Results
+	if fast {
+		if n.receipt.CheckedAt == "" || len(n.receipt.CheckResults) == 0 {
+			return errors.New("fast check requires a previous check; run -teardown -nuke -check first")
+		}
+		source = n.receipt.CheckResults
+	}
+	if len(source) == 0 {
 		return errors.New("previous nuke report has no results to check")
 	}
 	n.receipt.CheckResults = nil
 	n.receipt.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+	n.receipt.CheckScope = "all"
+	if fast {
+		n.receipt.CheckScope = "remaining-only"
+	}
+	n.receipt.CheckedArtifacts = nil
 	// Deduplicate repeated operations, keeping the latest status for context.
 	latest := map[string]nukeResult{}
 	var names []string
-	for _, r := range n.receipt.Results {
+	for _, r := range source {
 		if _, ok := latest[r.Name]; !ok {
 			names = append(names, r.Name)
 		}
 		latest[r.Name] = r
 	}
 	counts := map[string]int{}
+	skipped := 0
 	for _, name := range names {
 		previous := latest[name]
+		if fast && previous.Status != "REMAINS" {
+			n.receipt.CheckResults = append(n.receipt.CheckResults, previous)
+			skipped++
+			continue
+		}
 		if previous.Status == "INFO" {
 			continue
 		}
@@ -48,6 +70,7 @@ func (n *nukeWorkflow) checkLastNuke() error {
 		}
 		r.Detail = "Previous " + previous.Status + "; " + r.Detail
 		n.receipt.CheckResults = append(n.receipt.CheckResults, r)
+		n.receipt.CheckedArtifacts = append(n.receipt.CheckedArtifacts, name)
 		counts[r.Status]++
 		fmt.Printf("%s • %s: %s\n", r.Status, r.Name, r.Detail)
 	}
@@ -55,7 +78,18 @@ func (n *nukeWorkflow) checkLastNuke() error {
 		return fmt.Errorf("save post-nuke check: %w", err)
 	}
 	fmt.Printf("\nPost-nuke check: ABSENT %d • REMAINS %d • UNVERIFIED %d\nReport: %s\n", counts["ABSENT"], counts["REMAINS"], counts["UNVERIFIED"], n.path)
-	if len(n.receipt.CheckResults) == 0 || counts["REMAINS"]+counts["UNVERIFIED"] > 0 {
+	if fast {
+		fmt.Printf("Fast check refreshed %d artifact(s); skipped %d using previous evidence. Run -check for a full verification.\n", len(n.receipt.CheckedArtifacts), skipped)
+	}
+	// Cached UNVERIFIED evidence is preserved, not promoted to success merely
+	// because a fast check intentionally did not query it again.
+	unresolved := false
+	for _, r := range n.receipt.CheckResults {
+		if r.Status != "ABSENT" && r.Status != "INFO" {
+			unresolved = true
+		}
+	}
+	if len(n.receipt.CheckResults) == 0 || unresolved {
 		return errors.New("post-nuke check incomplete; inspect CheckResults in the saved report")
 	}
 	return nil

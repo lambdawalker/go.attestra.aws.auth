@@ -27,7 +27,7 @@ func Run() error {
 	var scope string
 	flag.StringVar(&scope, "scope", "app", "Deployment scope: app (backend), shared (index/admin), or both")
 	var o options
-	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex, nuke, check bool
+	var setupGitHub, bootstrap, build, teardown, forceSetup, freshCredentials, manageVault, teardownIndex, nuke, check, fastCheck bool
 	flag.BoolVar(&associations, "associations", false, "Manage and publish Android signing approvals without a full deployment")
 	flag.StringVar(&o.ExportAndroid, "export-android", "", "Export deployed public Android settings to a properties file without deployment")
 	flag.BoolVar(&manageVault, "manage-credentials", false, "Manage the local credential vault without running setup")
@@ -52,6 +52,7 @@ func Run() error {
 	flag.BoolVar(&teardown, "teardown", false, "Interactively tear down an environment and its GitHub/Cloudflare configuration")
 	flag.BoolVar(&nuke, "nuke", false, "With -teardown: remove ALL environments and shared index/admin; recovery state and KMS are deleted last, only after verified cleanup")
 	flag.BoolVar(&check, "check", false, "With -teardown -nuke: check artifacts in the last saved report without deleting anything")
+	flag.BoolVar(&fastCheck, "fast-check", false, "With -teardown -nuke: recheck only artifacts marked REMAINS by the last check; requires a previous check")
 	flag.BoolVar(&build, "build", false, "Build all Linux ARM64 Lambda ZIP archives")
 	if err := flag.CommandLine.Parse(normalizeArguments(os.Args[1:])); err != nil {
 		return err
@@ -89,7 +90,7 @@ func Run() error {
 		}
 	}
 	if nuke {
-		return runNukeMode(root, check)
+		return runNukeMode(root, check || fastCheck, fastCheck)
 	}
 	repo := localRepository(root)
 	if repo == "" {

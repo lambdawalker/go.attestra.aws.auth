@@ -4,8 +4,8 @@ import "fmt"
 
 func validateNukeFlags(nuke, teardown bool, supplied []string) error {
 	for _, name := range supplied {
-		if name == "check" && (!nuke || !teardown) {
-			return fmt.Errorf("-check requires -teardown -nuke")
+		if (name == "check" || name == "fast-check") && (!nuke || !teardown) {
+			return fmt.Errorf("-%s requires -teardown -nuke", name)
 		}
 	}
 	if !nuke {
@@ -15,7 +15,7 @@ func validateNukeFlags(nuke, teardown bool, supplied []string) error {
 		return fmt.Errorf("-nuke requires -teardown")
 	}
 	for _, name := range supplied {
-		if name != "nuke" && name != "teardown" && name != "repo-root" && name != "check" {
+		if name != "nuke" && name != "teardown" && name != "repo-root" && name != "check" && name != "fast-check" {
 			return fmt.Errorf("-%s cannot be combined with -teardown -nuke", name)
 		}
 	}
