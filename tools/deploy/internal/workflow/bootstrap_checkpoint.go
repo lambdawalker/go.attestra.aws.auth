@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -25,25 +26,14 @@ type bootstrapCheckpoint struct {
 }
 
 func (w *bootstrapWizard) loadSelections(repo string, values map[string]string, existing map[string]string) error {
-	path := w.checkpointPath()
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		data, err = os.ReadFile(path + ".bak")
-	}
-	if os.IsNotExist(err) && w.environment == "dev" {
-		data, err = os.ReadFile(filepath.Join(w.root, ".attestra", "bootstrap.local.json"))
-	}
+	saved, err := readBootstrapCheckpoint(w.root, w.environment)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	var saved bootstrapCheckpoint
-	if json.Unmarshal(data, &saved) != nil {
-		return errors.New("invalid bootstrap checkpoint; inspect it before resuming")
-	}
-	if saved.Repository != repo || (saved.Environment != "" && saved.Environment != w.environment) || saved.Stack != w.environment {
+	if !saved.belongsTo(repo, w.environment) {
 		return nil
 	}
 	// Preserve evidence from checkpoints written before StackInitialized existed.
@@ -99,7 +89,39 @@ func (w *bootstrapWizard) saveMemory() error {
 }
 
 func (w *bootstrapWizard) checkpointPath() string {
-	return filepath.Join(w.root, ".attestra", "bootstrap."+w.environment+".local.json")
+	return bootstrapCheckpointPath(w.root, w.environment)
+}
+
+func bootstrapCheckpointPath(root, environment string) string {
+	return filepath.Join(root, ".attestra", "bootstrap."+environment+".local.json")
+}
+
+func readBootstrapCheckpoint(root, environment string) (bootstrapCheckpoint, error) {
+	path := bootstrapCheckpointPath(root, environment)
+	paths := []string{path, path + ".bak"}
+	if environment == "dev" {
+		legacy := filepath.Join(root, ".attestra", "bootstrap.local.json")
+		paths = append(paths, legacy, legacy+".bak")
+	}
+	var checkpoint bootstrapCheckpoint
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return checkpoint, err
+		}
+		if err := json.Unmarshal(data, &checkpoint); err != nil {
+			return bootstrapCheckpoint{}, fmt.Errorf("invalid setup record %s; inspect it before continuing: %w", path, err)
+		}
+		return checkpoint, nil
+	}
+	return checkpoint, os.ErrNotExist
+}
+
+func (c bootstrapCheckpoint) belongsTo(repo, environment string) bool {
+	return c.Repository == repo && c.Stack == environment && (c.Environment == "" || c.Environment == environment)
 }
 
 // Only explicitly allowlisted non-secret UI settings enter the checkpoint.

@@ -107,3 +107,30 @@ func TestMenuRecognizesCompletedSetupWithoutCommitReceipt(t *testing.T) {
 		t.Fatalf("%s %v", got, err)
 	}
 }
+
+func TestDeploymentStartupUsesCheckpointRecoveryPrecedence(t *testing.T) {
+	root := t.TempDir()
+	writeMenuCheckpoint(t, root, "dev", "complete", "owner/repo")
+	dir := filepath.Join(root, ".attestra")
+	primary := filepath.Join(dir, "bootstrap.dev.local.json")
+	legacyBackup := filepath.Join(dir, "bootstrap.local.json.bak")
+	if err := os.Rename(primary, legacyBackup); err != nil {
+		t.Fatal(err)
+	}
+
+	choose := func() (string, error) { return "app", nil }
+	if got, err := deploymentStartup(root, "owner/repo", nil, choose); err != nil || got != "app" {
+		t.Fatalf("legacy backup: %q, %v", got, err)
+	}
+	writeMenuCheckpoint(t, root, "dev", "deploying", "owner/repo")
+	if err := os.Rename(primary, primary+".bak"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := deploymentStartup(root, "owner/repo", nil, choose); err != nil || got != "setup" {
+		t.Fatalf("current backup must take precedence over legacy backup: %q, %v", got, err)
+	}
+	writeMenuCheckpoint(t, root, "dev", "complete", "owner/repo")
+	if got, err := deploymentStartup(root, "owner/repo", nil, choose); err != nil || got != "app" {
+		t.Fatalf("current checkpoint must take precedence over its backup: %q, %v", got, err)
+	}
+}

@@ -21,18 +21,14 @@ func prepareGeneratedState(root string) error {
 	}
 	lock.Close()
 	defer os.Remove(lockPath)
-	var paths []string
-	for _, pattern := range []string{"bootstrap.local.json*", "bootstrap.*.local.json*", "teardown.*.local.json*", "index-publication.*.local.json*", "teardown-history"} {
-		found, err := filepath.Glob(filepath.Join(root, pattern))
-		if err != nil {
-			return err
-		}
-		paths = append(paths, found...)
+	paths, err := statePaths(root, "bootstrap.local.json*", "bootstrap.*.local.json*", "teardown.*.local.json*", "index-publication.*.local.json*", "teardown-history")
+	if err != nil {
+		return err
 	}
 	if len(paths) == 0 {
 		return nil
 	}
-	active, err := filepath.Glob(filepath.Join(dir, "*.lock"))
+	active, err := statePaths(dir, "*.lock")
 	if err != nil {
 		return err
 	}
@@ -64,4 +60,29 @@ func prepareGeneratedState(root string) error {
 	}
 	fmt.Println("Moved wizard progress and recovery files into .attestra/.")
 	return nil
+}
+
+// Match only filenames so checkout directory names are always treated literally.
+func statePaths(dir string, patterns ...string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, entry := range entries {
+		for _, pattern := range patterns {
+			match, err := filepath.Match(pattern, entry.Name())
+			if err != nil {
+				return nil, err
+			}
+			if match {
+				paths = append(paths, filepath.Join(dir, entry.Name()))
+				break
+			}
+		}
+	}
+	return paths, nil
 }

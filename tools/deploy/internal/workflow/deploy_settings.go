@@ -38,23 +38,15 @@ func readDeploySettings(root, stack, repo string) (deploySettings, error) {
 	} else if !os.IsNotExist(err) {
 		return result, err
 	} else {
-		path = filepath.Join(root, ".attestra", "bootstrap."+stack+".local.json")
-		data, err = os.ReadFile(path)
-		if os.IsNotExist(err) {
-			data, err = os.ReadFile(path + ".bak")
-		}
-		if os.IsNotExist(err) && stack == "dev" {
-			data, err = os.ReadFile(filepath.Join(root, ".attestra", "bootstrap.local.json"))
-		}
+		checkpoint, err := readBootstrapCheckpoint(root, stack)
 		if os.IsNotExist(err) {
 			return result, nil
 		}
 		if err != nil {
 			return result, err
 		}
-		var checkpoint bootstrapCheckpoint
-		if err := json.Unmarshal(data, &checkpoint); err != nil {
-			return result, fmt.Errorf("invalid bootstrap settings: %w", err)
+		if !checkpoint.belongsTo(repo, stack) {
+			return deploySettings{}, errors.New("saved bootstrap checkpoint belongs to a different repository or environment; inspect the local settings before continuing")
 		}
 		result = deploySettings{Repository: checkpoint.Repository, Stack: checkpoint.Stack, Backend: checkpoint.Backend, Region: checkpoint.Region, AuthMode: checkpoint.Settings["authMode"], Profile: checkpoint.Settings["profile"]}
 	}
