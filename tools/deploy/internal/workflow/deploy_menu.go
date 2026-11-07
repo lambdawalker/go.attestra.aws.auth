@@ -1,11 +1,12 @@
 package workflow
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
@@ -19,26 +20,29 @@ func deploymentStartup(root, repo string, flags []string, choose func() (string,
 			return "explicit", nil
 		}
 	}
-	paths, err := filepath.Glob(filepath.Join(root, ".attestra", "bootstrap.*.local.json"))
+	paths, err := statePaths(filepath.Join(root, ".attestra"), "bootstrap.*.local.json", "bootstrap.*.local.json.bak")
 	if err != nil {
 		return "", err
 	}
-	paths = append(paths, filepath.Join(root, ".attestra", "bootstrap.local.json"))
-	completed := false
+	// Include dev even when only an unqualified legacy checkpoint exists.
+	environments := []string{"dev"}
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		name := strings.TrimSuffix(filepath.Base(path), ".bak")
+		environment := strings.TrimSuffix(strings.TrimPrefix(name, "bootstrap."), ".local.json")
+		if environment != "" && !slices.Contains(environments, environment) {
+			environments = append(environments, environment)
+		}
+	}
+	completed := false
+	for _, environment := range environments {
+		checkpoint, err := readBootstrapCheckpoint(root, environment)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
 			return "", err
 		}
-		var checkpoint bootstrapCheckpoint
-		if json.Unmarshal(data, &checkpoint) != nil {
-			return "", fmt.Errorf("invalid setup record %s; inspect it before continuing", path)
-		}
-		// Incomplete or foreign records cannot establish that setup has finished.
-		if checkpoint.Repository == repo && checkpoint.Stack != "" && (checkpoint.Environment == checkpoint.Stack || checkpoint.Environment == "" && checkpoint.Stack == "dev") && checkpoint.Stage == "complete" {
+		if checkpoint.belongsTo(repo, environment) && (checkpoint.Environment != "" || environment == "dev") && checkpoint.Stage == "complete" {
 			completed = true
 		}
 	}

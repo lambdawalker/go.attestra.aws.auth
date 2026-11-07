@@ -90,3 +90,32 @@ func TestMigrationPreservesTeardownHistoryAndRecoverySiblings(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrationTreatsCheckoutPathLiterally(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "checkout[old]")
+	dir := filepath.Join(root, ".attestra")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	name := "bootstrap.dev.local.json.bak"
+	source := filepath.Join(root, name)
+	if err := os.WriteFile(source, []byte("backup"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, "teardown.dev.local.json.lock")
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareGeneratedState(root); err == nil {
+		t.Fatal("ignored active teardown lock")
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareGeneratedState(root); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(data) != "backup" {
+		t.Fatalf("backup not moved: %q, %v", data, err)
+	}
+}
